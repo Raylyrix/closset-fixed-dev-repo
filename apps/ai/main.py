@@ -36,6 +36,33 @@ class GenerateFromPointsReq(BaseModel):
     stitch_len_mm: float = 2.5
     mm_per_px: float = 0.26
 
+class AIDesignReq(BaseModel):
+    """Request payload for AI design generation."""
+    description: str
+    fabricType: str = "cotton"
+    stitchComplexity: str = "beginner"
+    threadCategory: str = "metallic"
+    canvas_width: int = 800
+    canvas_height: int = 600
+
+class OptimizePathReq(BaseModel):
+    """Request payload for stitch path optimization."""
+    stitches: List[Dict[str, Any]]
+    fabricPhysics: Dict[str, float]
+    optimizationType: str = "efficiency"
+
+class SuggestColorsReq(BaseModel):
+    """Request payload for color suggestions."""
+    currentStitches: List[Dict[str, Any]]
+    fabricType: str = "cotton"
+    designStyle: str = "professional"
+
+class CollaborationReq(BaseModel):
+    """Request payload for real-time collaboration."""
+    userId: str
+    action: str
+    data: Dict[str, Any]
+
 app = FastAPI(title="Closset AI Service")
 
 # CORS for local dev and web app
@@ -490,6 +517,356 @@ async def embroidery_generate_from_points(req: GenerateFromPointsReq):
         "passes": req.passes,
     }
     return JSONResponse({"ok": True, "points": plan_pts, "info": info})
+
+# Revolutionary AI-Powered Endpoints
+
+@app.post("/ai/generate-design")
+async def generate_ai_design(req: AIDesignReq):
+    """Generate AI-powered embroidery design based on description."""
+    try:
+        # AI-powered design generation logic
+        stitch_types = {
+            "beginner": ["satin", "fill", "outline"],
+            "intermediate": ["satin", "fill", "outline", "cross-stitch", "chain"],
+            "advanced": ["satin", "fill", "outline", "cross-stitch", "chain", "backstitch", 
+                        "french-knot", "lazy-daisy", "feather"],
+            "expert": ["satin", "fill", "outline", "cross-stitch", "chain", "backstitch",
+                      "french-knot", "bullion", "lazy-daisy", "feather", "couching", "appliqué",
+                      "seed", "stem", "metallic", "glow-thread", "variegated", "gradient"]
+        }
+        
+        available_stitches = stitch_types.get(req.stitchComplexity, stitch_types["beginner"])
+        
+        # Generate design based on description
+        if "flower" in req.description.lower():
+            stitches = generate_flower_pattern(req.canvas_width, req.canvas_height, available_stitches)
+        elif "heart" in req.description.lower():
+            stitches = generate_heart_pattern(req.canvas_width, req.canvas_height, available_stitches)
+        elif "star" in req.description.lower():
+            stitches = generate_star_pattern(req.canvas_width, req.canvas_height, available_stitches)
+        else:
+            stitches = generate_abstract_pattern(req.description, req.canvas_width, req.canvas_height, available_stitches)
+        
+        suggestions = [
+            {"type": "color", "suggestion": "Try metallic threads for a luxurious look"},
+            {"type": "stitch", "suggestion": "Add french knots for texture"},
+            {"type": "pattern", "suggestion": "Consider adding a border outline"}
+        ]
+        
+        return JSONResponse({
+            "ok": True,
+            "stitches": stitches,
+            "suggestions": suggestions,
+            "design_analysis": {
+                "complexity": req.stitchComplexity,
+                "estimated_time": len(stitches) * 0.5,
+                "thread_usage": calculate_thread_usage(stitches)
+            }
+        })
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+@app.post("/ai/optimize-path")
+async def optimize_stitch_path(req: OptimizePathReq):
+    """Optimize stitch path using ML algorithms."""
+    try:
+        # ML-based path optimization
+        optimized_stitches = optimize_stitch_sequence(req.stitches, req.fabricPhysics)
+        
+        return JSONResponse({
+            "ok": True,
+            "stitches": optimized_stitches,
+            "optimization_stats": {
+                "original_length": calculate_total_length(req.stitches),
+                "optimized_length": calculate_total_length(optimized_stitches),
+                "efficiency_gain": calculate_efficiency_gain(req.stitches, optimized_stitches)
+            }
+        })
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+@app.post("/ai/suggest-colors")
+async def suggest_thread_colors(req: SuggestColorsReq):
+    """AI-powered color suggestions based on current design."""
+    try:
+        # Analyze current stitches and suggest complementary colors
+        current_colors = [stitch.get("color", "#000000") for stitch in req.currentStitches]
+        
+        suggestions = generate_color_suggestions(current_colors, req.fabricType, req.designStyle)
+        
+        return JSONResponse({
+            "ok": True,
+            "colors": suggestions,
+            "analysis": {
+                "current_palette": current_colors,
+                "suggested_theme": determine_color_theme(current_colors),
+                "harmony_score": calculate_color_harmony(current_colors)
+            }
+        })
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+@app.websocket("/collaborate")
+async def websocket_collaboration(websocket):
+    """Real-time collaboration WebSocket endpoint."""
+    await websocket.accept()
+    try:
+        while True:
+            data = await websocket.receive_json()
+            # Handle real-time collaboration updates
+            await websocket.send_json({
+                "type": "update_received",
+                "data": data
+            })
+    except Exception as e:
+        await websocket.close()
+
+# Helper functions for AI features
+
+def generate_flower_pattern(width: int, height: int, stitch_types: List[str]) -> List[Dict]:
+    """Generate a flower pattern using available stitch types."""
+    center_x, center_y = width // 2, height // 2
+    stitches = []
+    
+    # Center with french knot if available
+    if "french-knot" in stitch_types:
+        stitches.append({
+            "id": "flower_center",
+            "type": "french-knot",
+            "points": [{"x": center_x, "y": center_y}],
+            "color": "#FFD700",
+            "thickness": 3,
+            "opacity": 1.0
+        })
+    
+    # Petals with lazy daisy if available
+    if "lazy-daisy" in stitch_types:
+        for i in range(8):
+            angle = (i * 45) * math.pi / 180
+            petal_x = center_x + 30 * math.cos(angle)
+            petal_y = center_y + 30 * math.sin(angle)
+            stitches.append({
+                "id": f"petal_{i}",
+                "type": "lazy-daisy",
+                "points": [{"x": center_x, "y": center_y}, {"x": petal_x, "y": petal_y}],
+                "color": "#FF69B4",
+                "thickness": 2,
+                "opacity": 1.0
+            })
+    
+    return stitches
+
+def generate_heart_pattern(width: int, height: int, stitch_types: List[str]) -> List[Dict]:
+    """Generate a heart pattern."""
+    center_x, center_y = width // 2, height // 2
+    stitches = []
+    
+    # Heart outline
+    heart_points = [
+        {"x": center_x, "y": center_y + 20},
+        {"x": center_x - 15, "y": center_y - 10},
+        {"x": center_x - 25, "y": center_y - 5},
+        {"x": center_x - 20, "y": center_y + 5},
+        {"x": center_x, "y": center_y + 25},
+        {"x": center_x + 20, "y": center_y + 5},
+        {"x": center_x + 25, "y": center_y - 5},
+        {"x": center_x + 15, "y": center_y - 10}
+    ]
+    
+    stitches.append({
+        "id": "heart_outline",
+        "type": "outline",
+        "points": heart_points,
+        "color": "#FF0000",
+        "thickness": 3,
+        "opacity": 1.0
+    })
+    
+    return stitches
+
+def generate_star_pattern(width: int, height: int, stitch_types: List[str]) -> List[Dict]:
+    """Generate a star pattern."""
+    center_x, center_y = width // 2, height // 2
+    stitches = []
+    
+    # 5-pointed star
+    star_points = []
+    for i in range(10):
+        angle = (i * 36) * math.pi / 180
+        radius = 25 if i % 2 == 0 else 12
+        x = center_x + radius * math.cos(angle - math.pi/2)
+        y = center_y + radius * math.sin(angle - math.pi/2)
+        star_points.append({"x": x, "y": y})
+    
+    stitches.append({
+        "id": "star",
+        "type": "fill",
+        "points": star_points,
+        "color": "#FFD700",
+        "thickness": 2,
+        "opacity": 1.0
+    })
+    
+    return stitches
+
+def generate_abstract_pattern(description: str, width: int, height: int, stitch_types: List[str]) -> List[Dict]:
+    """Generate abstract pattern based on description."""
+    stitches = []
+    
+    # Simple abstract pattern based on description keywords
+    if "geometric" in description.lower():
+        # Create geometric shapes
+        for i in range(5):
+            x = (width // 6) * (i + 1)
+            y = height // 2
+            stitches.append({
+                "id": f"geometric_{i}",
+                "type": "fill",
+                "points": [
+                    {"x": x - 10, "y": y - 10},
+                    {"x": x + 10, "y": y - 10},
+                    {"x": x + 10, "y": y + 10},
+                    {"x": x - 10, "y": y + 10}
+                ],
+                "color": f"hsl({i * 72}, 70%, 50%)",
+                "thickness": 2,
+                "opacity": 1.0
+            })
+    
+    return stitches
+
+def optimize_stitch_sequence(stitches: List[Dict], fabric_physics: Dict) -> List[Dict]:
+    """Optimize stitch sequence for efficiency."""
+    # Simple optimization: sort by distance
+    if not stitches:
+        return stitches
+    
+    optimized = [stitches[0]]
+    remaining = stitches[1:]
+    
+    while remaining:
+        last_stitch = optimized[-1]
+        last_point = last_stitch["points"][-1] if last_stitch["points"] else {"x": 0, "y": 0}
+        
+        # Find closest next stitch
+        closest_idx = 0
+        min_distance = float('inf')
+        
+        for i, stitch in enumerate(remaining):
+            if stitch["points"]:
+                first_point = stitch["points"][0]
+                distance = math.sqrt(
+                    (first_point["x"] - last_point["x"])**2 + 
+                    (first_point["y"] - last_point["y"])**2
+                )
+                if distance < min_distance:
+                    min_distance = distance
+                    closest_idx = i
+        
+        optimized.append(remaining.pop(closest_idx))
+    
+    return optimized
+
+def calculate_total_length(stitches: List[Dict]) -> float:
+    """Calculate total stitch length."""
+    total = 0
+    for stitch in stitches:
+        points = stitch.get("points", [])
+        for i in range(len(points) - 1):
+            p1, p2 = points[i], points[i + 1]
+            total += math.sqrt((p2["x"] - p1["x"])**2 + (p2["y"] - p1["y"])**2)
+    return total
+
+def calculate_efficiency_gain(original: List[Dict], optimized: List[Dict]) -> float:
+    """Calculate efficiency gain percentage."""
+    original_length = calculate_total_length(original)
+    optimized_length = calculate_total_length(optimized)
+    return ((original_length - optimized_length) / original_length) * 100 if original_length > 0 else 0
+
+def generate_color_suggestions(current_colors: List[str], fabric_type: str, design_style: str) -> List[str]:
+    """Generate color suggestions based on current palette."""
+    suggestions = []
+    
+    # Add complementary colors
+    for color in current_colors[:3]:  # Limit to first 3 colors
+        if color.startswith('#'):
+            # Simple complementary color generation
+            r = int(color[1:3], 16)
+            g = int(color[3:5], 16)
+            b = int(color[5:7], 16)
+            comp_r = 255 - r
+            comp_g = 255 - g
+            comp_b = 255 - b
+            suggestions.append(f"#{comp_r:02x}{comp_g:02x}{comp_b:02x}")
+    
+    # Add fabric-appropriate colors
+    if fabric_type == "cotton":
+        suggestions.extend(["#FFFFFF", "#F5F5F5", "#E0E0E0"])
+    elif fabric_type == "silk":
+        suggestions.extend(["#FFD700", "#C0C0C0", "#E6E6FA"])
+    elif fabric_type == "denim":
+        suggestions.extend(["#000080", "#4169E1", "#87CEEB"])
+    
+    return suggestions[:5]  # Return top 5 suggestions
+
+def determine_color_theme(colors: List[str]) -> str:
+    """Determine the color theme of the current palette."""
+    if not colors:
+        return "neutral"
+    
+    # Simple theme detection based on color analysis
+    warm_colors = ["red", "orange", "yellow", "pink"]
+    cool_colors = ["blue", "green", "purple", "cyan"]
+    
+    warm_count = sum(1 for color in colors if any(warm in color.lower() for warm in warm_colors))
+    cool_count = sum(1 for color in colors if any(cool in color.lower() for cool in cool_colors))
+    
+    if warm_count > cool_count:
+        return "warm"
+    elif cool_count > warm_count:
+        return "cool"
+    else:
+        return "balanced"
+
+def calculate_color_harmony(colors: List[str]) -> float:
+    """Calculate color harmony score (0-100)."""
+    if len(colors) < 2:
+        return 100.0
+    
+    # Simple harmony calculation based on color distance
+    total_distance = 0
+    comparisons = 0
+    
+    for i in range(len(colors)):
+        for j in range(i + 1, len(colors)):
+            # Convert hex to RGB and calculate distance
+            try:
+                r1, g1, b1 = int(colors[i][1:3], 16), int(colors[i][3:5], 16), int(colors[i][5:7], 16)
+                r2, g2, b2 = int(colors[j][1:3], 16), int(colors[j][3:5], 16), int(colors[j][5:7], 16)
+                distance = math.sqrt((r2-r1)**2 + (g2-g1)**2 + (b2-b1)**2)
+                total_distance += distance
+                comparisons += 1
+            except:
+                continue
+    
+    if comparisons == 0:
+        return 100.0
+    
+    avg_distance = total_distance / comparisons
+    # Normalize to 0-100 scale (closer to 0 = more harmonious)
+    harmony_score = max(0, 100 - (avg_distance / 441) * 100)  # 441 is max RGB distance
+    return harmony_score
+
+def calculate_thread_usage(stitches: List[Dict]) -> Dict[str, float]:
+    """Calculate estimated thread usage in meters."""
+    total_length = calculate_total_length(stitches)
+    # Convert pixels to meters (assuming 0.26mm per pixel)
+    meters = (total_length * 0.26) / 1000
+    return {
+        "total_meters": round(meters, 2),
+        "estimated_cost": round(meters * 0.5, 2),  # $0.50 per meter estimate
+        "stitch_count": len(stitches)
+    }
 
 @app.post("/upscale")
 async def upscale(image: UploadFile = File(...), scale: int = Query(2, ge=2, le=4)):

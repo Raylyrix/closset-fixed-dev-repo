@@ -2,10 +2,13 @@ import { chatOpenRouter, type ChatMessage } from './openrouterService';
 
 export interface EmbroideryStitch {
   id: string;
-  type: 'satin' | 'fill' | 'outline' | 'cross-stitch' | 'chain' | 'backstitch';
+  type: 'satin' | 'fill' | 'outline' | 'cross-stitch' | 'chain' | 'backstitch' | 
+        'french-knot' | 'bullion' | 'lazy-daisy' | 'feather' | 'couching' | 'appliqué' |
+        'seed' | 'stem' | 'split' | 'brick' | 'long-short' | 'fishbone' | 'herringbone' |
+        'satin-ribbon' | 'metallic' | 'glow-thread' | 'variegated' | 'gradient';
   points: { x: number; y: number }[];
   color: string;
-  threadType: 'cotton' | 'polyester' | 'silk' | 'metallic' | 'glow';
+  threadType: 'cotton' | 'polyester' | 'silk' | 'metallic' | 'glow' | 'variegated' | 'specialty';
   thickness: number;
   opacity: number;
   pattern?: string;

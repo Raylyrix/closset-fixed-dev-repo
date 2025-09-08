@@ -38,13 +38,16 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [aiAnalysis, setAiAnalysis] = useState<any>(null);
   const [showAnalysis, setShowAnalysis] = useState(false);
-  const [stitchDensity, setStitchDensity] = useState(0.5);
   const [underlayType, setUnderlayType] = useState<'none' | 'center' | 'contour' | 'zigzag'>('center');
   const [threadPalette, setThreadPalette] = useState<string[]>(['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF']);
   const [showPatternLibrary, setShowPatternLibrary] = useState(false);
   const [selectedPattern, setSelectedPattern] = useState<string | null>(null);
   const [stitchDirection, setStitchDirection] = useState<'horizontal' | 'vertical' | 'diagonal' | 'radial'>('horizontal');
   const [stitchSpacing, setStitchSpacing] = useState(0.5);
+  const [stitchDensity, setStitchDensity] = useState(1.0);
+  const [threadTexture, setThreadTexture] = useState('smooth');
+  const [lightingDirection, setLightingDirection] = useState('top-left');
+  const [fabricType, setFabricType] = useState('cotton');
   
   // Backend integration state
   const [backendConnected, setBackendConnected] = useState(false);
@@ -52,6 +55,39 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
   const [isExporting, setIsExporting] = useState(false);
   const [exportFormat, setExportFormat] = useState<'dst' | 'pes' | 'exp'>('dst');
   const [showExportOptions, setShowExportOptions] = useState(false);
+  
+  // Revolutionary new features for next-level technology
+  const [advancedStitchTypes, setAdvancedStitchTypes] = useState([
+    'satin', 'fill', 'outline', 'cross-stitch', 'chain', 'backstitch',
+    'french-knot', 'bullion', 'lazy-daisy', 'feather', 'couching', 'appliqué',
+    'seed', 'stem', 'split', 'brick', 'long-short', 'fishbone', 'herringbone',
+    'satin-ribbon', 'metallic', 'glow-thread', 'variegated', 'gradient'
+  ]);
+  const [selectedAdvancedStitch, setSelectedAdvancedStitch] = useState('french-knot');
+  const [threadLibrary, setThreadLibrary] = useState({
+    metallic: ['#FFD700', '#C0C0C0', '#CD7F32', '#B87333', '#E6E6FA'],
+    variegated: ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7'],
+    glow: ['#00FF00', '#FF00FF', '#00FFFF', '#FFFF00', '#FF4500'],
+    specialty: ['#8B4513', '#2F4F4F', '#800080', '#FF1493', '#00CED1']
+  });
+  const [selectedThreadCategory, setSelectedThreadCategory] = useState('metallic');
+  const [aiDesignMode, setAiDesignMode] = useState(false);
+  const [smartSuggestions, setSmartSuggestions] = useState<any[]>([]);
+  const [fabricPhysics, setFabricPhysics] = useState({
+    tension: 0.5,
+    stretch: 0.3,
+    drape: 0.7,
+    thickness: 0.2
+  });
+  const [realTimeCollaboration, setRealTimeCollaboration] = useState(false);
+  const [collaborators, setCollaborators] = useState<any[]>([]);
+  const [arVrMode, setArVrMode] = useState(false);
+  const [mlOptimization, setMlOptimization] = useState(false);
+  const [stitchComplexity, setStitchComplexity] = useState('beginner');
+  const [designLayers, setDesignLayers] = useState<any[]>([]);
+  const [currentLayer, setCurrentLayer] = useState(0);
+  const [undoStack, setUndoStack] = useState<any[]>([]);
+  const [redoStack, setRedoStack] = useState<any[]>([]);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -197,16 +233,16 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
             
             // Alternate line direction for more realistic fill
             if (Math.floor((y - minY) / lineSpacing) % 2 === 0) {
-              ctx.beginPath();
+      ctx.beginPath();
               ctx.moveTo(startX, y);
               ctx.lineTo(endX, y);
-              ctx.stroke();
+      ctx.stroke();
             } else {
-              ctx.beginPath();
+      ctx.beginPath();
               ctx.moveTo(endX, y);
               ctx.lineTo(startX, y);
-              ctx.stroke();
-            }
+      ctx.stroke();
+    }
           }
         }
         break;
@@ -219,12 +255,12 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
             const size = stitch.thickness * 1.5;
             
             // Draw the X pattern
-            ctx.beginPath();
+      ctx.beginPath();
             ctx.moveTo(point.x - size, point.y - size);
             ctx.lineTo(point.x + size, point.y + size);
             ctx.moveTo(point.x - size, point.y + size);
             ctx.lineTo(point.x + size, point.y - size);
-            ctx.stroke();
+      ctx.stroke();
             
             // Add small dots at the corners for more realistic appearance
             ctx.beginPath();
@@ -298,6 +334,186 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
         }
         break;
 
+      case 'french-knot':
+        // French knot - small circular knots
+        points.forEach((point, i) => {
+          if (i % 3 === 0) {
+            ctx.beginPath();
+            ctx.arc(point.x, point.y, stitch.thickness * 0.8, 0, Math.PI * 2);
+            ctx.fill();
+            // Add highlight
+            ctx.beginPath();
+            ctx.arc(point.x - stitch.thickness * 0.3, point.y - stitch.thickness * 0.3, stitch.thickness * 0.2, 0, Math.PI * 2);
+            ctx.fillStyle = adjustBrightness(stitch.color, 40);
+            ctx.fill();
+          }
+        });
+        break;
+
+      case 'bullion':
+        // Bullion stitch - twisted rope-like appearance
+        for (let i = 0; i < points.length - 1; i++) {
+          const start = points[i];
+          const end = points[i + 1];
+          const distance = Math.sqrt((end.x - start.x) ** 2 + (end.y - start.y) ** 2);
+          const twists = Math.floor(distance / (stitch.thickness * 2));
+          
+          for (let t = 0; t < twists; t++) {
+            const progress = t / twists;
+            const x = start.x + (end.x - start.x) * progress;
+            const y = start.y + (end.y - start.y) * progress;
+            const offset = Math.sin(progress * Math.PI * 4) * stitch.thickness * 0.5;
+            
+            ctx.beginPath();
+            ctx.arc(x + offset, y, stitch.thickness * 0.6, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+        break;
+
+      case 'lazy-daisy':
+        // Lazy daisy - petal-like stitches
+        for (let i = 0; i < points.length - 1; i += 2) {
+          const center = points[i];
+          const petal = points[i + 1];
+          if (petal) {
+            const angle = Math.atan2(petal.y - center.y, petal.x - center.x);
+            const petalLength = Math.sqrt((petal.x - center.x) ** 2 + (petal.y - center.y) ** 2);
+            
+            ctx.beginPath();
+            ctx.ellipse(center.x, center.y, petalLength, stitch.thickness * 0.8, angle, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+        break;
+
+      case 'feather':
+        // Feather stitch - zigzag pattern
+        for (let i = 0; i < points.length - 2; i += 2) {
+          const start = points[i];
+          const middle = points[i + 1];
+          const end = points[i + 2];
+          
+          if (middle && end) {
+            ctx.beginPath();
+            ctx.moveTo(start.x, start.y);
+            ctx.lineTo(middle.x, middle.y);
+            ctx.lineTo(end.x, end.y);
+            ctx.stroke();
+          }
+        }
+        break;
+
+      case 'couching':
+        // Couching - decorative thread laid down and stitched over
+        for (let i = 0; i < points.length - 1; i++) {
+          const start = points[i];
+          const end = points[i + 1];
+          
+          // Main thread
+          ctx.beginPath();
+          ctx.moveTo(start.x, start.y);
+          ctx.lineTo(end.x, end.y);
+          ctx.stroke();
+          
+          // Couching stitches perpendicular to main thread
+          const midX = (start.x + end.x) / 2;
+          const midY = (start.y + end.y) / 2;
+          const perpAngle = Math.atan2(end.y - start.y, end.x - start.x) + Math.PI / 2;
+          const couchingLength = stitch.thickness * 3;
+          
+          ctx.beginPath();
+          ctx.moveTo(midX + Math.cos(perpAngle) * couchingLength, midY + Math.sin(perpAngle) * couchingLength);
+          ctx.lineTo(midX - Math.cos(perpAngle) * couchingLength, midY - Math.sin(perpAngle) * couchingLength);
+          ctx.stroke();
+        }
+        break;
+
+      case 'seed':
+        // Seed stitch - small random dots
+        points.forEach((point, i) => {
+          if (i % 2 === 0) {
+            const offsetX = (Math.random() - 0.5) * stitch.thickness;
+            const offsetY = (Math.random() - 0.5) * stitch.thickness;
+            ctx.beginPath();
+            ctx.arc(point.x + offsetX, point.y + offsetY, stitch.thickness * 0.3, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        });
+        break;
+
+      case 'stem':
+        // Stem stitch - twisted line with overlapping
+        for (let i = 0; i < points.length - 1; i++) {
+          const start = points[i];
+          const end = points[i + 1];
+          const midX = (start.x + end.x) / 2;
+          const midY = (start.y + end.y) / 2;
+          
+          ctx.beginPath();
+          ctx.moveTo(start.x, start.y);
+          ctx.quadraticCurveTo(midX, midY, end.x, end.y);
+          ctx.stroke();
+        }
+        break;
+
+      case 'metallic':
+        // Metallic thread with shimmer effect
+        const metallicGradient = ctx.createLinearGradient(0, 0, rect.width, rect.height);
+        metallicGradient.addColorStop(0, '#FFD700');
+        metallicGradient.addColorStop(0.3, '#FFA500');
+        metallicGradient.addColorStop(0.7, '#FFD700');
+        metallicGradient.addColorStop(1, '#B8860B');
+        
+        ctx.strokeStyle = metallicGradient;
+        ctx.shadowColor = 'rgba(255, 215, 0, 0.5)';
+        ctx.shadowBlur = 4;
+        
+        for (let i = 1; i < points.length; i++) {
+          ctx.lineTo(points[i].x, points[i].y);
+        }
+        break;
+
+      case 'glow-thread':
+        // Glow-in-the-dark thread effect
+        ctx.strokeStyle = stitch.color;
+        ctx.shadowColor = stitch.color;
+        ctx.shadowBlur = 8;
+        ctx.lineWidth = stitch.thickness * 1.5;
+        
+        for (let i = 1; i < points.length; i++) {
+          ctx.lineTo(points[i].x, points[i].y);
+        }
+        break;
+
+      case 'variegated':
+        // Variegated thread with color changes
+        for (let i = 0; i < points.length - 1; i++) {
+          const progress = i / (points.length - 1);
+          const hue = (progress * 360) % 360;
+          const color = `hsl(${hue}, 70%, 50%)`;
+          
+          ctx.strokeStyle = color;
+          ctx.beginPath();
+          ctx.moveTo(points[i].x, points[i].y);
+          ctx.lineTo(points[i + 1].x, points[i + 1].y);
+          ctx.stroke();
+        }
+        break;
+
+      case 'gradient':
+        // Gradient thread effect
+        const gradient = ctx.createLinearGradient(points[0].x, points[0].y, points[points.length - 1].x, points[points.length - 1].y);
+        gradient.addColorStop(0, adjustBrightness(stitch.color, -30));
+        gradient.addColorStop(0.5, stitch.color);
+        gradient.addColorStop(1, adjustBrightness(stitch.color, 30));
+        
+        ctx.strokeStyle = gradient;
+        for (let i = 1; i < points.length; i++) {
+          ctx.lineTo(points[i].x, points[i].y);
+        }
+        break;
+
       default:
         // Default line drawing for unknown types
         for (let i = 1; i < points.length; i++) {
@@ -306,6 +522,8 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
     }
 
     ctx.stroke();
+    // Reset composite operation
+    ctx.globalCompositeOperation = 'source-over';
     ctx.restore();
   };
 
@@ -382,6 +600,130 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
       console.log('Generated professional stitches:', professionalStitches.length);
     } catch (error) {
       console.error('Failed to generate professional stitches:', error);
+    }
+  };
+
+  // AI-Powered Design Features
+  const generateAIDesign = async (description: string) => {
+    if (!aiDesignMode) return;
+    
+    try {
+      const response = await fetch('http://localhost:8000/ai/generate-design', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          description,
+          fabricType,
+          stitchComplexity,
+          threadCategory: selectedThreadCategory
+        })
+      });
+      
+      const aiDesign = await response.json();
+      setSmartSuggestions(aiDesign.suggestions || []);
+      
+      // Apply AI-generated stitches
+      if (aiDesign.stitches) {
+        setEmbroideryStitches(aiDesign.stitches);
+      }
+    } catch (error) {
+      console.error('AI design generation failed:', error);
+    }
+  };
+
+  const optimizeStitchPath = async () => {
+    if (!mlOptimization) return;
+    
+    try {
+      const response = await fetch('http://localhost:8000/ai/optimize-path', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          stitches: embroideryStitches,
+          fabricPhysics,
+          optimizationType: 'efficiency'
+        })
+      });
+      
+      const optimized = await response.json();
+      setEmbroideryStitches(optimized.stitches);
+    } catch (error) {
+      console.error('Path optimization failed:', error);
+    }
+  };
+
+  const suggestThreadColors = async () => {
+    try {
+      const response = await fetch('http://localhost:8000/ai/suggest-colors', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          currentStitches: embroideryStitches,
+          fabricType,
+          designStyle: 'professional'
+        })
+      });
+      
+      const suggestions = await response.json();
+      setSmartSuggestions(suggestions.colors || []);
+    } catch (error) {
+      console.error('Color suggestion failed:', error);
+    }
+  };
+
+  const enableRealTimeCollaboration = () => {
+    setRealTimeCollaboration(true);
+    // Initialize WebSocket connection for real-time collaboration
+    const ws = new WebSocket('ws://localhost:8000/collaborate');
+    
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.type === 'stitch_update') {
+        setEmbroideryStitches(data.stitches);
+      } else if (data.type === 'collaborator_joined') {
+        setCollaborators(prev => [...prev, data.collaborator]);
+      }
+    };
+  };
+
+  const enableARVRMode = () => {
+    setArVrMode(true);
+    // Initialize AR/VR capabilities
+    if (navigator.xr) {
+      navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
+        if (supported) {
+          console.log('VR mode available');
+        }
+      });
+    }
+  };
+
+  const addDesignLayer = (layerName: string) => {
+    const newLayer = {
+      id: Date.now(),
+      name: layerName,
+      stitches: [],
+      visible: true,
+      locked: false
+    };
+    setDesignLayers(prev => [...prev, newLayer]);
+  };
+
+  const undoAction = () => {
+    if (undoStack.length > 0) {
+      const lastState = undoStack[undoStack.length - 1];
+      setRedoStack(prev => [...prev, { stitches: embroideryStitches }]);
+      setEmbroideryStitches(lastState.stitches);
+      setUndoStack(prev => prev.slice(0, -1));
+    }
+  };
+
+  const redoAction = () => {
+    if (redoStack.length > 0) {
+      const nextState = redoStack[redoStack.length - 1];
+      setUndoStack(prev => [...prev, { stitches: embroideryStitches }]);
+      setEmbroideryStitches(nextState.stitches);
+      setRedoStack(prev => prev.slice(0, -1));
     }
   };
 
@@ -588,14 +930,57 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
 
     ctx.save();
     ctx.globalAlpha = stitch.opacity;
-    ctx.strokeStyle = stitch.color;
-    ctx.lineWidth = stitch.thickness;
+    
+    // Create hyperrealistic gradient for thread texture based on fabric type
+    const gradient = ctx.createLinearGradient(0, 0, composedCanvas.width, composedCanvas.height);
+    const baseColor = stitch.color;
+    const darkerColor = adjustBrightness(baseColor, -30);
+    const lighterColor = adjustBrightness(baseColor, 30);
+    
+    // Adjust gradient based on lighting direction
+    let gradientStartX = 0, gradientStartY = 0, gradientEndX = composedCanvas.width, gradientEndY = composedCanvas.height;
+    if (lightingDirection === 'top-left') {
+      gradientStartX = 0; gradientStartY = 0; gradientEndX = composedCanvas.width; gradientEndY = composedCanvas.height;
+    } else if (lightingDirection === 'top-right') {
+      gradientStartX = composedCanvas.width; gradientStartY = 0; gradientEndX = 0; gradientEndY = composedCanvas.height;
+    } else if (lightingDirection === 'bottom-left') {
+      gradientStartX = 0; gradientStartY = composedCanvas.height; gradientEndX = composedCanvas.width; gradientEndY = 0;
+    } else if (lightingDirection === 'bottom-right') {
+      gradientStartX = composedCanvas.width; gradientStartY = composedCanvas.height; gradientEndX = 0; gradientEndY = 0;
+    }
+    
+    const threadGradient = ctx.createLinearGradient(gradientStartX, gradientStartY, gradientEndX, gradientEndY);
+    threadGradient.addColorStop(0, lighterColor);
+    threadGradient.addColorStop(0.5, baseColor);
+    threadGradient.addColorStop(1, darkerColor);
+    
+    ctx.strokeStyle = threadGradient;
+    ctx.lineWidth = stitch.thickness * stitchDensity;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     
     // Enable high-quality rendering
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
+    
+    // Add shadow for depth and realism based on fabric type
+    const shadowIntensity = fabricType === 'silk' ? 0.2 : fabricType === 'denim' ? 0.4 : 0.3;
+    ctx.shadowColor = `rgba(0, 0, 0, ${shadowIntensity})`;
+    ctx.shadowBlur = fabricType === 'silk' ? 1 : fabricType === 'denim' ? 3 : 2;
+    ctx.shadowOffsetX = lightingDirection.includes('right') ? 1 : -1;
+    ctx.shadowOffsetY = lightingDirection.includes('bottom') ? 1 : -1;
+    
+    // Add fabric-specific effects
+    if (fabricType === 'silk') {
+      // Silk has subtle shimmer
+      ctx.globalCompositeOperation = 'overlay';
+    } else if (fabricType === 'denim') {
+      // Denim has more texture
+      ctx.globalCompositeOperation = 'multiply';
+    } else if (fabricType === 'linen') {
+      // Linen has natural texture
+      ctx.globalCompositeOperation = 'soft-light';
+    }
 
     // Convert UV coordinates to canvas coordinates
     const canvasWidth = composedCanvas.width;
@@ -607,14 +992,14 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
     
     ctx.beginPath();
     ctx.moveTo(points[0].x, points[0].y);
-
+    
     console.log('🧵 Rendering stitch type:', stitch.type);
     
     switch (stitch.type) {
       case 'satin':
         console.log('🧵 SATIN CASE EXECUTING - drawing bezier curves with', points.length, 'points');
         // Smooth curve for satin stitch
-        for (let i = 1; i < points.length; i++) {
+    for (let i = 1; i < points.length; i++) {
           const prev = points[i - 1];
           const curr = points[i];
           const next = points[i + 1];
@@ -633,35 +1018,62 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
 
       case 'fill':
         console.log('🧵 FILL CASE EXECUTING - drawing parallel lines');
-        // Fill area with parallel lines
+        // Fill area with parallel lines and alternating direction for realistic fill
         const minY = Math.min(...points.map(p => p.y));
         const maxY = Math.max(...points.map(p => p.y));
-        const lineSpacing = stitch.thickness * 2;
+        const lineSpacing = stitch.thickness * 1.5;
         
         for (let y = minY; y <= maxY; y += lineSpacing) {
           const intersections = getLineIntersections(points, y);
           for (let i = 0; i < intersections.length; i += 2) {
-            ctx.beginPath();
-            ctx.moveTo(intersections[i], y);
-            ctx.lineTo(intersections[i + 1] || intersections[i], y);
-            ctx.stroke();
+            const startX = intersections[i];
+            const endX = intersections[i + 1] || intersections[i];
+            
+            // Alternate line direction for more realistic fill
+            if (Math.floor((y - minY) / lineSpacing) % 2 === 0) {
+              ctx.beginPath();
+              ctx.moveTo(startX, y);
+              ctx.lineTo(endX, y);
+              ctx.stroke();
+            } else {
+              ctx.beginPath();
+              ctx.moveTo(endX, y);
+              ctx.lineTo(startX, y);
+              ctx.stroke();
+            }
           }
         }
         break;
 
       case 'cross-stitch':
         console.log('🧵 CROSS-STITCH CASE EXECUTING - drawing X patterns');
-        // Draw X pattern
+        // Draw X pattern with enhanced details
         points.forEach((point, i) => {
           if (i % 2 === 0 && points[i + 1]) {
             const next = points[i + 1];
-            const size = stitch.thickness;
+            const size = stitch.thickness * 1.5;
+            
+            // Draw the X pattern
             ctx.beginPath();
             ctx.moveTo(point.x - size, point.y - size);
             ctx.lineTo(point.x + size, point.y + size);
             ctx.moveTo(point.x - size, point.y + size);
             ctx.lineTo(point.x + size, point.y - size);
             ctx.stroke();
+            
+            // Add small dots at the corners for more realistic appearance
+            ctx.beginPath();
+            ctx.arc(point.x - size, point.y - size, 1, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(point.x + size, point.y + size, 1, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(point.x - size, point.y + size, 1, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(point.x + size, point.y - size, 1, 0, Math.PI * 2);
+            ctx.fill();
           }
         });
         break;
@@ -669,9 +1081,9 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
       case 'chain':
         console.log('🧵 CHAIN CASE EXECUTING - drawing chain links');
         // Chain stitch pattern - draw connected oval links
-        for (let i = 0; i < points.length - 1; i++) {
+    for (let i = 0; i < points.length - 1; i++) {
           const curr = points[i];
-          const next = points[i + 1];
+      const next = points[i + 1];
           const midX = (curr.x + next.x) / 2;
           const midY = (curr.y + next.y) / 2;
           
@@ -680,28 +1092,28 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
           const linkHeight = stitch.thickness * 0.8;
           
           // Draw oval chain link
-          ctx.beginPath();
+      ctx.beginPath();
           ctx.ellipse(midX, midY, linkWidth/2, linkHeight/2, 0, 0, Math.PI * 2);
           ctx.stroke();
-          
+      
           // Draw inner oval for chain link hole
-          ctx.beginPath();
+      ctx.beginPath();
           ctx.ellipse(midX, midY, linkWidth/3, linkHeight/3, 0, 0, Math.PI * 2);
-          ctx.stroke();
-        }
+      ctx.stroke();
+    }
         break;
 
       case 'backstitch':
         console.log('🧵 BACKSTITCH CASE EXECUTING - drawing individual segments');
         // Backstitch pattern - draw each segment separately
-        for (let i = 0; i < points.length - 1; i++) {
+    for (let i = 0; i < points.length - 1; i++) {
           const curr = points[i];
-          const next = points[i + 1];
-          ctx.beginPath();
+      const next = points[i + 1];
+      ctx.beginPath();
           ctx.moveTo(curr.x, curr.y);
-          ctx.lineTo(next.x, next.y);
-          ctx.stroke();
-        }
+      ctx.lineTo(next.x, next.y);
+        ctx.stroke();
+      }
         break;
 
       case 'outline':
@@ -721,6 +1133,8 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
     }
 
     ctx.stroke();
+    // Reset composite operation
+    ctx.globalCompositeOperation = 'source-over';
     ctx.restore();
     
     // Dispatch custom event to signal texture update
@@ -935,12 +1349,30 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
               fontSize: '14px'
             }}
           >
-            <option value="satin">🧵 Satin Stitch</option>
-            <option value="fill">🟦 Fill Stitch</option>
-            <option value="outline">📏 Outline Stitch</option>
-            <option value="cross-stitch">❌ Cross Stitch</option>
-            <option value="chain">⛓️ Chain Stitch</option>
-            <option value="backstitch">↩️ Back Stitch</option>
+            {advancedStitchTypes.map((stitchType) => (
+              <option key={stitchType} value={stitchType}>
+                {stitchType === 'satin' && '🧵 Satin Stitch'}
+                {stitchType === 'fill' && '🟦 Fill Stitch'}
+                {stitchType === 'outline' && '📏 Outline Stitch'}
+                {stitchType === 'cross-stitch' && '❌ Cross Stitch'}
+                {stitchType === 'chain' && '⛓️ Chain Stitch'}
+                {stitchType === 'backstitch' && '↩️ Back Stitch'}
+                {stitchType === 'french-knot' && '🎯 French Knot'}
+                {stitchType === 'bullion' && '🌀 Bullion Stitch'}
+                {stitchType === 'lazy-daisy' && '🌸 Lazy Daisy'}
+                {stitchType === 'feather' && '🪶 Feather Stitch'}
+                {stitchType === 'couching' && '🎀 Couching'}
+                {stitchType === 'appliqué' && '🎨 Appliqué'}
+                {stitchType === 'seed' && '🌱 Seed Stitch'}
+                {stitchType === 'stem' && '🌿 Stem Stitch'}
+                {stitchType === 'metallic' && '✨ Metallic Thread'}
+                {stitchType === 'glow-thread' && '🌟 Glow Thread'}
+                {stitchType === 'variegated' && '🌈 Variegated'}
+                {stitchType === 'gradient' && '🎨 Gradient'}
+                {!['satin', 'fill', 'outline', 'cross-stitch', 'chain', 'backstitch', 'french-knot', 'bullion', 'lazy-daisy', 'feather', 'couching', 'appliqué', 'seed', 'stem', 'metallic', 'glow-thread', 'variegated', 'gradient'].includes(stitchType) && 
+                  `🧵 ${stitchType.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase())}`}
+              </option>
+            ))}
         </select>
       </div>
 
@@ -977,7 +1409,7 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
         {/* Thickness */}
         <div className="control-group">
           <label>Thread Thickness: {embroideryThickness}px</label>
-          <input 
+            <input 
             type="range" 
             min="1"
             max="10"
@@ -1011,8 +1443,8 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
               accentColor: '#8B5CF6'
             }}
           />
-      </div>
-
+        </div>
+        
         {/* Stitch Density */}
         <div className="control-group" style={{
           background: 'rgba(139, 92, 246, 0.1)',
@@ -1026,19 +1458,19 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
             fontWeight: '500',
             color: '#E2E8F0'
           }}>Stitch Density: {Math.round(stitchDensity * 100)}%</label>
-        <input
-          type="range"
+          <input 
+            type="range" 
           min="0.1"
-            max="1"
-          step="0.1"
+            max="1" 
+            step="0.1" 
           value={stitchDensity}
             onChange={(e) => setStitchDensity(Number(e.target.value))}
             style={{
               width: '100%',
               accentColor: '#8B5CF6'
             }}
-        />
-      </div>
+          />
+        </div>
 
         {/* Underlay Type */}
         <div className="control-group" style={{
@@ -1134,7 +1566,7 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
         {/* AI Controls */}
         <div className="control-group">
           <label>
-            <input
+        <input
               type="checkbox"
               checked={embroideryAIEnabled}
               onChange={(e) => setEmbroideryAIEnabled(e.target.checked)}
@@ -1189,8 +1621,8 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
             fontWeight: '500',
             color: '#E2E8F0'
           }}>Stitch Spacing: {stitchSpacing}px</label>
-          <input
-            type="range"
+        <input
+          type="range"
             min="0.1"
             max="2"
             step="0.1"
@@ -1200,9 +1632,109 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
               width: '100%',
               accentColor: '#8B5CF6'
             }}
-          />
+        />
         </div>
-
+        
+        {/* Professional Stitch Controls */}
+        <div className="control-group" style={{
+          background: 'rgba(34, 197, 94, 0.1)',
+          padding: '12px',
+          borderRadius: '8px',
+          border: '1px solid rgba(34, 197, 94, 0.3)',
+          marginBottom: '12px'
+        }}>
+          <label style={{ 
+            display: 'block', 
+            marginBottom: '8px', 
+            fontWeight: '500',
+            color: '#22C55E'
+          }}>Professional Controls</label>
+          
+          {/* Stitch Density */}
+          <div style={{ marginBottom: '8px' }}>
+            <label style={{ fontSize: '12px', color: '#22C55E' }}>Stitch Density: {stitchDensity}x</label>
+            <input
+              type="range"
+              min="0.5"
+              max="2.0"
+              step="0.1"
+              value={stitchDensity}
+              onChange={(e) => setStitchDensity(Number(e.target.value))}
+              style={{
+                width: '100%',
+                accentColor: '#22C55E'
+              }}
+            />
+          </div>
+          
+          {/* Thread Texture */}
+          <div style={{ marginBottom: '8px' }}>
+            <label style={{ fontSize: '12px', color: '#22C55E' }}>Thread Texture:</label>
+            <select
+              value={threadTexture}
+              onChange={(e) => setThreadTexture(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '4px',
+                borderRadius: '4px',
+                border: '1px solid rgba(34, 197, 94, 0.3)',
+                backgroundColor: 'rgba(34, 197, 94, 0.05)',
+                color: '#22C55E'
+              }}
+            >
+              <option value="smooth">Smooth</option>
+              <option value="textured">Textured</option>
+              <option value="metallic">Metallic</option>
+              <option value="matte">Matte</option>
+            </select>
+          </div>
+          
+          {/* Lighting Direction */}
+          <div style={{ marginBottom: '8px' }}>
+            <label style={{ fontSize: '12px', color: '#22C55E' }}>Lighting:</label>
+            <select
+              value={lightingDirection}
+              onChange={(e) => setLightingDirection(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '4px',
+                borderRadius: '4px',
+                border: '1px solid rgba(34, 197, 94, 0.3)',
+                backgroundColor: 'rgba(34, 197, 94, 0.05)',
+                color: '#22C55E'
+              }}
+            >
+              <option value="top-left">Top Left</option>
+              <option value="top-right">Top Right</option>
+              <option value="bottom-left">Bottom Left</option>
+              <option value="bottom-right">Bottom Right</option>
+            </select>
+          </div>
+          
+          {/* Fabric Type */}
+          <div>
+            <label style={{ fontSize: '12px', color: '#22C55E' }}>Fabric Type:</label>
+            <select
+              value={fabricType}
+              onChange={(e) => setFabricType(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '4px',
+                borderRadius: '4px',
+                border: '1px solid rgba(34, 197, 94, 0.3)',
+                backgroundColor: 'rgba(34, 197, 94, 0.05)',
+                color: '#22C55E'
+              }}
+            >
+              <option value="cotton">Cotton</option>
+              <option value="silk">Silk</option>
+              <option value="denim">Denim</option>
+              <option value="linen">Linen</option>
+              <option value="polyester">Polyester</option>
+            </select>
+          </div>
+        </div>
+        
         {/* Pattern Library */}
         <div className="control-group" style={{
           background: 'rgba(139, 92, 246, 0.1)',
@@ -1240,25 +1772,345 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
               gap: '8px'
             }}>
               {embroideryPatterns.map((pattern) => (
-                <button
-                  key={pattern.id}
+            <button
+              key={pattern.id}
                   onClick={() => {
                     setSelectedPattern(pattern.id);
                     setEmbroideryStitchType(pattern.type as any);
                   }}
-                  style={{
-                    padding: '8px',
+              style={{
+                padding: '8px',
                     borderRadius: '6px',
                     border: selectedPattern === pattern.id ? '2px solid #8B5CF6' : '1px solid #475569',
                     background: selectedPattern === pattern.id ? 'rgba(139, 92, 246, 0.2)' : '#1E293B',
                     color: '#E2E8F0',
-                    cursor: 'pointer',
+                cursor: 'pointer',
                     fontSize: '12px'
                   }}
                 >
                   {pattern.name}
-                </button>
-              ))}
+            </button>
+          ))}
+        </div>
+          )}
+      </div>
+
+        {/* Revolutionary Advanced Stitch Types */}
+        <div className="control-group" style={{
+          background: 'rgba(255, 0, 150, 0.1)',
+          padding: '12px',
+          borderRadius: '8px',
+          border: '1px solid rgba(255, 0, 150, 0.3)',
+          marginBottom: '12px'
+        }}>
+          <label style={{
+            display: 'block',
+            marginBottom: '8px',
+            fontWeight: '500',
+            color: '#FF0096'
+          }}>🚀 Advanced Stitch Types</label>
+          
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(3, 1fr)',
+            gap: '6px',
+            marginBottom: '8px'
+          }}>
+            {advancedStitchTypes.slice(6).map((stitchType) => (
+              <button
+                key={stitchType}
+                onClick={() => setSelectedAdvancedStitch(stitchType)}
+                style={{
+                  padding: '6px 8px',
+                  fontSize: '10px',
+                  borderRadius: '4px',
+                  border: selectedAdvancedStitch === stitchType ? '2px solid #FF0096' : '1px solid #475569',
+                  background: selectedAdvancedStitch === stitchType ? 'rgba(255, 0, 150, 0.2)' : '#1E293B',
+                  color: '#E2E8F0',
+                  cursor: 'pointer',
+                  textTransform: 'capitalize'
+                }}
+              >
+                {stitchType.replace('-', ' ')}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Revolutionary Thread Library */}
+        <div className="control-group" style={{
+          background: 'rgba(0, 255, 255, 0.1)',
+          padding: '12px',
+          borderRadius: '8px',
+          border: '1px solid rgba(0, 255, 255, 0.3)',
+          marginBottom: '12px'
+        }}>
+          <label style={{
+            display: 'block',
+            marginBottom: '8px',
+            fontWeight: '500',
+            color: '#00FFFF'
+          }}>🌈 Revolutionary Thread Library</label>
+          
+          <div style={{ marginBottom: '8px' }}>
+            <select
+              value={selectedThreadCategory}
+              onChange={(e) => setSelectedThreadCategory(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '6px',
+                borderRadius: '4px',
+                border: '1px solid rgba(0, 255, 255, 0.3)',
+                background: 'rgba(0, 255, 255, 0.05)',
+                color: '#00FFFF'
+              }}
+            >
+              <option value="metallic">✨ Metallic Threads</option>
+              <option value="variegated">🎨 Variegated Threads</option>
+              <option value="glow">🌟 Glow-in-Dark Threads</option>
+              <option value="specialty">💎 Specialty Threads</option>
+            </select>
+          </div>
+          
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(5, 1fr)',
+            gap: '4px'
+          }}>
+            {threadLibrary[selectedThreadCategory as keyof typeof threadLibrary].map((color, index) => (
+              <button
+                key={index}
+                onClick={() => setEmbroideryColor(color)}
+                style={{
+                  width: '24px',
+                  height: '24px',
+                  borderRadius: '50%',
+                  border: embroideryColor === color ? '2px solid #00FFFF' : '1px solid #475569',
+                  background: color,
+                  cursor: 'pointer'
+                }}
+                title={color}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* AI-Powered Design Features */}
+        <div className="control-group" style={{
+          background: 'rgba(255, 165, 0, 0.1)',
+          padding: '12px',
+          borderRadius: '8px',
+          border: '1px solid rgba(255, 165, 0, 0.3)',
+          marginBottom: '12px'
+        }}>
+          <label style={{
+            display: 'block',
+            marginBottom: '8px',
+            fontWeight: '500',
+            color: '#FFA500'
+          }}>🤖 AI-Powered Features</label>
+          
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+            <button
+              onClick={() => setAiDesignMode(!aiDesignMode)}
+              style={{
+                padding: '6px 12px',
+                fontSize: '11px',
+                borderRadius: '4px',
+                border: '1px solid rgba(255, 165, 0, 0.3)',
+                background: aiDesignMode ? 'rgba(255, 165, 0, 0.2)' : '#1E293B',
+                color: '#FFA500',
+                cursor: 'pointer'
+              }}
+            >
+              {aiDesignMode ? '🤖 AI Mode ON' : '🤖 AI Mode OFF'}
+            </button>
+            
+            <button
+              onClick={() => setMlOptimization(!mlOptimization)}
+              style={{
+                padding: '6px 12px',
+                fontSize: '11px',
+                borderRadius: '4px',
+                border: '1px solid rgba(255, 165, 0, 0.3)',
+                background: mlOptimization ? 'rgba(255, 165, 0, 0.2)' : '#1E293B',
+                color: '#FFA500',
+                cursor: 'pointer'
+              }}
+            >
+              {mlOptimization ? '🧠 ML ON' : '🧠 ML OFF'}
+            </button>
+          </div>
+          
+          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+            <button
+              onClick={() => generateAIDesign('Create a beautiful floral pattern')}
+              style={{
+                padding: '4px 8px',
+                fontSize: '10px',
+                borderRadius: '4px',
+                border: '1px solid rgba(255, 165, 0, 0.3)',
+                background: '#1E293B',
+                color: '#FFA500',
+                cursor: 'pointer'
+              }}
+            >
+              🌸 AI Design
+            </button>
+            
+            <button
+              onClick={optimizeStitchPath}
+              style={{
+                padding: '4px 8px',
+                fontSize: '10px',
+                borderRadius: '4px',
+                border: '1px solid rgba(255, 165, 0, 0.3)',
+                background: '#1E293B',
+                color: '#FFA500',
+                cursor: 'pointer'
+              }}
+            >
+              ⚡ Optimize
+            </button>
+            
+            <button
+              onClick={suggestThreadColors}
+              style={{
+                padding: '4px 8px',
+                fontSize: '10px',
+                borderRadius: '4px',
+                border: '1px solid rgba(255, 165, 0, 0.3)',
+                background: '#1E293B',
+                color: '#FFA500',
+                cursor: 'pointer'
+              }}
+            >
+              🎨 Suggest Colors
+            </button>
+          </div>
+        </div>
+
+        {/* Real-time Collaboration & AR/VR */}
+        <div className="control-group" style={{
+          background: 'rgba(138, 43, 226, 0.1)',
+          padding: '12px',
+          borderRadius: '8px',
+          border: '1px solid rgba(138, 43, 226, 0.3)',
+          marginBottom: '12px'
+        }}>
+          <label style={{
+            display: 'block',
+            marginBottom: '8px',
+            fontWeight: '500',
+            color: '#8A2BE2'
+          }}>🌐 Next-Gen Features</label>
+          
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+            <button
+              onClick={enableRealTimeCollaboration}
+              style={{
+                padding: '6px 12px',
+                fontSize: '11px',
+                borderRadius: '4px',
+                border: '1px solid rgba(138, 43, 226, 0.3)',
+                background: realTimeCollaboration ? 'rgba(138, 43, 226, 0.2)' : '#1E293B',
+                color: '#8A2BE2',
+                cursor: 'pointer'
+              }}
+            >
+              {realTimeCollaboration ? '👥 Collaborating' : '👥 Start Collab'}
+            </button>
+            
+            <button
+              onClick={enableARVRMode}
+              style={{
+                padding: '6px 12px',
+                fontSize: '11px',
+                borderRadius: '4px',
+                border: '1px solid rgba(138, 43, 226, 0.3)',
+                background: arVrMode ? 'rgba(138, 43, 226, 0.2)' : '#1E293B',
+                color: '#8A2BE2',
+                cursor: 'pointer'
+              }}
+            >
+              {arVrMode ? '🥽 AR/VR ON' : '🥽 AR/VR OFF'}
+            </button>
+          </div>
+          
+          {collaborators.length > 0 && (
+            <div style={{ fontSize: '10px', color: '#8A2BE2', marginTop: '4px' }}>
+              Collaborators: {collaborators.length}
+            </div>
+          )}
+        </div>
+
+        {/* Layer Management & Undo/Redo */}
+        <div className="control-group" style={{
+          background: 'rgba(50, 205, 50, 0.1)',
+          padding: '12px',
+          borderRadius: '8px',
+          border: '1px solid rgba(50, 205, 50, 0.3)',
+          marginBottom: '12px'
+        }}>
+          <label style={{
+            display: 'block',
+            marginBottom: '8px',
+            fontWeight: '500',
+            color: '#32CD32'
+          }}>📚 Professional Tools</label>
+          
+          <div style={{ display: 'flex', gap: '4px', marginBottom: '8px' }}>
+            <button
+              onClick={undoAction}
+              disabled={undoStack.length === 0}
+              style={{
+                padding: '6px 12px',
+                fontSize: '11px',
+                borderRadius: '4px',
+                border: '1px solid rgba(50, 205, 50, 0.3)',
+                background: undoStack.length === 0 ? '#6B7280' : '#1E293B',
+                color: undoStack.length === 0 ? '#9CA3AF' : '#32CD32',
+                cursor: undoStack.length === 0 ? 'not-allowed' : 'pointer'
+              }}
+            >
+              ↶ Undo
+            </button>
+            
+            <button
+              onClick={redoAction}
+              disabled={redoStack.length === 0}
+              style={{
+                padding: '6px 12px',
+                fontSize: '11px',
+                borderRadius: '4px',
+                border: '1px solid rgba(50, 205, 50, 0.3)',
+                background: redoStack.length === 0 ? '#6B7280' : '#1E293B',
+                color: redoStack.length === 0 ? '#9CA3AF' : '#32CD32',
+                cursor: redoStack.length === 0 ? 'not-allowed' : 'pointer'
+              }}
+            >
+              ↷ Redo
+            </button>
+            
+            <button
+              onClick={() => addDesignLayer(`Layer ${designLayers.length + 1}`)}
+              style={{
+                padding: '6px 12px',
+                fontSize: '11px',
+                borderRadius: '4px',
+                border: '1px solid rgba(50, 205, 50, 0.3)',
+                background: '#1E293B',
+                color: '#32CD32',
+                cursor: 'pointer'
+              }}
+            >
+              ➕ Add Layer
+            </button>
+          </div>
+          
+          {designLayers.length > 0 && (
+            <div style={{ fontSize: '10px', color: '#32CD32' }}>
+              Layers: {designLayers.length} | Current: {currentLayer + 1}
             </div>
           )}
         </div>
@@ -1434,8 +2286,8 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
             <div style={{ marginTop: '4px', fontSize: '10px', color: '#94A3B8' }}>
               InkStitch: {backendHealth.inkscape?.found ? '✅' : '❌'}
               PyEmbroidery: {backendHealth.pyembroidery ? '✅' : '❌'}
-            </div>
-          )}
+        </div>
+      )}
         </div>
 
         {/* Export Options */}
@@ -1533,7 +2385,7 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
           >
             Optimize
           </button>
-        </div>
+      </div>
 
         {/* File Import */}
         <div style={{ marginTop: '8px' }}>
