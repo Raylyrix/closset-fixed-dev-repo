@@ -1803,8 +1803,10 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
     switch (stitch.type) {
       case 'satin':
         console.log('🧵 SATIN CASE EXECUTING - drawing bezier curves with', points.length, 'points');
-        // Smooth curve for satin stitch
-    for (let i = 1; i < points.length; i++) {
+        // Smooth curve for satin stitch with enhanced visibility
+        ctx.lineWidth = stitch.thickness * 1.5;
+        
+        for (let i = 1; i < points.length; i++) {
           const prev = points[i - 1];
           const curr = points[i];
           const next = points[i + 1];
@@ -1817,6 +1819,38 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
             ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, curr.x, curr.y);
           } else {
             ctx.lineTo(curr.x, curr.y);
+          }
+        }
+        ctx.stroke();
+        
+        // Add parallel lines for satin effect
+        ctx.lineWidth = stitch.thickness * 0.5;
+        for (let i = 1; i < points.length; i++) {
+          const prev = points[i - 1];
+          const curr = points[i];
+          const next = points[i + 1];
+          
+          if (next) {
+            const cp1x = prev.x + (curr.x - prev.x) / 3;
+            const cp1y = prev.y + (curr.y - prev.y) / 3;
+            const cp2x = curr.x - (next.x - curr.x) / 3;
+            const cp2y = curr.y - (next.y - curr.y) / 3;
+            
+            // Draw parallel lines above and below
+            const offset = stitch.thickness * 0.3;
+            const angle = Math.atan2(curr.y - prev.y, curr.x - prev.x);
+            const perpX = Math.cos(angle + Math.PI/2) * offset;
+            const perpY = Math.sin(angle + Math.PI/2) * offset;
+            
+            ctx.beginPath();
+            ctx.moveTo(prev.x + perpX, prev.y + perpY);
+            ctx.bezierCurveTo(cp1x + perpX, cp1y + perpY, cp2x + perpX, cp2y + perpY, curr.x + perpX, curr.y + perpY);
+            ctx.stroke();
+            
+            ctx.beginPath();
+            ctx.moveTo(prev.x - perpX, prev.y - perpY);
+            ctx.bezierCurveTo(cp1x - perpX, cp1y - perpY, cp2x - perpX, cp2y - perpY, curr.x - perpX, curr.y - perpY);
+            ctx.stroke();
           }
         }
         break;
@@ -1886,26 +1920,34 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
       case 'chain':
         console.log('🧵 CHAIN CASE EXECUTING - drawing chain links');
         // Chain stitch pattern - draw connected oval links
-    for (let i = 0; i < points.length - 1; i++) {
+        for (let i = 0; i < points.length - 1; i++) {
           const curr = points[i];
-      const next = points[i + 1];
+          const next = points[i + 1];
           const midX = (curr.x + next.x) / 2;
           const midY = (curr.y + next.y) / 2;
           
           // Calculate link dimensions
-          const linkWidth = stitch.thickness * 1.5;
-          const linkHeight = stitch.thickness * 0.8;
+          const linkWidth = stitch.thickness * 2.0;
+          const linkHeight = stitch.thickness * 1.2;
           
           // Draw oval chain link
-      ctx.beginPath();
+          ctx.beginPath();
           ctx.ellipse(midX, midY, linkWidth/2, linkHeight/2, 0, 0, Math.PI * 2);
-      ctx.stroke();
-      
+          ctx.stroke();
+          
           // Draw inner oval for chain link hole
-      ctx.beginPath();
+          ctx.beginPath();
           ctx.ellipse(midX, midY, linkWidth/3, linkHeight/3, 0, 0, Math.PI * 2);
-      ctx.stroke();
-    }
+          ctx.stroke();
+          
+          // Add connecting lines between links
+          if (i < points.length - 2) {
+            ctx.beginPath();
+            ctx.moveTo(next.x, next.y);
+            ctx.lineTo(next.x, next.y);
+            ctx.stroke();
+          }
+        }
         break;
 
       case 'backstitch':
@@ -1958,14 +2000,19 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
           const angle = Math.atan2(next.y - curr.y, next.x - curr.x);
           
           // Draw twisted rope effect with multiple ellipses
-          for (let j = 0; j < 3; j++) {
-            const offset = (j - 1) * stitch.thickness * 0.3;
+          for (let j = 0; j < 5; j++) {
+            const offset = (j - 2) * stitch.thickness * 0.4;
             const offsetX = Math.cos(angle + Math.PI/2) * offset;
             const offsetY = Math.sin(angle + Math.PI/2) * offset;
             
             ctx.beginPath();
-            ctx.ellipse(midX + offsetX, midY + offsetY, length / 2, stitch.thickness * 0.8, angle, 0, Math.PI * 2);
+            ctx.ellipse(midX + offsetX, midY + offsetY, length / 2, stitch.thickness * 1.2, angle, 0, Math.PI * 2);
             ctx.fill();
+            
+            // Add stroke for visibility
+            ctx.beginPath();
+            ctx.ellipse(midX + offsetX, midY + offsetY, length / 2, stitch.thickness * 1.2, angle, 0, Math.PI * 2);
+            ctx.stroke();
           }
         }
         break;
@@ -2048,14 +2095,21 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
       case 'seed':
         console.log('🧵 SEED CASE EXECUTING - drawing random dots');
         points.forEach((point, i) => {
-          const size = stitch.thickness * 0.8;
+          const size = stitch.thickness * 1.5;
           // Draw multiple small dots for seed effect
-          for (let j = 0; j < 3; j++) {
-            const offsetX = (Math.random() - 0.5) * size;
-            const offsetY = (Math.random() - 0.5) * size;
+          for (let j = 0; j < 5; j++) {
+            const offsetX = (Math.random() - 0.5) * size * 2;
+            const offsetY = (Math.random() - 0.5) * size * 2;
+            const dotSize = size * (0.2 + Math.random() * 0.3);
+            
             ctx.beginPath();
-            ctx.arc(point.x + offsetX, point.y + offsetY, size * 0.3, 0, Math.PI * 2);
+            ctx.arc(point.x + offsetX, point.y + offsetY, dotSize, 0, Math.PI * 2);
             ctx.fill();
+            
+            // Add stroke for visibility
+            ctx.beginPath();
+            ctx.arc(point.x + offsetX, point.y + offsetY, dotSize, 0, Math.PI * 2);
+            ctx.stroke();
           }
         });
         break;
