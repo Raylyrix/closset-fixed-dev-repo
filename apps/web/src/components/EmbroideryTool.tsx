@@ -193,39 +193,50 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
     ctx.save();
     ctx.globalAlpha = isPreview ? 0.5 : stitch.opacity;
     
-    // Create gradient for more realistic thread appearance
-    const gradient = ctx.createLinearGradient(0, 0, rect.width, rect.height);
-    const baseColor = stitch.color;
-    const darkerColor = adjustBrightness(baseColor, -20);
-    const lighterColor = adjustBrightness(baseColor, 20);
-    
-    gradient.addColorStop(0, lighterColor);
-    gradient.addColorStop(0.5, baseColor);
-    gradient.addColorStop(1, darkerColor);
-    
-    ctx.strokeStyle = gradient;
-    ctx.lineWidth = stitch.thickness;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    
-    // Add shadow for depth
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
-    ctx.shadowBlur = 2;
-    ctx.shadowOffsetX = 1;
-    ctx.shadowOffsetY = 1;
-
     // Convert UV coordinates to canvas coordinates
     const points = stitch.points.map(p => ({
       x: p.x * rect.width,
       y: p.y * rect.height
     }));
 
+    // Create hyperrealistic thread appearance based on stitch type
+    const baseColor = stitch.color;
+    const darkerColor = adjustBrightness(baseColor, -30);
+    const lighterColor = adjustBrightness(baseColor, 30);
+    const highlightColor = adjustBrightness(baseColor, 50);
+    
+    // Set up high-quality rendering
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    
+    // Create dynamic gradient based on stitch direction
+    const startPoint = points[0];
+    const endPoint = points[points.length - 1];
+    const gradient = ctx.createLinearGradient(startPoint.x, startPoint.y, endPoint.x, endPoint.y);
+    
+    gradient.addColorStop(0, lighterColor);
+    gradient.addColorStop(0.3, baseColor);
+    gradient.addColorStop(0.7, baseColor);
+    gradient.addColorStop(1, darkerColor);
+    
+    ctx.strokeStyle = gradient;
+    ctx.lineWidth = stitch.thickness;
+    
+    // Add realistic shadow based on lighting direction
+    const shadowIntensity = lightingDirection === 'top' ? 0.2 : lightingDirection === 'bottom' ? 0.4 : 0.3;
+    ctx.shadowColor = `rgba(0, 0, 0, ${shadowIntensity})`;
+    ctx.shadowBlur = Math.max(2, stitch.thickness * 0.5);
+    ctx.shadowOffsetX = lightingDirection === 'left' ? 2 : lightingDirection === 'right' ? -2 : 1;
+    ctx.shadowOffsetY = lightingDirection === 'top' ? 2 : lightingDirection === 'bottom' ? -2 : 1;
+
     ctx.beginPath();
     ctx.moveTo(points[0].x, points[0].y);
 
     switch (stitch.type) {
       case 'satin':
-        // Smooth curve for satin stitch
+        // Smooth curve for satin stitch with hyperrealistic rendering
         for (let i = 1; i < points.length; i++) {
           const prev = points[i - 1];
           const curr = points[i];
@@ -241,70 +252,133 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
             ctx.lineTo(curr.x, curr.y);
           }
         }
+        ctx.stroke();
+        
+        // Add satin-specific highlights for 3D effect
+        ctx.strokeStyle = adjustBrightness(stitch.color, 30);
+        ctx.lineWidth = stitch.thickness * 0.3;
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+        
+        ctx.beginPath();
+        ctx.moveTo(points[0].x, points[0].y);
+        for (let i = 1; i < points.length; i++) {
+          const prev = points[i - 1];
+          const curr = points[i];
+          const next = points[i + 1];
+          
+          if (next) {
+            const cp1x = prev.x + (curr.x - prev.x) / 3;
+            const cp1y = prev.y + (curr.y - prev.y) / 3;
+            const cp2x = curr.x - (next.x - curr.x) / 3;
+            const cp2y = curr.y - (next.y - curr.y) / 3;
+            ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, curr.x, curr.y);
+          } else {
+            ctx.lineTo(curr.x, curr.y);
+          }
+        }
+        ctx.stroke();
         break;
 
       case 'fill':
         // Fill area with parallel lines and alternating direction for realistic fill
         const minY = Math.min(...points.map(p => p.y));
         const maxY = Math.max(...points.map(p => p.y));
-        const lineSpacing = stitch.thickness * 1.5;
+        const lineSpacing = stitch.thickness * 1.2;
         
+        // Create fill pattern with realistic thread texture
         for (let y = minY; y <= maxY; y += lineSpacing) {
           const intersections = getLineIntersections(points, y);
           for (let i = 0; i < intersections.length; i += 2) {
             const startX = intersections[i];
             const endX = intersections[i + 1] || intersections[i];
             
+            // Create individual line gradient for each fill line
+            const lineGradient = ctx.createLinearGradient(startX, y, endX, y);
+            lineGradient.addColorStop(0, adjustBrightness(baseColor, -10));
+            lineGradient.addColorStop(0.5, baseColor);
+            lineGradient.addColorStop(1, adjustBrightness(baseColor, -10));
+            
+            ctx.strokeStyle = lineGradient;
+            ctx.lineWidth = stitch.thickness * 0.8;
+            
             // Alternate line direction for more realistic fill
             if (Math.floor((y - minY) / lineSpacing) % 2 === 0) {
-      ctx.beginPath();
+              ctx.beginPath();
               ctx.moveTo(startX, y);
               ctx.lineTo(endX, y);
-      ctx.stroke();
+              ctx.stroke();
             } else {
-      ctx.beginPath();
+              ctx.beginPath();
               ctx.moveTo(endX, y);
               ctx.lineTo(startX, y);
-      ctx.stroke();
-    }
+              ctx.stroke();
+            }
           }
         }
         break;
 
       case 'cross-stitch':
-        // Draw X pattern with proper cross-stitch appearance
+        // Draw X pattern with hyperrealistic cross-stitch appearance
         points.forEach((point, i) => {
           if (i % 2 === 0 && points[i + 1]) {
             const next = points[i + 1];
-            const size = stitch.thickness * 1.5;
+            const size = stitch.thickness * 1.8;
             
-            // Draw the X pattern
-      ctx.beginPath();
+            // Create cross-stitch specific gradient
+            const crossGradient = ctx.createRadialGradient(point.x, point.y, 0, point.x, point.y, size);
+            crossGradient.addColorStop(0, highlightColor);
+            crossGradient.addColorStop(0.7, baseColor);
+            crossGradient.addColorStop(1, darkerColor);
+            
+            ctx.strokeStyle = crossGradient;
+            ctx.lineWidth = stitch.thickness * 0.6;
+            ctx.shadowBlur = 1;
+            ctx.shadowOffsetX = 0.5;
+            ctx.shadowOffsetY = 0.5;
+            
+            // Draw the X pattern with enhanced rendering
+            ctx.beginPath();
             ctx.moveTo(point.x - size, point.y - size);
             ctx.lineTo(point.x + size, point.y + size);
             ctx.moveTo(point.x - size, point.y + size);
             ctx.lineTo(point.x + size, point.y - size);
-      ctx.stroke();
+            ctx.stroke();
             
-            // Add small dots at the corners for more realistic appearance
+            // Add realistic corner dots with 3D effect
+            ctx.fillStyle = baseColor;
+            ctx.shadowBlur = 0;
+            ctx.shadowOffsetX = 0;
+            ctx.shadowOffsetY = 0;
+            
+            const dotSize = stitch.thickness * 0.3;
             ctx.beginPath();
-            ctx.arc(point.x - size, point.y - size, 1, 0, Math.PI * 2);
+            ctx.arc(point.x - size, point.y - size, dotSize, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Add highlight to corner dots
+            ctx.fillStyle = highlightColor;
+            ctx.beginPath();
+            ctx.arc(point.x - size - dotSize * 0.3, point.y - size - dotSize * 0.3, dotSize * 0.4, 0, Math.PI * 2);
+            ctx.fill();
+            
+            ctx.fillStyle = baseColor;
+            ctx.beginPath();
+            ctx.arc(point.x + size, point.y + size, dotSize, 0, Math.PI * 2);
             ctx.fill();
             ctx.beginPath();
-            ctx.arc(point.x + size, point.y + size, 1, 0, Math.PI * 2);
+            ctx.arc(point.x - size, point.y + size, dotSize, 0, Math.PI * 2);
             ctx.fill();
             ctx.beginPath();
-            ctx.arc(point.x - size, point.y + size, 1, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.beginPath();
-            ctx.arc(point.x + size, point.y - size, 1, 0, Math.PI * 2);
+            ctx.arc(point.x + size, point.y - size, dotSize, 0, Math.PI * 2);
             ctx.fill();
           }
         });
         break;
 
       case 'chain':
-        // Chain stitch pattern - draw connected oval links
+        // Chain stitch pattern - draw connected oval links with hyperrealistic rendering
         for (let i = 0; i < points.length - 1; i++) {
           const curr = points[i];
           const next = points[i + 1];
@@ -312,15 +386,33 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
           const midY = (curr.y + next.y) / 2;
           
           // Calculate link dimensions
-          const linkWidth = stitch.thickness * 1.5;
-          const linkHeight = stitch.thickness * 0.8;
+          const linkWidth = stitch.thickness * 2.0;
+          const linkHeight = stitch.thickness * 1.2;
           
-          // Draw outer chain link with gradient
+          // Create chain-specific gradient
+          const chainGradient = ctx.createRadialGradient(midX, midY, 0, midX, midY, linkWidth/2);
+          chainGradient.addColorStop(0, highlightColor);
+          chainGradient.addColorStop(0.6, baseColor);
+          chainGradient.addColorStop(1, darkerColor);
+          
+          ctx.strokeStyle = chainGradient;
+          ctx.lineWidth = stitch.thickness * 0.8;
+          ctx.shadowBlur = 2;
+          ctx.shadowOffsetX = 1;
+          ctx.shadowOffsetY = 1;
+          
+          // Draw outer chain link with enhanced rendering
           ctx.beginPath();
           ctx.ellipse(midX, midY, linkWidth/2, linkHeight/2, 0, 0, Math.PI * 2);
           ctx.stroke();
           
-          // Draw inner oval for chain link hole
+          // Draw inner oval for chain link hole with darker color
+          ctx.strokeStyle = darkerColor;
+          ctx.lineWidth = stitch.thickness * 0.4;
+          ctx.shadowBlur = 0;
+          ctx.shadowOffsetX = 0;
+          ctx.shadowOffsetY = 0;
+          
           ctx.beginPath();
           ctx.ellipse(midX, midY, linkWidth/3, linkHeight/3, 0, 0, Math.PI * 2);
           ctx.stroke();
@@ -330,6 +422,12 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
             const nextNext = points[i + 2];
             const nextMidX = (next.x + nextNext.x) / 2;
             const nextMidY = (next.y + nextNext.y) / 2;
+            
+            ctx.strokeStyle = baseColor;
+            ctx.lineWidth = stitch.thickness * 0.6;
+            ctx.shadowBlur = 1;
+            ctx.shadowOffsetX = 0.5;
+            ctx.shadowOffsetY = 0.5;
             
             ctx.beginPath();
             ctx.moveTo(midX + linkWidth/2, midY);
@@ -356,6 +454,7 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
         for (let i = 1; i < points.length; i++) {
           ctx.lineTo(points[i].x, points[i].y);
         }
+        ctx.stroke();
         break;
 
       case 'french-knot':
@@ -716,14 +815,85 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
         }
         break;
 
+      case 'appliqué':
+        // Appliqué stitch - decorative edge stitching
+        for (let i = 0; i < points.length - 1; i++) {
+          const start = points[i];
+          const end = points[i + 1];
+          
+          // Draw decorative zigzag pattern
+          const midX = (start.x + end.x) / 2;
+          const midY = (start.y + end.y) / 2;
+          const offset = stitch.thickness * 0.5;
+          
+          ctx.beginPath();
+          ctx.moveTo(start.x, start.y);
+          ctx.lineTo(midX + offset, midY - offset);
+          ctx.lineTo(end.x, end.y);
+          ctx.stroke();
+          
+          // Add decorative dots
+          ctx.fillStyle = stitch.color;
+          ctx.beginPath();
+          ctx.arc(midX + offset, midY - offset, stitch.thickness * 0.2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        break;
+
+      case 'satin-ribbon':
+        // Satin ribbon stitch - wide satin with ribbon effect
+        for (let i = 1; i < points.length; i++) {
+          const prev = points[i - 1];
+          const curr = points[i];
+          const next = points[i + 1];
+          
+          if (next) {
+            const cp1x = prev.x + (curr.x - prev.x) / 3;
+            const cp1y = prev.y + (curr.y - prev.y) / 3;
+            const cp2x = curr.x - (next.x - curr.x) / 3;
+            const cp2y = curr.y - (next.y - curr.y) / 3;
+            ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, curr.x, curr.y);
+          } else {
+            ctx.lineTo(curr.x, curr.y);
+          }
+        }
+        ctx.stroke();
+        
+        // Add ribbon-like highlights
+        ctx.strokeStyle = adjustBrightness(stitch.color, 40);
+        ctx.lineWidth = stitch.thickness * 0.2;
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+        
+        ctx.beginPath();
+        ctx.moveTo(points[0].x, points[0].y);
+        for (let i = 1; i < points.length; i++) {
+          const prev = points[i - 1];
+          const curr = points[i];
+          const next = points[i + 1];
+          
+          if (next) {
+            const cp1x = prev.x + (curr.x - prev.x) / 3;
+            const cp1y = prev.y + (curr.y - prev.y) / 3;
+            const cp2x = curr.x - (next.x - curr.x) / 3;
+            const cp2y = curr.y - (next.y - curr.y) / 3;
+            ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, curr.x, curr.y);
+          } else {
+            ctx.lineTo(curr.x, curr.y);
+          }
+        }
+        ctx.stroke();
+        break;
+
       default:
         // Default line drawing for unknown types
         for (let i = 1; i < points.length; i++) {
           ctx.lineTo(points[i].x, points[i].y);
         }
+        ctx.stroke();
     }
 
-    ctx.stroke();
     // Reset composite operation
     ctx.globalCompositeOperation = 'source-over';
     ctx.restore();
