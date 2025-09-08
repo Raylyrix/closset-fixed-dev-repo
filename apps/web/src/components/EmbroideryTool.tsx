@@ -114,14 +114,22 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
   // Initialize canvas
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas) {
+      console.warn('⚠️ CANVAS REF NOT FOUND: Cannot initialize canvas');
+      return;
+    }
+
+    console.log('🎨 INITIALIZING CANVAS with high-quality rendering');
 
     const ctx = canvas.getContext('2d', { 
       willReadFrequently: true, 
       alpha: true, 
       desynchronized: false 
     });
-    if (!ctx) return;
+    if (!ctx) {
+      console.error('❌ CANVAS CONTEXT FAILED: Cannot get 2D context');
+      return;
+    }
 
     // Set canvas size with high DPI
     const rect = canvas.getBoundingClientRect();
@@ -129,6 +137,8 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
     canvas.width = rect.width * dpr;
     canvas.height = rect.height * dpr;
     ctx.scale(dpr, dpr);
+
+    console.log(`🎨 Canvas initialized: ${rect.width}x${rect.height} (DPR: ${dpr})`);
 
     // Enable high-quality rendering
     ctx.imageSmoothingEnabled = true;
@@ -144,10 +154,18 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
   const drawStitches = () => {
     const startTime = performance.now();
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas) {
+      console.warn('⚠️ CANVAS NOT FOUND: Cannot draw stitches');
+      return;
+    }
 
     const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    if (!ctx) {
+      console.warn('⚠️ CONTEXT NOT FOUND: Cannot get 2D context');
+      return;
+    }
+
+    console.log(`🎨 DRAWING ALL STITCHES: ${embroideryStitches.length} stitches + ${currentStitch ? '1 current' : '0 current'}`);
 
     // Enable high-quality rendering
     ctx.imageSmoothingEnabled = true;
@@ -160,22 +178,29 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
 
     // Draw all stitches with error handling
     if (Array.isArray(embroideryStitches)) {
+      console.log(`📝 Drawing ${embroideryStitches.length} existing stitches`);
       embroideryStitches.forEach((stitch, index) => {
         try {
+          console.log(`📝 Drawing stitch ${index + 1}/${embroideryStitches.length}: ${stitch.type}`);
           drawStitch(ctx, stitch, rect);
         } catch (error) {
-          console.error(`Error drawing stitch ${index}:`, error);
+          console.error(`❌ Error drawing stitch ${index}:`, error);
         }
       });
+    } else {
+      console.warn('⚠️ EMBROIDERY STITCHES IS NOT ARRAY:', embroideryStitches);
     }
 
     // Draw current stitch preview with error handling
     if (currentStitch) {
       try {
+        console.log(`👁️ Drawing current stitch preview: ${currentStitch.type} with ${currentStitch.points.length} points`);
         drawStitch(ctx, currentStitch, rect, true);
       } catch (error) {
-        console.error('Error drawing current stitch:', error);
+        console.error('❌ Error drawing current stitch:', error);
       }
+    } else {
+      console.log('👁️ No current stitch to preview');
     }
     
     // Update performance stats
@@ -188,7 +213,20 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
   };
 
   const drawStitch = (ctx: CanvasRenderingContext2D, stitch: EmbroideryStitch, rect: DOMRect, isPreview = false) => {
-    if (stitch.points.length < 2) return;
+    console.log(`🎨 DRAWING STITCH:`, {
+      type: stitch.type,
+      points: stitch.points.length,
+      color: stitch.color,
+      thickness: stitch.thickness,
+      opacity: stitch.opacity,
+      isPreview,
+      rect: { width: rect.width, height: rect.height }
+    });
+
+    if (stitch.points.length < 2) {
+      console.warn(`⚠️ STITCH SKIPPED: Not enough points (${stitch.points.length})`);
+      return;
+    }
 
     ctx.save();
     ctx.globalAlpha = isPreview ? 0.5 : stitch.opacity;
@@ -234,8 +272,10 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
     ctx.beginPath();
     ctx.moveTo(points[0].x, points[0].y);
 
+    console.log(`🔀 SWITCHING TO STITCH TYPE: ${stitch.type}`);
     switch (stitch.type) {
       case 'satin':
+        console.log(`🧵 RENDERING SATIN STITCH with ${points.length} points`);
         // Smooth curve for satin stitch with hyperrealistic rendering
         for (let i = 1; i < points.length; i++) {
           const prev = points[i - 1];
@@ -282,10 +322,12 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
         break;
 
       case 'fill':
+        console.log(`🟦 RENDERING FILL STITCH with ${points.length} points`);
         // Fill area with parallel lines and alternating direction for realistic fill
         const minY = Math.min(...points.map(p => p.y));
         const maxY = Math.max(...points.map(p => p.y));
         const lineSpacing = stitch.thickness * 1.2;
+        console.log(`🟦 Fill bounds: Y=${minY.toFixed(1)} to ${maxY.toFixed(1)}, spacing=${lineSpacing.toFixed(1)}`);
         
         // Create fill pattern with realistic thread texture
         for (let y = minY; y <= maxY; y += lineSpacing) {
@@ -320,6 +362,7 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
         break;
 
       case 'cross-stitch':
+        console.log(`❌ RENDERING CROSS-STITCH with ${points.length} points`);
         // Draw X pattern with hyperrealistic cross-stitch appearance
         points.forEach((point, i) => {
           if (i % 2 === 0 && points[i + 1]) {
@@ -378,6 +421,7 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
         break;
 
       case 'chain':
+        console.log(`⛓️ RENDERING CHAIN STITCH with ${points.length} points`);
         // Chain stitch pattern - draw connected oval links with hyperrealistic rendering
         for (let i = 0; i < points.length - 1; i++) {
           const curr = points[i];
@@ -887,16 +931,20 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
         break;
 
       default:
+        console.warn(`⚠️ UNKNOWN STITCH TYPE: ${stitch.type} - Using default line drawing`);
         // Default line drawing for unknown types
         for (let i = 1; i < points.length; i++) {
           ctx.lineTo(points[i].x, points[i].y);
         }
+        console.log(`📏 Drawing default line with ${points.length} points`);
         ctx.stroke();
     }
 
     // Reset composite operation
     ctx.globalCompositeOperation = 'source-over';
     ctx.restore();
+    
+    console.log(`✅ STITCH RENDERED: ${stitch.type} completed successfully`);
   };
 
   const getLineIntersections = (points: { x: number; y: number }[], y: number): number[] => {
@@ -1201,6 +1249,8 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
     const x = (e.clientX - rect.left) / rect.width;
     const y = (e.clientY - rect.top) / rect.height;
 
+    console.log(`🖱️ MOUSE DOWN: Starting ${embroideryStitchType} stitch at (${x.toFixed(3)}, ${y.toFixed(3)})`);
+    
     setIsDrawing(true);
     setCurrentStitch({
       id: `stitch_${Date.now()}`,
@@ -1269,6 +1319,8 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
   const handleMouseUp = () => {
     if (!isDrawing || !currentStitch) return;
 
+    console.log(`🖱️ MOUSE UP: Completing ${currentStitch.type} stitch with ${currentStitch.points.length} points`);
+
     try {
       setIsDrawing(false);
       
@@ -1277,6 +1329,8 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
       
       // Add the completed stitch
       setEmbroideryStitches([...embroideryStitches, currentStitch]);
+      console.log(`✅ STITCH ADDED: Total stitches now: ${embroideryStitches.length + 1}`);
+      
       setCurrentStitch(null);
       
       // Redraw all stitches to make them persistent
@@ -1787,8 +1841,9 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
         <select
             value={embroideryStitchType}
             onChange={(e) => {
-              console.log('🧵 Stitch type changed to:', e.target.value);
-              setEmbroideryStitchType(e.target.value as any);
+              const newType = e.target.value;
+              console.log(`🔄 STITCH TYPE CHANGED: ${embroideryStitchType} → ${newType}`);
+              setEmbroideryStitchType(newType as any);
             }}
             style={{
               width: '100%',
@@ -2270,7 +2325,11 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
             {advancedStitchTypes.slice(6).map((stitchType) => (
               <button
                 key={stitchType}
-                onClick={() => setSelectedAdvancedStitch(stitchType)}
+                onClick={() => {
+                  console.log(`🚀 ADVANCED STITCH SELECTED: ${stitchType}`);
+                  setSelectedAdvancedStitch(stitchType);
+                  setEmbroideryStitchType(stitchType as any);
+                }}
                 style={{
                   padding: '6px 8px',
                   fontSize: '10px',
