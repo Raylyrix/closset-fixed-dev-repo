@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../App';
 import { embroideryAI, type EmbroideryStitch, type EmbroideryPattern } from '../services/embroideryService';
+import { embroideryBackend, type EmbroideryPlan, type GenerateFromPointsRequest } from '../services/embroideryBackendService';
 import * as THREE from 'three';
 
 interface EmbroideryToolProps {
@@ -44,6 +45,13 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
   const [selectedPattern, setSelectedPattern] = useState<string | null>(null);
   const [stitchDirection, setStitchDirection] = useState<'horizontal' | 'vertical' | 'diagonal' | 'radial'>('horizontal');
   const [stitchSpacing, setStitchSpacing] = useState(0.5);
+  
+  // Backend integration state
+  const [backendConnected, setBackendConnected] = useState(false);
+  const [backendHealth, setBackendHealth] = useState<any>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportFormat, setExportFormat] = useState<'dst' | 'pes' | 'exp'>('dst');
+  const [showExportOptions, setShowExportOptions] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -324,6 +332,99 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
     const g = Math.max(0, Math.min(255, parseInt(hex.substr(2, 2), 16) + amount));
     const b = Math.max(0, Math.min(255, parseInt(hex.substr(4, 2), 16) + amount));
     return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+  };
+
+  // Backend integration functions
+  const checkBackendConnection = async () => {
+    try {
+      const health = await embroideryBackend.checkHealth();
+      const inkStitchHealth = await embroideryBackend.checkInkStitchHealth();
+      setBackendConnected(health);
+      setBackendHealth(inkStitchHealth);
+      console.log('Backend connection status:', health);
+      console.log('InkStitch health:', inkStitchHealth);
+    } catch (error) {
+      console.error('Failed to connect to backend:', error);
+      setBackendConnected(false);
+      setBackendHealth(null);
+    }
+  };
+
+  const generateProfessionalStitches = async (stitches: EmbroideryStitch[]) => {
+    if (!backendConnected) {
+      console.warn('Backend not connected, using local rendering only');
+      return;
+    }
+
+    try {
+      // Convert stitches to backend format
+      const backendPoints = embroideryBackend.convertStitchesToBackendFormat(stitches);
+      
+      // Create request for professional stitch generation
+      const request: GenerateFromPointsRequest = {
+        points: stitches.flatMap(s => s.points),
+        canvas_width: 800,
+        canvas_height: 600,
+        strategy: 'satin', // Use satin for professional look
+        density: stitchDensity,
+        width_mm: embroideryThickness * 0.1, // Convert thickness to mm
+        passes: 2,
+        stitch_len_mm: 2.5,
+        mm_per_px: 0.26
+      };
+
+      const plan = await embroideryBackend.generateFromPoints(request);
+      
+      // Convert back to frontend format and update stitches
+      const professionalStitches = embroideryBackend.convertBackendToFrontendFormat(plan);
+      setEmbroideryStitches(professionalStitches);
+      
+      console.log('Generated professional stitches:', professionalStitches.length);
+    } catch (error) {
+      console.error('Failed to generate professional stitches:', error);
+    }
+  };
+
+  const exportEmbroideryFile = async () => {
+    if (!backendConnected) {
+      alert('Backend service not available. Please start the AI service.');
+      return;
+    }
+
+    if (embroideryStitches.length === 0) {
+      alert('No stitches to export. Please create some embroidery first.');
+      return;
+    }
+
+    setIsExporting(true);
+    try {
+      const backendPoints = embroideryBackend.convertStitchesToBackendFormat(embroideryStitches);
+      const exportData = await embroideryBackend.exportFromPoints(backendPoints, exportFormat);
+      embroideryBackend.downloadFile(exportData);
+      console.log(`Exported embroidery file: ${exportData.filename}`);
+    } catch (error) {
+      console.error('Failed to export embroidery file:', error);
+      alert('Failed to export embroidery file. Please try again.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const importEmbroideryFile = async (file: File) => {
+    if (!backendConnected) {
+      alert('Backend service not available. Please start the AI service.');
+      return;
+    }
+
+    try {
+      const plan = await embroideryBackend.parseMachineFile(file);
+      const importedStitches = embroideryBackend.convertBackendToFrontendFormat(plan);
+      setEmbroideryStitches(importedStitches);
+      console.log('Imported embroidery file:', importedStitches.length, 'stitches');
+    } catch (error) {
+      console.error('Failed to import embroidery file:', error);
+      alert('Failed to import embroidery file. Please check the file format.');
+    }
   };
 
   // Handle mouse events
@@ -690,6 +791,11 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
   useEffect(() => {
     console.log('🧵 Current stitch type:', embroideryStitchType);
   }, [embroideryStitchType]);
+
+  // Check backend connection on mount
+  useEffect(() => {
+    checkBackendConnection();
+  }, []);
 
   return (
     <div className="embroidery-sidebar" style={{
@@ -1301,6 +1407,162 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
           textAlign: 'center'
         }}>
           Click and drag to draw embroidery stitches
+        </div>
+      </div>
+
+      {/* Backend Integration Controls */}
+      <div className="control-group" style={{
+        background: 'rgba(34, 197, 94, 0.1)',
+        padding: '12px',
+        borderRadius: '8px',
+        border: '1px solid rgba(34, 197, 94, 0.3)',
+        marginBottom: '12px'
+      }}>
+        <label style={{ 
+          display: 'block', 
+          marginBottom: '8px', 
+          fontWeight: '500',
+          color: '#22C55E'
+        }}>Backend Integration</label>
+        
+        {/* Connection Status */}
+        <div style={{ marginBottom: '8px', fontSize: '12px' }}>
+          <span style={{ color: backendConnected ? '#22C55E' : '#EF4444' }}>
+            {backendConnected ? '🟢 Connected' : '🔴 Disconnected'}
+          </span>
+          {backendHealth && (
+            <div style={{ marginTop: '4px', fontSize: '10px', color: '#94A3B8' }}>
+              InkStitch: {backendHealth.inkscape?.found ? '✅' : '❌'}
+              PyEmbroidery: {backendHealth.pyembroidery ? '✅' : '❌'}
+            </div>
+          )}
+        </div>
+
+        {/* Export Options */}
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+          <button
+            onClick={() => setShowExportOptions(!showExportOptions)}
+            style={{
+              flex: 1,
+              padding: '6px 8px',
+              borderRadius: '4px',
+              border: '1px solid #475569',
+              background: '#1E293B',
+              color: '#E2E8F0',
+              cursor: 'pointer',
+              fontSize: '12px'
+            }}
+          >
+            Export Options
+          </button>
+          <button
+            onClick={checkBackendConnection}
+            style={{
+              padding: '6px 8px',
+              borderRadius: '4px',
+              border: '1px solid #475569',
+              background: '#1E293B',
+              color: '#E2E8F0',
+              cursor: 'pointer',
+              fontSize: '12px'
+            }}
+          >
+            🔄
+          </button>
+        </div>
+
+        {/* Export Format Selection */}
+        {showExportOptions && (
+          <div style={{ marginBottom: '8px' }}>
+            <label style={{ fontSize: '11px', color: '#94A3B8', marginBottom: '4px', display: 'block' }}>
+              Format:
+            </label>
+            <select
+              value={exportFormat}
+              onChange={(e) => setExportFormat(e.target.value as 'dst' | 'pes' | 'exp')}
+              style={{
+                width: '100%',
+                padding: '4px 6px',
+                borderRadius: '4px',
+                border: '1px solid #475569',
+                background: '#1E293B',
+                color: '#E2E8F0',
+                fontSize: '11px'
+              }}
+            >
+              <option value="dst">DST (Tajima)</option>
+              <option value="pes">PES (Brother)</option>
+              <option value="exp">EXP (Melco)</option>
+            </select>
+          </div>
+        )}
+
+        {/* Action Buttons */}
+        <div style={{ display: 'flex', gap: '4px' }}>
+          <button
+            onClick={exportEmbroideryFile}
+            disabled={!backendConnected || isExporting || embroideryStitches.length === 0}
+            style={{
+              flex: 1,
+              padding: '6px 8px',
+              borderRadius: '4px',
+              border: '1px solid #475569',
+              background: backendConnected && embroideryStitches.length > 0 ? '#22C55E' : '#374151',
+              color: '#FFFFFF',
+              cursor: backendConnected && embroideryStitches.length > 0 ? 'pointer' : 'not-allowed',
+              fontSize: '11px',
+              opacity: backendConnected && embroideryStitches.length > 0 ? 1 : 0.5
+            }}
+          >
+            {isExporting ? 'Exporting...' : 'Export File'}
+          </button>
+          <button
+            onClick={() => generateProfessionalStitches(embroideryStitches)}
+            disabled={!backendConnected || embroideryStitches.length === 0}
+            style={{
+              flex: 1,
+              padding: '6px 8px',
+              borderRadius: '4px',
+              border: '1px solid #475569',
+              background: backendConnected && embroideryStitches.length > 0 ? '#3B82F6' : '#374151',
+              color: '#FFFFFF',
+              cursor: backendConnected && embroideryStitches.length > 0 ? 'pointer' : 'not-allowed',
+              fontSize: '11px',
+              opacity: backendConnected && embroideryStitches.length > 0 ? 1 : 0.5
+            }}
+          >
+            Optimize
+          </button>
+        </div>
+
+        {/* File Import */}
+        <div style={{ marginTop: '8px' }}>
+          <input
+            type="file"
+            accept=".dst,.pes,.exp,.jef,.vp3"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) importEmbroideryFile(file);
+            }}
+            style={{ display: 'none' }}
+            id="import-embroidery"
+          />
+          <label
+            htmlFor="import-embroidery"
+            style={{
+              display: 'block',
+              padding: '6px 8px',
+              borderRadius: '4px',
+              border: '1px solid #475569',
+              background: '#1E293B',
+              color: '#E2E8F0',
+              cursor: 'pointer',
+              fontSize: '11px',
+              textAlign: 'center'
+            }}
+          >
+            Import File
+          </label>
         </div>
       </div>
 
