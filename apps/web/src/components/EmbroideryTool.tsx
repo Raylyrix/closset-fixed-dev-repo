@@ -1933,26 +1933,40 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
       case 'french-knot':
         console.log('🧵 FRENCH-KNOT CASE EXECUTING - drawing circular knots');
         points.forEach((point, i) => {
-          const size = stitch.thickness * 2;
+          const size = stitch.thickness * 3;
+          // Draw multiple concentric circles for realistic knot
           ctx.beginPath();
           ctx.arc(point.x, point.y, size, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(point.x, point.y, size * 0.7, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(point.x, point.y, size * 0.3, 0, Math.PI * 2);
           ctx.fill();
         });
         break;
 
       case 'bullion':
         console.log('🧵 BULLION CASE EXECUTING - drawing twisted rope');
-    for (let i = 0; i < points.length - 1; i++) {
+        for (let i = 0; i < points.length - 1; i++) {
           const curr = points[i];
-      const next = points[i + 1];
+          const next = points[i + 1];
           const midX = (curr.x + next.x) / 2;
           const midY = (curr.y + next.y) / 2;
           const length = Math.sqrt((next.x - curr.x) ** 2 + (next.y - curr.y) ** 2);
           const angle = Math.atan2(next.y - curr.y, next.x - curr.x);
           
-          ctx.beginPath();
-          ctx.ellipse(midX, midY, length / 2, stitch.thickness, angle, 0, Math.PI * 2);
-          ctx.fill();
+          // Draw twisted rope effect with multiple ellipses
+          for (let j = 0; j < 3; j++) {
+            const offset = (j - 1) * stitch.thickness * 0.3;
+            const offsetX = Math.cos(angle + Math.PI/2) * offset;
+            const offsetY = Math.sin(angle + Math.PI/2) * offset;
+            
+            ctx.beginPath();
+            ctx.ellipse(midX + offsetX, midY + offsetY, length / 2, stitch.thickness * 0.8, angle, 0, Math.PI * 2);
+            ctx.fill();
+          }
         }
         break;
 
@@ -1961,10 +1975,16 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
         points.forEach((point, i) => {
           if (i % 2 === 0 && points[i + 1]) {
             const next = points[i + 1];
-            const size = stitch.thickness * 1.5;
-      ctx.beginPath();
-            ctx.ellipse(point.x, point.y, size, size * 0.6, 0, 0, Math.PI * 2);
-      ctx.fill();
+            const size = stitch.thickness * 2;
+            const angle = Math.atan2(next.y - point.y, next.x - point.x);
+            
+            // Draw petal shape with multiple ellipses
+            ctx.beginPath();
+            ctx.ellipse(point.x, point.y, size, size * 0.4, angle, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.ellipse(point.x, point.y, size * 0.6, size * 0.2, angle, 0, Math.PI * 2);
+            ctx.stroke();
           }
         });
         break;
@@ -1975,33 +1995,68 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
           if (points[i + 1]) {
             const curr = points[i];
             const next = points[i + 1];
-      ctx.beginPath();
+            const midX = (curr.x + next.x) / 2;
+            const midY = (curr.y + next.y) / 2;
+            
+            // Draw zigzag pattern with multiple lines
+            ctx.beginPath();
             ctx.moveTo(curr.x, curr.y);
-      ctx.lineTo(next.x, next.y);
-      ctx.stroke();
-    }
+            ctx.lineTo(midX, midY + stitch.thickness);
+            ctx.lineTo(next.x, next.y);
+            ctx.stroke();
+            
+            ctx.beginPath();
+            ctx.moveTo(curr.x, curr.y);
+            ctx.lineTo(midX, midY - stitch.thickness);
+            ctx.lineTo(next.x, next.y);
+            ctx.stroke();
+          }
         }
         break;
 
       case 'couching':
         console.log('🧵 COUCHING CASE EXECUTING - drawing decorative overlay');
-    for (let i = 0; i < points.length - 1; i++) {
+        for (let i = 0; i < points.length - 1; i++) {
           const curr = points[i];
-      const next = points[i + 1];
-      ctx.beginPath();
+          const next = points[i + 1];
+          
+          // Draw main thread
+          ctx.beginPath();
           ctx.moveTo(curr.x, curr.y);
-      ctx.lineTo(next.x, next.y);
-      ctx.stroke();
+          ctx.lineTo(next.x, next.y);
+          ctx.stroke();
+          
+          // Draw couching stitches perpendicular to main thread
+          const angle = Math.atan2(next.y - curr.y, next.x - curr.x);
+          const perpAngle = angle + Math.PI/2;
+          const spacing = stitch.thickness * 2;
+          
+          for (let j = 0; j < 3; j++) {
+            const t = (j + 1) / 4;
+            const x = curr.x + (next.x - curr.x) * t;
+            const y = curr.y + (next.y - curr.y) * t;
+            const offset = (j - 1) * spacing;
+            
+            ctx.beginPath();
+            ctx.moveTo(x + Math.cos(perpAngle) * offset, y + Math.sin(perpAngle) * offset);
+            ctx.lineTo(x - Math.cos(perpAngle) * offset, y - Math.sin(perpAngle) * offset);
+            ctx.stroke();
+          }
         }
         break;
 
       case 'seed':
         console.log('🧵 SEED CASE EXECUTING - drawing random dots');
         points.forEach((point, i) => {
-          const size = stitch.thickness * 0.5;
-          ctx.beginPath();
-          ctx.arc(point.x, point.y, size, 0, Math.PI * 2);
-          ctx.fill();
+          const size = stitch.thickness * 0.8;
+          // Draw multiple small dots for seed effect
+          for (let j = 0; j < 3; j++) {
+            const offsetX = (Math.random() - 0.5) * size;
+            const offsetY = (Math.random() - 0.5) * size;
+            ctx.beginPath();
+            ctx.arc(point.x + offsetX, point.y + offsetY, size * 0.3, 0, Math.PI * 2);
+            ctx.fill();
+          }
         });
         break;
 
@@ -2072,8 +2127,12 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
             const curr = points[i];
             const next = points[i + 1];
             const width = Math.abs(next.x - curr.x);
-            const height = stitch.thickness;
-            ctx.fillRect(curr.x, curr.y - height / 2, width, height);
+            const height = stitch.thickness * 2;
+            const offset = (i / 2) % 2 === 0 ? 0 : height / 2;
+            
+            // Draw brick with offset pattern
+            ctx.fillRect(curr.x, curr.y - height / 2 + offset, width, height);
+            ctx.strokeRect(curr.x, curr.y - height / 2 + offset, width, height);
           }
         }
         break;
@@ -2085,11 +2144,24 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
             const curr = points[i];
             const left = points[i + 1];
             const right = points[i + 2];
+            
+            // Draw fishbone pattern with multiple V shapes
             ctx.beginPath();
             ctx.moveTo(curr.x, curr.y);
             ctx.lineTo(left.x, left.y);
             ctx.moveTo(curr.x, curr.y);
             ctx.lineTo(right.x, right.y);
+            ctx.stroke();
+            
+            // Add center line
+            const midLeftX = (curr.x + left.x) / 2;
+            const midLeftY = (curr.y + left.y) / 2;
+            const midRightX = (curr.x + right.x) / 2;
+            const midRightY = (curr.y + right.y) / 2;
+            
+            ctx.beginPath();
+            ctx.moveTo(midLeftX, midLeftY);
+            ctx.lineTo(midRightX, midRightY);
             ctx.stroke();
           }
         }
