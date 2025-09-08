@@ -1,0 +1,10 @@
+fastapi==0.115.0
+uvicorn==0.30.6
+Pillow==10.4.0
+torch==2.4.1; platform_system != 'Windows' or platform_machine != 'ARM64'
+numpy==2.1.1
+pyembroidery==1.4.30
+python-multipart==0.0.9
+svgpathtools==1.6.1
+
+

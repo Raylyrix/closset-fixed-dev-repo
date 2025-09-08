@@ -1,0 +1,14 @@
+{
+  "appId": "com.closset.app",
+  "productName": "Closset",
+  "files": ["main.js"],
+  "directories": { "buildResources": "build" },
+  "extraResources": [
+    { "from": "../web/dist", "to": "web-dist" }
+  ],
+  "win": { "target": ["nsis"] },
+  "mac": { "target": ["pkg"], "category": "public.app-category.graphics-design" },
+  "nsis": { "oneClick": true },
+  "publish": null
+}
+

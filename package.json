@@ -1,0 +1,31 @@
+{
+  "name": "newcloset",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Closset: 3D shirt painting platform",
+  "workspaces": [
+    "apps/web",
+    "apps/server",
+    "apps/ai",
+    "apps/electron"
+  ],
+  "scripts": {
+    "dev": "npm run -w apps/web dev",
+    "build": "npm run -w apps/web build",
+    "serve": "npm run -w apps/server start",
+    "ai": "python apps/ai/main.py",
+    "electron:dev": "npm run -w apps/electron dev",
+    "electron:build": "npm run -w apps/electron build",
+    "start": "npm-run-all -p serve dev",
+    "postinstall": "npm run -w apps/web postinstall || true"
+  },
+  "devDependencies": {
+    "npm-run-all": "^4.1.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "MIT"
+}
+
+
