@@ -385,24 +385,63 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
           }
         }
         
-        // Render fill lines as realistic embroidered threads
+        // Render fill lines as hyperrealistic embroidered threads
         fillLines.forEach((line) => {
           const isEvenRow = line.index % 2 === 0;
           const baseColor = stitch.color;
           
-          // Create realistic thread appearance with subtle variations
-          const threadVariation = (Math.sin(line.index * 0.3) * 5) + (Math.random() * 3 - 1.5);
-          const adjustedColor = adjustBrightness(baseColor, threadVariation);
+          // Create hyperrealistic thread appearance with complex variations
+          const threadVariation = (Math.sin(line.index * 0.3) * 8) + (Math.random() * 6 - 3);
+          const threadTwist = Math.sin(line.index * 0.7) * 3;
+          const adjustedColor = adjustBrightness(baseColor, threadVariation + threadTwist);
           
-          // Set very thin thread properties
-          ctx.strokeStyle = adjustedColor;
-          ctx.lineWidth = threadThickness;
+          // Calculate thread position for 3D effects
+          const lineLength = Math.sqrt((line.x2 - line.x1) ** 2 + (line.y2 - line.y1) ** 2);
+          const numSegments = Math.max(5, Math.floor(lineLength / 1.5)); // More segments for detail
+          
+          // Create thread shadow (darker, slightly offset)
+          ctx.strokeStyle = adjustBrightness(adjustedColor, -25);
+          ctx.lineWidth = threadThickness * 1.2;
           ctx.lineCap = 'round';
           ctx.lineJoin = 'round';
+          ctx.globalAlpha = 0.3;
           
-          // Add subtle thread texture with small random variations
-          const lineLength = Math.sqrt((line.x2 - line.x1) ** 2 + (line.y2 - line.y1) ** 2);
-          const numSegments = Math.max(3, Math.floor(lineLength / 2)); // Break into small segments
+          ctx.beginPath();
+          if (isEvenRow) {
+            ctx.moveTo(line.x1 + 0.3, line.y1 + 0.3);
+            for (let i = 1; i <= numSegments; i++) {
+              const t = i / numSegments;
+              const x = line.x1 + t * (line.x2 - line.x1) + 0.3;
+              const y = line.y1 + t * (line.y2 - line.y1) + 0.3;
+              
+              // Add thread twist variations
+              const twist = Math.sin(t * Math.PI * 2 + line.index * 0.5) * 0.2;
+              const perpX = -(line.y2 - line.y1) / lineLength * twist;
+              const perpY = (line.x2 - line.x1) / lineLength * twist;
+              
+              ctx.lineTo(x + perpX, y + perpY);
+            }
+          } else {
+            ctx.moveTo(line.x2 + 0.3, line.y2 + 0.3);
+            for (let i = 1; i <= numSegments; i++) {
+              const t = i / numSegments;
+              const x = line.x2 - t * (line.x2 - line.x1) + 0.3;
+              const y = line.y2 - t * (line.y2 - line.y1) + 0.3;
+              
+              // Add thread twist variations
+              const twist = Math.sin(t * Math.PI * 2 + line.index * 0.5) * 0.2;
+              const perpX = (line.y2 - line.y1) / lineLength * twist;
+              const perpY = -(line.x2 - line.x1) / lineLength * twist;
+              
+              ctx.lineTo(x + perpX, y + perpY);
+            }
+          }
+          ctx.stroke();
+          
+          // Create thread highlight (brighter, on top)
+          ctx.strokeStyle = adjustBrightness(adjustedColor, 15);
+          ctx.lineWidth = threadThickness * 0.6;
+          ctx.globalAlpha = 0.8;
           
           ctx.beginPath();
           if (isEvenRow) {
@@ -412,10 +451,13 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
               const x = line.x1 + t * (line.x2 - line.x1);
               const y = line.y1 + t * (line.y2 - line.y1);
               
-              // Add tiny random variations to simulate thread texture
-              const variation = (Math.random() - 0.5) * 0.3;
-              const perpX = -(line.y2 - line.y1) / lineLength * variation;
-              const perpY = (line.x2 - line.x1) / lineLength * variation;
+              // Add thread fiber texture
+              const fiberVariation = Math.sin(t * Math.PI * 4 + line.index * 0.3) * 0.15;
+              const randomVariation = (Math.random() - 0.5) * 0.2;
+              const totalVariation = fiberVariation + randomVariation;
+              
+              const perpX = -(line.y2 - line.y1) / lineLength * totalVariation;
+              const perpY = (line.x2 - line.x1) / lineLength * totalVariation;
               
               ctx.lineTo(x + perpX, y + perpY);
             }
@@ -426,10 +468,56 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
               const x = line.x2 - t * (line.x2 - line.x1);
               const y = line.y2 - t * (line.y2 - line.y1);
               
-              // Add tiny random variations to simulate thread texture
-              const variation = (Math.random() - 0.5) * 0.3;
-              const perpX = (line.y2 - line.y1) / lineLength * variation;
-              const perpY = -(line.x2 - line.x1) / lineLength * variation;
+              // Add thread fiber texture
+              const fiberVariation = Math.sin(t * Math.PI * 4 + line.index * 0.3) * 0.15;
+              const randomVariation = (Math.random() - 0.5) * 0.2;
+              const totalVariation = fiberVariation + randomVariation;
+              
+              const perpX = (line.y2 - line.y1) / lineLength * totalVariation;
+              const perpY = -(line.x2 - line.x1) / lineLength * totalVariation;
+              
+              ctx.lineTo(x + perpX, y + perpY);
+            }
+          }
+          ctx.stroke();
+          
+          // Create main thread (base color)
+          ctx.strokeStyle = adjustedColor;
+          ctx.lineWidth = threadThickness;
+          ctx.globalAlpha = 1;
+          
+          ctx.beginPath();
+          if (isEvenRow) {
+            ctx.moveTo(line.x1, line.y1);
+            for (let i = 1; i <= numSegments; i++) {
+              const t = i / numSegments;
+              const x = line.x1 + t * (line.x2 - line.x1);
+              const y = line.y1 + t * (line.y2 - line.y1);
+              
+              // Add realistic thread texture
+              const fiberVariation = Math.sin(t * Math.PI * 3 + line.index * 0.4) * 0.1;
+              const randomVariation = (Math.random() - 0.5) * 0.15;
+              const totalVariation = fiberVariation + randomVariation;
+              
+              const perpX = -(line.y2 - line.y1) / lineLength * totalVariation;
+              const perpY = (line.x2 - line.x1) / lineLength * totalVariation;
+              
+              ctx.lineTo(x + perpX, y + perpY);
+            }
+          } else {
+            ctx.moveTo(line.x2, line.y2);
+            for (let i = 1; i <= numSegments; i++) {
+              const t = i / numSegments;
+              const x = line.x2 - t * (line.x2 - line.x1);
+              const y = line.y2 - t * (line.y2 - line.y1);
+              
+              // Add realistic thread texture
+              const fiberVariation = Math.sin(t * Math.PI * 3 + line.index * 0.4) * 0.1;
+              const randomVariation = (Math.random() - 0.5) * 0.15;
+              const totalVariation = fiberVariation + randomVariation;
+              
+              const perpX = (line.y2 - line.y1) / lineLength * totalVariation;
+              const perpY = -(line.x2 - line.x1) / lineLength * totalVariation;
               
               ctx.lineTo(x + perpX, y + perpY);
             }
@@ -2419,24 +2507,63 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
           }
         }
         
-        // Render fill lines as realistic embroidered threads
+        // Render fill lines as hyperrealistic embroidered threads
         fillLines.forEach((line, lineIndex) => {
           const isEvenRow = line.index % 2 === 0;
           const baseColor = stitch.color;
           
-          // Create realistic thread appearance with subtle variations
-          const threadVariation = (Math.sin(line.index * 0.3) * 5) + (Math.random() * 3 - 1.5);
-          const adjustedColor = adjustBrightness(baseColor, threadVariation);
+          // Create hyperrealistic thread appearance with complex variations
+          const threadVariation = (Math.sin(line.index * 0.3) * 8) + (Math.random() * 6 - 3);
+          const threadTwist = Math.sin(line.index * 0.7) * 3;
+          const adjustedColor = adjustBrightness(baseColor, threadVariation + threadTwist);
           
-          // Set very thin thread properties
-          ctx.strokeStyle = adjustedColor;
-          ctx.lineWidth = threadThickness;
+          // Calculate thread position for 3D effects
+          const lineLength = Math.sqrt((line.x2 - line.x1) ** 2 + (line.y2 - line.y1) ** 2);
+          const numSegments = Math.max(5, Math.floor(lineLength / 1.5)); // More segments for detail
+          
+          // Create thread shadow (darker, slightly offset)
+          ctx.strokeStyle = adjustBrightness(adjustedColor, -25);
+          ctx.lineWidth = threadThickness * 1.2;
           ctx.lineCap = 'round';
           ctx.lineJoin = 'round';
+          ctx.globalAlpha = 0.3;
           
-          // Add subtle thread texture with small random variations
-          const lineLength = Math.sqrt((line.x2 - line.x1) ** 2 + (line.y2 - line.y1) ** 2);
-          const numSegments = Math.max(3, Math.floor(lineLength / 2)); // Break into small segments
+          ctx.beginPath();
+          if (isEvenRow) {
+            ctx.moveTo(line.x1 + 0.3, line.y1 + 0.3);
+            for (let i = 1; i <= numSegments; i++) {
+              const t = i / numSegments;
+              const x = line.x1 + t * (line.x2 - line.x1) + 0.3;
+              const y = line.y1 + t * (line.y2 - line.y1) + 0.3;
+              
+              // Add thread twist variations
+              const twist = Math.sin(t * Math.PI * 2 + line.index * 0.5) * 0.2;
+              const perpX = -(line.y2 - line.y1) / lineLength * twist;
+              const perpY = (line.x2 - line.x1) / lineLength * twist;
+              
+              ctx.lineTo(x + perpX, y + perpY);
+            }
+          } else {
+            ctx.moveTo(line.x2 + 0.3, line.y2 + 0.3);
+            for (let i = 1; i <= numSegments; i++) {
+              const t = i / numSegments;
+              const x = line.x2 - t * (line.x2 - line.x1) + 0.3;
+              const y = line.y2 - t * (line.y2 - line.y1) + 0.3;
+              
+              // Add thread twist variations
+              const twist = Math.sin(t * Math.PI * 2 + line.index * 0.5) * 0.2;
+              const perpX = (line.y2 - line.y1) / lineLength * twist;
+              const perpY = -(line.x2 - line.x1) / lineLength * twist;
+              
+              ctx.lineTo(x + perpX, y + perpY);
+            }
+          }
+          ctx.stroke();
+          
+          // Create thread highlight (brighter, on top)
+          ctx.strokeStyle = adjustBrightness(adjustedColor, 15);
+          ctx.lineWidth = threadThickness * 0.6;
+          ctx.globalAlpha = 0.8;
           
           ctx.beginPath();
           if (isEvenRow) {
@@ -2446,10 +2573,13 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
               const x = line.x1 + t * (line.x2 - line.x1);
               const y = line.y1 + t * (line.y2 - line.y1);
               
-              // Add tiny random variations to simulate thread texture
-              const variation = (Math.random() - 0.5) * 0.3;
-              const perpX = -(line.y2 - line.y1) / lineLength * variation;
-              const perpY = (line.x2 - line.x1) / lineLength * variation;
+              // Add thread fiber texture
+              const fiberVariation = Math.sin(t * Math.PI * 4 + line.index * 0.3) * 0.15;
+              const randomVariation = (Math.random() - 0.5) * 0.2;
+              const totalVariation = fiberVariation + randomVariation;
+              
+              const perpX = -(line.y2 - line.y1) / lineLength * totalVariation;
+              const perpY = (line.x2 - line.x1) / lineLength * totalVariation;
               
               ctx.lineTo(x + perpX, y + perpY);
             }
@@ -2460,10 +2590,56 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
               const x = line.x2 - t * (line.x2 - line.x1);
               const y = line.y2 - t * (line.y2 - line.y1);
               
-              // Add tiny random variations to simulate thread texture
-              const variation = (Math.random() - 0.5) * 0.3;
-              const perpX = (line.y2 - line.y1) / lineLength * variation;
-              const perpY = -(line.x2 - line.x1) / lineLength * variation;
+              // Add thread fiber texture
+              const fiberVariation = Math.sin(t * Math.PI * 4 + line.index * 0.3) * 0.15;
+              const randomVariation = (Math.random() - 0.5) * 0.2;
+              const totalVariation = fiberVariation + randomVariation;
+              
+              const perpX = (line.y2 - line.y1) / lineLength * totalVariation;
+              const perpY = -(line.x2 - line.x1) / lineLength * totalVariation;
+              
+              ctx.lineTo(x + perpX, y + perpY);
+            }
+          }
+          ctx.stroke();
+          
+          // Create main thread (base color)
+          ctx.strokeStyle = adjustedColor;
+          ctx.lineWidth = threadThickness;
+          ctx.globalAlpha = 1;
+          
+          ctx.beginPath();
+          if (isEvenRow) {
+            ctx.moveTo(line.x1, line.y1);
+            for (let i = 1; i <= numSegments; i++) {
+              const t = i / numSegments;
+              const x = line.x1 + t * (line.x2 - line.x1);
+              const y = line.y1 + t * (line.y2 - line.y1);
+              
+              // Add realistic thread texture
+              const fiberVariation = Math.sin(t * Math.PI * 3 + line.index * 0.4) * 0.1;
+              const randomVariation = (Math.random() - 0.5) * 0.15;
+              const totalVariation = fiberVariation + randomVariation;
+              
+              const perpX = -(line.y2 - line.y1) / lineLength * totalVariation;
+              const perpY = (line.x2 - line.x1) / lineLength * totalVariation;
+              
+              ctx.lineTo(x + perpX, y + perpY);
+            }
+          } else {
+            ctx.moveTo(line.x2, line.y2);
+            for (let i = 1; i <= numSegments; i++) {
+              const t = i / numSegments;
+              const x = line.x2 - t * (line.x2 - line.x1);
+              const y = line.y2 - t * (line.y2 - line.y1);
+              
+              // Add realistic thread texture
+              const fiberVariation = Math.sin(t * Math.PI * 3 + line.index * 0.4) * 0.1;
+              const randomVariation = (Math.random() - 0.5) * 0.15;
+              const totalVariation = fiberVariation + randomVariation;
+              
+              const perpX = (line.y2 - line.y1) / lineLength * totalVariation;
+              const perpY = -(line.x2 - line.x1) / lineLength * totalVariation;
               
               ctx.lineTo(x + perpX, y + perpY);
             }
