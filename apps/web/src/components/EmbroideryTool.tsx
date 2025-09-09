@@ -325,42 +325,94 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
 
       case 'fill':
         console.log(`🟦 RENDERING FILL STITCH with ${points.length} points`);
-        // Fill area with parallel lines and alternating direction for realistic fill
+        
+        // Calculate bounding box
+        const minX = Math.min(...points.map(p => p.x));
+        const maxX = Math.max(...points.map(p => p.x));
         const minY = Math.min(...points.map(p => p.y));
         const maxY = Math.max(...points.map(p => p.y));
-        const lineSpacing = stitch.thickness * 1.2;
-        console.log(`🟦 Fill bounds: Y=${minY.toFixed(1)} to ${maxY.toFixed(1)}, spacing=${lineSpacing.toFixed(1)}`);
         
-        // Create fill pattern with realistic thread texture
-        for (let y = minY; y <= maxY; y += lineSpacing) {
-          const intersections = getLineIntersections(points, y);
-          for (let i = 0; i < intersections.length; i += 2) {
-            const startX = intersections[i];
-            const endX = intersections[i + 1] || intersections[i];
+        // Determine fill direction based on shape
+        const width = maxX - minX;
+        const height = maxY - minY;
+        const isHorizontal = width > height;
+        
+        // Calculate optimal line spacing
+        const baseSpacing = stitch.thickness * 1.5;
+        const maxLines = 40;
+        
+        // Generate fill lines
+        const fillLines: {x1: number, y1: number, x2: number, y2: number, index: number}[] = [];
+        
+        if (isHorizontal) {
+          // Horizontal fill lines
+          const totalLines = Math.min(maxLines, Math.floor(height / baseSpacing));
+          for (let i = 0; i < totalLines; i++) {
+            const y = minY + (i * height) / totalLines;
+            const intersections = getLineIntersections(points, y);
             
-            // Create individual line gradient for each fill line
-            const lineGradient = ctx.createLinearGradient(startX, y, endX, y);
-            lineGradient.addColorStop(0, adjustBrightness(baseColor, -10));
-            lineGradient.addColorStop(0.5, baseColor);
-            lineGradient.addColorStop(1, adjustBrightness(baseColor, -10));
+            for (let j = 0; j < intersections.length; j += 2) {
+              if (intersections[j + 1]) {
+                fillLines.push({
+                  x1: intersections[j],
+                  y1: y,
+                  x2: intersections[j + 1],
+                  y2: y,
+                  index: i
+                });
+              }
+            }
+          }
+        } else {
+          // Vertical fill lines
+          const totalLines = Math.min(maxLines, Math.floor(width / baseSpacing));
+          for (let i = 0; i < totalLines; i++) {
+            const x = minX + (i * width) / totalLines;
+            const intersections = getVerticalIntersections(points, x);
             
-            ctx.strokeStyle = lineGradient;
-            ctx.lineWidth = stitch.thickness * 0.8;
-            
-            // Alternate line direction for more realistic fill
-            if (Math.floor((y - minY) / lineSpacing) % 2 === 0) {
-              ctx.beginPath();
-              ctx.moveTo(startX, y);
-              ctx.lineTo(endX, y);
-              ctx.stroke();
-            } else {
-              ctx.beginPath();
-              ctx.moveTo(endX, y);
-              ctx.lineTo(startX, y);
-              ctx.stroke();
+            for (let j = 0; j < intersections.length; j += 2) {
+              if (intersections[j + 1]) {
+                fillLines.push({
+                  x1: x,
+                  y1: intersections[j],
+                  x2: x,
+                  y2: intersections[j + 1],
+                  index: i
+                });
+              }
             }
           }
         }
+        
+        // Render fill lines with realistic effects
+        fillLines.forEach((line) => {
+          const isEvenRow = line.index % 2 === 0;
+          const highlightColor = adjustBrightness(baseColor, 12);
+          const shadowColor = adjustBrightness(baseColor, -8);
+          
+          // Create gradient for each line
+          const gradient = ctx.createLinearGradient(line.x1, line.y1, line.x2, line.y2);
+          gradient.addColorStop(0, isEvenRow ? highlightColor : shadowColor);
+          gradient.addColorStop(0.5, baseColor);
+          gradient.addColorStop(1, isEvenRow ? shadowColor : highlightColor);
+          
+          // Set line properties
+          ctx.strokeStyle = gradient;
+          ctx.lineWidth = stitch.thickness * 0.7;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          
+          // Draw the line
+          ctx.beginPath();
+          if (isEvenRow) {
+            ctx.moveTo(line.x1, line.y1);
+            ctx.lineTo(line.x2, line.y2);
+          } else {
+            ctx.moveTo(line.x2, line.y2);
+            ctx.lineTo(line.x1, line.y1);
+          }
+          ctx.stroke();
+        });
         break;
 
       case 'cross-stitch':
@@ -2268,32 +2320,138 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
         break;
 
       case 'fill':
-        console.log('🧵 FILL CASE EXECUTING - drawing parallel lines');
-        // Fill area with parallel lines and alternating direction for realistic fill
+        console.log('🧵 FILL CASE EXECUTING - drawing professional fill stitch with', points.length, 'points');
+        
+        // Safety check for performance
+        if (points.length > 200) {
+          console.warn('Too many points for fill stitch, using simplified version');
+          // Simple fill fallback
+          ctx.fillStyle = stitch.color;
+          ctx.beginPath();
+          ctx.moveTo(points[0].x, points[0].y);
+          for (let i = 1; i < points.length; i++) {
+            ctx.lineTo(points[i].x, points[i].y);
+          }
+          ctx.closePath();
+          ctx.fill();
+          break;
+        }
+        
+        // Calculate bounding box
+        const minX = Math.min(...points.map(p => p.x));
+        const maxX = Math.max(...points.map(p => p.x));
         const minY = Math.min(...points.map(p => p.y));
         const maxY = Math.max(...points.map(p => p.y));
-        const lineSpacing = stitch.thickness * 1.5;
         
-        for (let y = minY; y <= maxY; y += lineSpacing) {
-          const intersections = getLineIntersections(points, y);
-          for (let i = 0; i < intersections.length; i += 2) {
-            const startX = intersections[i];
-            const endX = intersections[i + 1] || intersections[i];
+        // Determine fill direction based on shape
+        const width = maxX - minX;
+        const height = maxY - minY;
+        const isHorizontal = width > height;
+        
+        // Calculate optimal line spacing based on performance mode
+        const baseSpacing = performanceMode ? stitch.thickness * 2.5 : stitch.thickness * 1.8;
+        const maxLines = performanceMode ? 30 : 50;
+        
+        // Generate fill lines
+        const fillLines: {x1: number, y1: number, x2: number, y2: number, index: number}[] = [];
+        
+        if (isHorizontal) {
+          // Horizontal fill lines
+          const totalLines = Math.min(maxLines, Math.floor(height / baseSpacing));
+          for (let i = 0; i < totalLines; i++) {
+            const y = minY + (i * height) / totalLines;
+            const intersections = getLineIntersections(points, y);
             
-            // Alternate line direction for more realistic fill
-            if (Math.floor((y - minY) / lineSpacing) % 2 === 0) {
-        ctx.beginPath();
-              ctx.moveTo(startX, y);
-              ctx.lineTo(endX, y);
-              ctx.stroke();
-            } else {
-        ctx.beginPath();
-              ctx.moveTo(endX, y);
-              ctx.lineTo(startX, y);
-              ctx.stroke();
+            for (let j = 0; j < intersections.length; j += 2) {
+              if (intersections[j + 1]) {
+                fillLines.push({
+                  x1: intersections[j],
+                  y1: y,
+                  x2: intersections[j + 1],
+                  y2: y,
+                  index: i
+                });
+              }
+            }
+          }
+        } else {
+          // Vertical fill lines
+          const totalLines = Math.min(maxLines, Math.floor(width / baseSpacing));
+          for (let i = 0; i < totalLines; i++) {
+            const x = minX + (i * width) / totalLines;
+            const intersections = getVerticalIntersections(points, x);
+            
+            for (let j = 0; j < intersections.length; j += 2) {
+              if (intersections[j + 1]) {
+                fillLines.push({
+                  x1: x,
+                  y1: intersections[j],
+                  x2: x,
+                  y2: intersections[j + 1],
+                  index: i
+                });
+              }
             }
           }
         }
+        
+        // Render fill lines with realistic effects
+        fillLines.forEach((line, lineIndex) => {
+          const isEvenRow = line.index % 2 === 0;
+          const baseColor = stitch.color;
+          const highlightColor = adjustBrightness(baseColor, 15);
+          const shadowColor = adjustBrightness(baseColor, -10);
+          
+          // Create gradient for each line
+          const gradient = ctx.createLinearGradient(line.x1, line.y1, line.x2, line.y2);
+          gradient.addColorStop(0, isEvenRow ? highlightColor : shadowColor);
+          gradient.addColorStop(0.5, baseColor);
+          gradient.addColorStop(1, isEvenRow ? shadowColor : highlightColor);
+          
+          // Set line properties
+          ctx.strokeStyle = gradient;
+          ctx.lineWidth = stitch.thickness * 0.8;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          
+          // Add subtle shadow for depth
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.1)';
+          ctx.shadowBlur = 1;
+          ctx.shadowOffsetX = 0.5;
+          ctx.shadowOffsetY = 0.5;
+          
+          // Draw the line
+          ctx.beginPath();
+          if (isEvenRow) {
+            ctx.moveTo(line.x1, line.y1);
+            ctx.lineTo(line.x2, line.y2);
+          } else {
+            ctx.moveTo(line.x2, line.y2);
+            ctx.lineTo(line.x1, line.y1);
+          }
+          ctx.stroke();
+          
+          // Reset shadow
+          ctx.shadowColor = 'transparent';
+          ctx.shadowBlur = 0;
+          ctx.shadowOffsetX = 0;
+          ctx.shadowOffsetY = 0;
+        });
+        
+        // Add subtle texture overlay
+        if (!performanceMode) {
+          ctx.globalAlpha = 0.1;
+          ctx.fillStyle = baseColor;
+          ctx.beginPath();
+          ctx.moveTo(points[0].x, points[0].y);
+          for (let i = 1; i < points.length; i++) {
+            ctx.lineTo(points[i].x, points[i].y);
+          }
+          ctx.closePath();
+          ctx.fill();
+          ctx.globalAlpha = 1;
+        }
+        
         break;
 
       case 'cross-stitch':
