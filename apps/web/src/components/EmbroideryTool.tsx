@@ -1713,18 +1713,18 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
     if (points.length < 2) return points;
     
     const stitchPoints: {x: number, y: number}[] = [];
-    const minSpacing = 0.005 * (1 - density); // Increased minimum spacing
-    const maxSpacing = 0.02 * (1 - density); // Increased maximum spacing
-    const maxStitchesPerSegment = 50; // Limit stitches per segment
+    const baseSpacing = 0.01; // Base spacing for consistent stitches
+    const densityMultiplier = 0.5 + (density * 0.5); // 0.5 to 1.0 range
+    const stitchSpacing = baseSpacing * densityMultiplier;
+    const maxStitchesPerSegment = 30; // Reduced limit for better performance
     
     for (let i = 0; i < points.length - 1; i++) {
       const start = points[i];
       const end = points[i + 1];
       const distance = Math.sqrt((end.x - start.x) ** 2 + (end.y - start.y) ** 2);
       
-      // Calculate number of stitches with limits
-      const spacing = minSpacing + (maxSpacing - minSpacing) * (1 - density);
-      const numStitches = Math.min(maxStitchesPerSegment, Math.max(1, Math.floor(distance / spacing)));
+      // Calculate consistent number of stitches
+      const numStitches = Math.min(maxStitchesPerSegment, Math.max(2, Math.floor(distance / stitchSpacing)));
       
       // Generate evenly spaced points
       for (let j = 0; j <= numStitches; j++) {
@@ -1749,10 +1749,12 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
     const minY = Math.min(...points.map(p => p.y));
     const maxY = Math.max(...points.map(p => p.y));
     
-    const stitchSpacing = 0.008 * (1 - density); // Increased spacing to reduce points
+    const baseSpacing = 0.012; // Base spacing for consistent fill
+    const densityMultiplier = 0.6 + (density * 0.4); // 0.6 to 1.0 range
+    const stitchSpacing = baseSpacing * densityMultiplier;
     const stitchLines: {x: number, y: number}[][] = [];
-    const maxLines = 100; // Limit total number of lines
-    const maxPointsPerLine = 50; // Limit points per line
+    const maxLines = 60; // Reduced limit for better performance
+    const maxPointsPerLine = 30; // Reduced limit for consistency
     
     // Determine stitch direction based on user setting and shape
     const width = maxX - minX;
@@ -1776,7 +1778,7 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
     }
     
     if (isHorizontal) {
-      // Horizontal satin stitches with limits
+      // Horizontal satin stitches with consistent spacing
       const totalLines = Math.min(maxLines, Math.floor((maxY - minY) / stitchSpacing));
       for (let i = 0; i < totalLines; i++) {
         const y = minY + (i * (maxY - minY)) / totalLines;
@@ -1787,8 +1789,9 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
             const endX = intersections[j + 1];
             const linePoints = [];
             const lineLength = endX - startX;
-            const pointsCount = Math.min(maxPointsPerLine, Math.max(2, Math.floor(lineLength / (stitchSpacing * 0.5))));
+            const pointsCount = Math.min(maxPointsPerLine, Math.max(3, Math.floor(lineLength / stitchSpacing)));
             
+            // Generate consistent points along the line
             for (let k = 0; k <= pointsCount; k++) {
               const t = k / pointsCount;
               linePoints.push({ 
@@ -1803,7 +1806,7 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
         }
       }
     } else {
-      // Vertical satin stitches with limits
+      // Vertical satin stitches with consistent spacing
       const totalLines = Math.min(maxLines, Math.floor((maxX - minX) / stitchSpacing));
       for (let i = 0; i < totalLines; i++) {
         const x = minX + (i * (maxX - minX)) / totalLines;
@@ -1814,8 +1817,9 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
             const endY = intersections[j + 1];
             const linePoints = [];
             const lineLength = endY - startY;
-            const pointsCount = Math.min(maxPointsPerLine, Math.max(2, Math.floor(lineLength / (stitchSpacing * 0.5))));
+            const pointsCount = Math.min(maxPointsPerLine, Math.max(3, Math.floor(lineLength / stitchSpacing)));
             
+            // Generate consistent points along the line
             for (let k = 0; k <= pointsCount; k++) {
               const t = k / pointsCount;
               linePoints.push({ 
@@ -1857,9 +1861,11 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
   // Generate diagonal satin stitches (optimized)
   const generateDiagonalSatinStitches = (points: {x: number, y: number}[], density: number, angle: number) => {
     const stitchLines: {x: number, y: number}[][] = [];
-    const stitchSpacing = 0.008 * (1 - density); // Increased spacing
-    const maxLines = 50; // Limit total lines
-    const maxPointsPerLine = 30; // Limit points per line
+    const baseSpacing = 0.010; // Base spacing for consistent diagonal stitches
+    const densityMultiplier = 0.6 + (density * 0.4); // 0.6 to 1.0 range
+    const stitchSpacing = baseSpacing * densityMultiplier;
+    const maxLines = 40; // Reduced limit for better performance
+    const maxPointsPerLine = 25; // Reduced limit for consistency
     
     // Calculate bounding box
     const minX = Math.min(...points.map(p => p.x));
@@ -1895,8 +1901,9 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
           const t1 = intersections[j];
           const t2 = intersections[j + 1];
           const lineLength = t2 - t1;
-          const pointsCount = Math.min(maxPointsPerLine, Math.max(2, Math.floor(lineLength / (stitchSpacing * 0.5))));
+          const pointsCount = Math.min(maxPointsPerLine, Math.max(3, Math.floor(lineLength / stitchSpacing)));
           
+          // Generate consistent points along the diagonal line
           for (let k = 0; k <= pointsCount; k++) {
             const t = t1 + (k / pointsCount) * lineLength;
             const x = startX + t * (endX - startX);
@@ -2176,7 +2183,7 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
           
           ctx.strokeStyle = gradient;
           
-          // Draw main satin line
+          // Draw main satin line with consistent spacing
           ctx.beginPath();
           ctx.moveTo(satinPoints[0].x, satinPoints[0].y);
           
@@ -2185,26 +2192,38 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
             const prev = satinPoints[i - 1];
             const next = satinPoints[i + 1];
             
-            if (next) {
-              const cp1x = prev.x + (curr.x - prev.x) / 3;
-              const cp1y = prev.y + (curr.y - prev.y) / 3;
-              const cp2x = curr.x - (next.x - curr.x) / 3;
-              const cp2y = curr.y - (next.y - curr.y) / 3;
-              ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, curr.x, curr.y);
-            } else {
-              ctx.lineTo(curr.x, curr.y);
+            // Check distance to ensure consistent spacing
+            const distance = Math.sqrt(
+              Math.pow(curr.x - prev.x, 2) + Math.pow(curr.y - prev.y, 2)
+            );
+            
+            if (distance > 0.003) { // Only draw if there's enough distance
+              if (next) {
+                const cp1x = prev.x + (curr.x - prev.x) / 3;
+                const cp1y = prev.y + (curr.y - prev.y) / 3;
+                const cp2x = curr.x - (next.x - curr.x) / 3;
+                const cp2y = curr.y - (next.y - curr.y) / 3;
+                ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, curr.x, curr.y);
+              } else {
+                ctx.lineTo(curr.x, curr.y);
+              }
             }
           }
           ctx.stroke();
           
-          // Add parallel lines for depth
+          // Add parallel lines for depth with consistent spacing
           const offset = stitch.thickness * 0.3;
           for (let i = 1; i < satinPoints.length; i++) {
             const curr = satinPoints[i];
             const prev = satinPoints[i - 1];
             const next = satinPoints[i + 1];
             
-            if (next) {
+            // Check distance to ensure consistent spacing
+            const distance = Math.sqrt(
+              Math.pow(curr.x - prev.x, 2) + Math.pow(curr.y - prev.y, 2)
+            );
+            
+            if (distance > 0.003 && next) { // Only draw if there's enough distance
               const angle = Math.atan2(curr.y - prev.y, curr.x - prev.x);
               const perpX = Math.cos(angle + Math.PI/2) * offset;
               const perpY = Math.sin(angle + Math.PI/2) * offset;
