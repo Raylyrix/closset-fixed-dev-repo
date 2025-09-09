@@ -265,11 +265,11 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
     ctx.lineWidth = stitch.thickness;
     
     // Add realistic shadow based on lighting direction
-    const shadowIntensity = lightingDirection === 'top' ? 0.2 : lightingDirection === 'bottom' ? 0.4 : 0.3;
+    const shadowIntensity = lightingDirection === 'top' ? 0.4 : lightingDirection === 'bottom' ? 0.6 : 0.5;
     ctx.shadowColor = `rgba(0, 0, 0, ${shadowIntensity})`;
-    ctx.shadowBlur = Math.max(2, stitch.thickness * 0.5);
-    ctx.shadowOffsetX = lightingDirection === 'left' ? 2 : lightingDirection === 'right' ? -2 : 1;
-    ctx.shadowOffsetY = lightingDirection === 'top' ? 2 : lightingDirection === 'bottom' ? -2 : 1;
+    ctx.shadowBlur = Math.max(3, stitch.thickness * 0.8);
+    ctx.shadowOffsetX = lightingDirection === 'left' ? 3 : lightingDirection === 'right' ? -3 : 2;
+    ctx.shadowOffsetY = lightingDirection === 'top' ? 3 : lightingDirection === 'bottom' ? -3 : 2;
 
     ctx.beginPath();
     ctx.moveTo(points[0].x, points[0].y);
@@ -297,30 +297,34 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
         ctx.stroke();
         
         // Add satin-specific highlights for 3D effect
-        ctx.strokeStyle = adjustBrightness(stitch.color, 30);
-        ctx.lineWidth = stitch.thickness * 0.3;
+        ctx.strokeStyle = adjustBrightness(stitch.color, 25);
+        ctx.lineWidth = stitch.thickness * 0.4;
         ctx.shadowBlur = 0;
         ctx.shadowOffsetX = 0;
         ctx.shadowOffsetY = 0;
+        ctx.globalAlpha = 0.8;
         
         ctx.beginPath();
-        ctx.moveTo(points[0].x, points[0].y);
+        ctx.moveTo(points[0].x - 0.5, points[0].y - 0.5);
         for (let i = 1; i < points.length; i++) {
-      const prev = points[i - 1];
+          const prev = points[i - 1];
           const curr = points[i];
-      const next = points[i + 1];
-      
+          const next = points[i + 1];
+          
           if (next) {
             const cp1x = prev.x + (curr.x - prev.x) / 3;
             const cp1y = prev.y + (curr.y - prev.y) / 3;
             const cp2x = curr.x - (next.x - curr.x) / 3;
             const cp2y = curr.y - (next.y - curr.y) / 3;
-            ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, curr.x, curr.y);
+            ctx.bezierCurveTo(cp1x - 0.5, cp1y - 0.5, cp2x - 0.5, cp2y - 0.5, curr.x - 0.5, curr.y - 0.5);
           } else {
-            ctx.lineTo(curr.x, curr.y);
+            ctx.lineTo(curr.x - 0.5, curr.y - 0.5);
           }
         }
         ctx.stroke();
+        
+        // Reset alpha for other effects
+        ctx.globalAlpha = 1;
         break;
 
       case 'fill':
@@ -400,11 +404,11 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
           const numSegments = Math.max(5, Math.floor(lineLength / 1.5)); // More segments for detail
           
           // Create thread shadow (darker, slightly offset)
-          ctx.strokeStyle = adjustBrightness(adjustedColor, -25);
-          ctx.lineWidth = threadThickness * 1.2;
+          ctx.strokeStyle = adjustBrightness(adjustedColor, -30);
+          ctx.lineWidth = threadThickness * 1.4;
           ctx.lineCap = 'round';
           ctx.lineJoin = 'round';
-          ctx.globalAlpha = 0.3;
+          ctx.globalAlpha = 0.6;
           
           ctx.beginPath();
           if (isEvenRow) {
@@ -439,9 +443,9 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
           ctx.stroke();
           
           // Create thread highlight (brighter, on top)
-          ctx.strokeStyle = adjustBrightness(adjustedColor, 15);
-          ctx.lineWidth = threadThickness * 0.6;
-          ctx.globalAlpha = 0.8;
+          ctx.strokeStyle = adjustBrightness(adjustedColor, 20);
+          ctx.lineWidth = threadThickness * 0.7;
+          ctx.globalAlpha = 0.9;
           
           ctx.beginPath();
           if (isEvenRow) {
@@ -543,10 +547,10 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
             
             // Draw cross-stitch shadow (offset slightly)
             ctx.strokeStyle = shadowColor;
-            ctx.lineWidth = threadThickness * 1.1;
+            ctx.lineWidth = threadThickness * 1.3;
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
-            ctx.globalAlpha = 0.4;
+            ctx.globalAlpha = 0.6;
             ctx.shadowBlur = 0;
             ctx.shadowOffsetX = 0;
             ctx.shadowOffsetY = 0;
@@ -662,10 +666,10 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
           
           // Draw chain link shadow (offset slightly)
           ctx.strokeStyle = shadowColor;
-          ctx.lineWidth = threadThickness * 1.2;
+          ctx.lineWidth = threadThickness * 1.4;
           ctx.lineCap = 'round';
           ctx.lineJoin = 'round';
-          ctx.globalAlpha = 0.3;
+          ctx.globalAlpha = 0.5;
           ctx.shadowBlur = 0;
           ctx.shadowOffsetX = 0;
           ctx.shadowOffsetY = 0;
@@ -784,10 +788,10 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
         
         // Draw outline shadow (offset slightly)
         ctx.strokeStyle = shadowColor;
-        ctx.lineWidth = outlineThreadThickness * 1.1;
+        ctx.lineWidth = outlineThreadThickness * 1.3;
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
-        ctx.globalAlpha = 0.3;
+        ctx.globalAlpha = 0.5;
         ctx.shadowBlur = 0;
         ctx.shadowOffsetX = 0;
         ctx.shadowOffsetY = 0;
@@ -836,8 +840,8 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
         
         // Add thread highlight for 3D effect
         ctx.strokeStyle = highlightColor;
-        ctx.lineWidth = outlineThreadThickness * 0.5;
-        ctx.globalAlpha = 0.7;
+        ctx.lineWidth = outlineThreadThickness * 0.6;
+        ctx.globalAlpha = 0.8;
         
         ctx.beginPath();
         ctx.moveTo(points[0].x - 0.1, points[0].y - 0.1);
@@ -2747,11 +2751,11 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
           const numSegments = Math.max(5, Math.floor(lineLength / 1.5)); // More segments for detail
           
           // Create thread shadow (darker, slightly offset)
-          ctx.strokeStyle = adjustBrightness(adjustedColor, -25);
-          ctx.lineWidth = threadThickness * 1.2;
+          ctx.strokeStyle = adjustBrightness(adjustedColor, -30);
+          ctx.lineWidth = threadThickness * 1.4;
           ctx.lineCap = 'round';
           ctx.lineJoin = 'round';
-          ctx.globalAlpha = 0.3;
+          ctx.globalAlpha = 0.6;
           
           ctx.beginPath();
           if (isEvenRow) {
@@ -2786,9 +2790,9 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
           ctx.stroke();
           
           // Create thread highlight (brighter, on top)
-          ctx.strokeStyle = adjustBrightness(adjustedColor, 15);
-          ctx.lineWidth = threadThickness * 0.6;
-          ctx.globalAlpha = 0.8;
+          ctx.strokeStyle = adjustBrightness(adjustedColor, 20);
+          ctx.lineWidth = threadThickness * 0.7;
+          ctx.globalAlpha = 0.9;
           
           ctx.beginPath();
           if (isEvenRow) {
@@ -2893,10 +2897,10 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
             
             // Draw cross-stitch shadow (offset slightly)
             ctx.strokeStyle = shadowColor;
-            ctx.lineWidth = threadThickness * 1.1;
+            ctx.lineWidth = threadThickness * 1.3;
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
-            ctx.globalAlpha = 0.4;
+            ctx.globalAlpha = 0.6;
             ctx.shadowBlur = 0;
             ctx.shadowOffsetX = 0;
             ctx.shadowOffsetY = 0;
@@ -3012,10 +3016,10 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
           
           // Draw chain link shadow (offset slightly)
           ctx.strokeStyle = shadowColor;
-          ctx.lineWidth = threadThickness * 1.2;
+          ctx.lineWidth = threadThickness * 1.4;
           ctx.lineCap = 'round';
           ctx.lineJoin = 'round';
-          ctx.globalAlpha = 0.3;
+          ctx.globalAlpha = 0.5;
           ctx.shadowBlur = 0;
           ctx.shadowOffsetX = 0;
           ctx.shadowOffsetY = 0;
@@ -3135,10 +3139,10 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
         
         // Draw outline shadow (offset slightly)
         ctx.strokeStyle = shadowColor;
-        ctx.lineWidth = outlineThreadThickness * 1.1;
+        ctx.lineWidth = outlineThreadThickness * 1.3;
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
-        ctx.globalAlpha = 0.3;
+        ctx.globalAlpha = 0.5;
         ctx.shadowBlur = 0;
         ctx.shadowOffsetX = 0;
         ctx.shadowOffsetY = 0;
@@ -3187,8 +3191,8 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
         
         // Add thread highlight for 3D effect
         ctx.strokeStyle = highlightColor;
-        ctx.lineWidth = outlineThreadThickness * 0.5;
-        ctx.globalAlpha = 0.7;
+        ctx.lineWidth = outlineThreadThickness * 0.6;
+        ctx.globalAlpha = 0.8;
         
         ctx.beginPath();
         ctx.moveTo(points[0].x - 0.1, points[0].y - 0.1);
