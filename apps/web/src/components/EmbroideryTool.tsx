@@ -527,59 +527,111 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
         break;
 
       case 'cross-stitch':
-        console.log(`❌ RENDERING CROSS-STITCH with ${points.length} points`);
-        // Draw X pattern with hyperrealistic cross-stitch appearance
+        console.log(`❌ RENDERING HYPERREALISTIC CROSS-STITCH with ${points.length} points`);
+        // Draw hyperrealistic cross-stitch with professional embroidery quality
         points.forEach((point, i) => {
           if (i % 2 === 0 && points[i + 1]) {
             const next = points[i + 1];
-            const size = stitch.thickness * 1.8;
+            const size = stitch.thickness * 2.0;
+            const threadThickness = Math.max(0.8, stitch.thickness * 0.4);
             
-            // Create cross-stitch specific gradient
-            const crossGradient = ctx.createRadialGradient(point.x, point.y, 0, point.x, point.y, size);
-            crossGradient.addColorStop(0, highlightColor);
-            crossGradient.addColorStop(0.7, baseColor);
-            crossGradient.addColorStop(1, darkerColor);
+            // Create realistic thread color variations
+            const threadVariation = (Math.sin(i * 0.5) * 8) + (Math.random() * 4 - 2);
+            const adjustedColor = adjustBrightness(baseColor, threadVariation);
+            const shadowColor = adjustBrightness(adjustedColor, -20);
+            const highlightColor = adjustBrightness(adjustedColor, 12);
             
-            ctx.strokeStyle = crossGradient;
-            ctx.lineWidth = stitch.thickness * 0.6;
-            ctx.shadowBlur = 1;
-            ctx.shadowOffsetX = 0.5;
-            ctx.shadowOffsetY = 0.5;
-            
-            // Draw the X pattern with enhanced rendering
-            ctx.beginPath();
-            ctx.moveTo(point.x - size, point.y - size);
-            ctx.lineTo(point.x + size, point.y + size);
-            ctx.moveTo(point.x - size, point.y + size);
-            ctx.lineTo(point.x + size, point.y - size);
-            ctx.stroke();
-            
-            // Add realistic corner dots with 3D effect
-            ctx.fillStyle = baseColor;
+            // Draw cross-stitch shadow (offset slightly)
+            ctx.strokeStyle = shadowColor;
+            ctx.lineWidth = threadThickness * 1.1;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.globalAlpha = 0.4;
             ctx.shadowBlur = 0;
             ctx.shadowOffsetX = 0;
             ctx.shadowOffsetY = 0;
             
-            const dotSize = stitch.thickness * 0.3;
             ctx.beginPath();
-            ctx.arc(point.x - size, point.y - size, dotSize, 0, Math.PI * 2);
+            ctx.moveTo(point.x - size + 0.5, point.y - size + 0.5);
+            ctx.lineTo(point.x + size + 0.5, point.y + size + 0.5);
+            ctx.moveTo(point.x - size + 0.5, point.y + size + 0.5);
+            ctx.lineTo(point.x + size + 0.5, point.y - size + 0.5);
+            ctx.stroke();
+            
+            // Draw main cross-stitch threads
+            ctx.strokeStyle = adjustedColor;
+            ctx.lineWidth = threadThickness;
+            ctx.globalAlpha = 1;
+            
+            // First diagonal (bottom-left to top-right)
+            ctx.beginPath();
+            ctx.moveTo(point.x - size, point.y - size);
+            ctx.lineTo(point.x + size, point.y + size);
+            ctx.stroke();
+            
+            // Second diagonal (top-left to bottom-right)
+            ctx.beginPath();
+            ctx.moveTo(point.x - size, point.y + size);
+            ctx.lineTo(point.x + size, point.y - size);
+            ctx.stroke();
+            
+            // Add thread highlights for 3D effect
+            ctx.strokeStyle = highlightColor;
+            ctx.lineWidth = threadThickness * 0.5;
+            ctx.globalAlpha = 0.7;
+            
+            // Highlight first diagonal
+            ctx.beginPath();
+            ctx.moveTo(point.x - size + 0.3, point.y - size + 0.3);
+            ctx.lineTo(point.x + size - 0.3, point.y + size - 0.3);
+            ctx.stroke();
+            
+            // Highlight second diagonal
+            ctx.beginPath();
+            ctx.moveTo(point.x - size + 0.3, point.y + size - 0.3);
+            ctx.lineTo(point.x + size - 0.3, point.y - size + 0.3);
+            ctx.stroke();
+            
+            // Add realistic thread texture dots at intersections
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = adjustedColor;
+            const dotSize = threadThickness * 0.8;
+            
+            // Center intersection dot
+            ctx.beginPath();
+            ctx.arc(point.x, point.y, dotSize * 0.6, 0, Math.PI * 2);
             ctx.fill();
             
-            // Add highlight to corner dots
+            // Corner dots for thread ends
+            const cornerDotSize = threadThickness * 0.5;
+            ctx.beginPath();
+            ctx.arc(point.x - size, point.y - size, cornerDotSize, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(point.x + size, point.y + size, cornerDotSize, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(point.x - size, point.y + size, cornerDotSize, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(point.x + size, point.y - size, cornerDotSize, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Add subtle thread shine highlights
             ctx.fillStyle = highlightColor;
+            ctx.globalAlpha = 0.6;
+            const shineSize = cornerDotSize * 0.4;
             ctx.beginPath();
-            ctx.arc(point.x - size - dotSize * 0.3, point.y - size - dotSize * 0.3, dotSize * 0.4, 0, Math.PI * 2);
-            ctx.fill();
-            
-            ctx.fillStyle = baseColor;
-            ctx.beginPath();
-            ctx.arc(point.x + size, point.y + size, dotSize, 0, Math.PI * 2);
+            ctx.arc(point.x - size - shineSize * 0.5, point.y - size - shineSize * 0.5, shineSize, 0, Math.PI * 2);
             ctx.fill();
             ctx.beginPath();
-            ctx.arc(point.x - size, point.y + size, dotSize, 0, Math.PI * 2);
+            ctx.arc(point.x + size + shineSize * 0.5, point.y + size + shineSize * 0.5, shineSize, 0, Math.PI * 2);
             ctx.fill();
             ctx.beginPath();
-            ctx.arc(point.x + size, point.y - size, dotSize, 0, Math.PI * 2);
+            ctx.arc(point.x - size - shineSize * 0.5, point.y + size + shineSize * 0.5, shineSize, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(point.x + size + shineSize * 0.5, point.y - size - shineSize * 0.5, shineSize, 0, Math.PI * 2);
             ctx.fill();
           }
         });
@@ -2652,33 +2704,111 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
         break;
 
       case 'cross-stitch':
-        console.log('🧵 CROSS-STITCH CASE EXECUTING - drawing X patterns');
-        // Draw X pattern with enhanced details
+        console.log('🧵 HYPERREALISTIC CROSS-STITCH CASE EXECUTING - drawing professional X patterns');
+        // Draw hyperrealistic cross-stitch with professional embroidery quality
         points.forEach((point, i) => {
           if (i % 2 === 0 && points[i + 1]) {
             const next = points[i + 1];
-            const size = stitch.thickness * 1.5;
+            const size = stitch.thickness * 2.0;
+            const threadThickness = Math.max(0.8, stitch.thickness * 0.4);
             
-            // Draw the X pattern
-    ctx.beginPath();
+            // Create realistic thread color variations
+            const threadVariation = (Math.sin(i * 0.5) * 8) + (Math.random() * 4 - 2);
+            const adjustedColor = adjustBrightness(stitch.color, threadVariation);
+            const shadowColor = adjustBrightness(adjustedColor, -20);
+            const highlightColor = adjustBrightness(adjustedColor, 12);
+            
+            // Draw cross-stitch shadow (offset slightly)
+            ctx.strokeStyle = shadowColor;
+            ctx.lineWidth = threadThickness * 1.1;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.globalAlpha = 0.4;
+            ctx.shadowBlur = 0;
+            ctx.shadowOffsetX = 0;
+            ctx.shadowOffsetY = 0;
+            
+            ctx.beginPath();
+            ctx.moveTo(point.x - size + 0.5, point.y - size + 0.5);
+            ctx.lineTo(point.x + size + 0.5, point.y + size + 0.5);
+            ctx.moveTo(point.x - size + 0.5, point.y + size + 0.5);
+            ctx.lineTo(point.x + size + 0.5, point.y - size + 0.5);
+            ctx.stroke();
+            
+            // Draw main cross-stitch threads
+            ctx.strokeStyle = adjustedColor;
+            ctx.lineWidth = threadThickness;
+            ctx.globalAlpha = 1;
+            
+            // First diagonal (bottom-left to top-right)
+            ctx.beginPath();
             ctx.moveTo(point.x - size, point.y - size);
             ctx.lineTo(point.x + size, point.y + size);
+            ctx.stroke();
+            
+            // Second diagonal (top-left to bottom-right)
+            ctx.beginPath();
             ctx.moveTo(point.x - size, point.y + size);
             ctx.lineTo(point.x + size, point.y - size);
             ctx.stroke();
             
-            // Add small dots at the corners for more realistic appearance
+            // Add thread highlights for 3D effect
+            ctx.strokeStyle = highlightColor;
+            ctx.lineWidth = threadThickness * 0.5;
+            ctx.globalAlpha = 0.7;
+            
+            // Highlight first diagonal
             ctx.beginPath();
-            ctx.arc(point.x - size, point.y - size, 1, 0, Math.PI * 2);
+            ctx.moveTo(point.x - size + 0.3, point.y - size + 0.3);
+            ctx.lineTo(point.x + size - 0.3, point.y + size - 0.3);
+            ctx.stroke();
+            
+            // Highlight second diagonal
+            ctx.beginPath();
+            ctx.moveTo(point.x - size + 0.3, point.y + size - 0.3);
+            ctx.lineTo(point.x + size - 0.3, point.y - size + 0.3);
+            ctx.stroke();
+            
+            // Add realistic thread texture dots at intersections
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = adjustedColor;
+            const dotSize = threadThickness * 0.8;
+            
+            // Center intersection dot
+            ctx.beginPath();
+            ctx.arc(point.x, point.y, dotSize * 0.6, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Corner dots for thread ends
+            const cornerDotSize = threadThickness * 0.5;
+            ctx.beginPath();
+            ctx.arc(point.x - size, point.y - size, cornerDotSize, 0, Math.PI * 2);
             ctx.fill();
             ctx.beginPath();
-            ctx.arc(point.x + size, point.y + size, 1, 0, Math.PI * 2);
+            ctx.arc(point.x + size, point.y + size, cornerDotSize, 0, Math.PI * 2);
             ctx.fill();
             ctx.beginPath();
-            ctx.arc(point.x - size, point.y + size, 1, 0, Math.PI * 2);
+            ctx.arc(point.x - size, point.y + size, cornerDotSize, 0, Math.PI * 2);
             ctx.fill();
             ctx.beginPath();
-            ctx.arc(point.x + size, point.y - size, 1, 0, Math.PI * 2);
+            ctx.arc(point.x + size, point.y - size, cornerDotSize, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Add subtle thread shine highlights
+            ctx.fillStyle = highlightColor;
+            ctx.globalAlpha = 0.6;
+            const shineSize = cornerDotSize * 0.4;
+            ctx.beginPath();
+            ctx.arc(point.x - size - shineSize * 0.5, point.y - size - shineSize * 0.5, shineSize, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(point.x + size + shineSize * 0.5, point.y + size + shineSize * 0.5, shineSize, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(point.x - size - shineSize * 0.5, point.y + size + shineSize * 0.5, shineSize, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(point.x + size + shineSize * 0.5, point.y - size - shineSize * 0.5, shineSize, 0, Math.PI * 2);
             ctx.fill();
           }
         });
