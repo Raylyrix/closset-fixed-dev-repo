@@ -11,6 +11,7 @@ export interface EmbroideryStitch {
   threadType: 'cotton' | 'polyester' | 'silk' | 'metallic' | 'glow' | 'variegated' | 'specialty';
   thickness: number;
   opacity: number;
+  lastMoveTime?: number; // For throttling
   pattern?: string;
 }
 
