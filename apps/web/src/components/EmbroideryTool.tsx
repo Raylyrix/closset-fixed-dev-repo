@@ -1713,10 +1713,10 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
     if (points.length < 2) return points;
     
     const stitchPoints: {x: number, y: number}[] = [];
-    const baseSpacing = 0.01; // Base spacing for consistent stitches
-    const densityMultiplier = 0.5 + (density * 0.5); // 0.5 to 1.0 range
+    const baseSpacing = 0.003; // Much denser base spacing for realistic satin
+    const densityMultiplier = 0.3 + (density * 0.7); // 0.3 to 1.0 range for more density
     const stitchSpacing = baseSpacing * densityMultiplier;
-    const maxStitchesPerSegment = 30; // Reduced limit for better performance
+    const maxStitchesPerSegment = 50; // Increased for better quality
     
     for (let i = 0; i < points.length - 1; i++) {
       const start = points[i];
@@ -1749,12 +1749,12 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
     const minY = Math.min(...points.map(p => p.y));
     const maxY = Math.max(...points.map(p => p.y));
     
-    const baseSpacing = 0.012; // Base spacing for consistent fill
-    const densityMultiplier = 0.6 + (density * 0.4); // 0.6 to 1.0 range
+    const baseSpacing = 0.004; // Much denser base spacing for realistic fill
+    const densityMultiplier = 0.4 + (density * 0.6); // 0.4 to 1.0 range for more density
     const stitchSpacing = baseSpacing * densityMultiplier;
     const stitchLines: {x: number, y: number}[][] = [];
-    const maxLines = 60; // Reduced limit for better performance
-    const maxPointsPerLine = 30; // Reduced limit for consistency
+    const maxLines = 80; // Increased for better quality
+    const maxPointsPerLine = 40; // Increased for better quality
     
     // Determine stitch direction based on user setting and shape
     const width = maxX - minX;
@@ -1789,7 +1789,7 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
             const endX = intersections[j + 1];
             const linePoints = [];
             const lineLength = endX - startX;
-            const pointsCount = Math.min(maxPointsPerLine, Math.max(3, Math.floor(lineLength / stitchSpacing)));
+            const pointsCount = Math.min(maxPointsPerLine, Math.max(5, Math.floor(lineLength / (stitchSpacing * 0.5))));
             
             // Generate consistent points along the line
             for (let k = 0; k <= pointsCount; k++) {
@@ -1817,7 +1817,7 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
             const endY = intersections[j + 1];
             const linePoints = [];
             const lineLength = endY - startY;
-            const pointsCount = Math.min(maxPointsPerLine, Math.max(3, Math.floor(lineLength / stitchSpacing)));
+            const pointsCount = Math.min(maxPointsPerLine, Math.max(5, Math.floor(lineLength / (stitchSpacing * 0.5))));
             
             // Generate consistent points along the line
             for (let k = 0; k <= pointsCount; k++) {
@@ -1861,11 +1861,11 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
   // Generate diagonal satin stitches (optimized)
   const generateDiagonalSatinStitches = (points: {x: number, y: number}[], density: number, angle: number) => {
     const stitchLines: {x: number, y: number}[][] = [];
-    const baseSpacing = 0.010; // Base spacing for consistent diagonal stitches
-    const densityMultiplier = 0.6 + (density * 0.4); // 0.6 to 1.0 range
+    const baseSpacing = 0.005; // Much denser base spacing for realistic diagonal stitches
+    const densityMultiplier = 0.4 + (density * 0.6); // 0.4 to 1.0 range for more density
     const stitchSpacing = baseSpacing * densityMultiplier;
-    const maxLines = 40; // Reduced limit for better performance
-    const maxPointsPerLine = 25; // Reduced limit for consistency
+    const maxLines = 60; // Increased for better quality
+    const maxPointsPerLine = 35; // Increased for better quality
     
     // Calculate bounding box
     const minX = Math.min(...points.map(p => p.x));
@@ -1901,7 +1901,7 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
           const t1 = intersections[j];
           const t2 = intersections[j + 1];
           const lineLength = t2 - t1;
-          const pointsCount = Math.min(maxPointsPerLine, Math.max(3, Math.floor(lineLength / stitchSpacing)));
+          const pointsCount = Math.min(maxPointsPerLine, Math.max(5, Math.floor(lineLength / (stitchSpacing * 0.5))));
           
           // Generate consistent points along the diagonal line
           for (let k = 0; k <= pointsCount; k++) {
@@ -2051,20 +2051,39 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
     ctx.beginPath();
     ctx.moveTo(points[0].x, points[0].y);
     
-    console.log('🧵 Rendering stitch type:', stitch.type);
+    console.log('🧵 Rendering stitch type:', stitch.type, 'Type check:', typeof stitch.type);
+    
+    // Debug: Check if stitch type is correct
+    if (stitch.type !== 'satin') {
+      console.warn('⚠️ WARNING: Expected satin stitch but got:', stitch.type);
+    }
     
     switch (stitch.type) {
       case 'satin':
         console.log('🧵 SATIN CASE EXECUTING - drawing professional satin stitch with', points.length, 'points');
         
         // Safety check to prevent memory issues
-        if (points.length > 1000) {
+        if (points.length > 500) {
           console.warn('Too many points for satin stitch, using simplified version');
-          // Simple satin stitch fallback
-          ctx.lineWidth = stitch.thickness * 1.5;
+          // Simple satin stitch fallback with better quality
+          ctx.lineWidth = stitch.thickness * 2;
           ctx.lineCap = 'round';
           ctx.lineJoin = 'round';
           
+          // Create gradient for simple satin
+          const gradient = ctx.createLinearGradient(
+            points[0].x, points[0].y,
+            points[points.length - 1].x, points[points.length - 1].y
+          );
+          const baseColor = stitch.color;
+          const highlightColor = adjustBrightness(baseColor, 20);
+          const shadowColor = adjustBrightness(baseColor, -15);
+          
+          gradient.addColorStop(0, highlightColor);
+          gradient.addColorStop(0.5, baseColor);
+          gradient.addColorStop(1, shadowColor);
+          
+          ctx.strokeStyle = gradient;
           ctx.beginPath();
           ctx.moveTo(points[0].x, points[0].y);
           for (let i = 1; i < points.length; i++) {
@@ -2197,7 +2216,7 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
               Math.pow(curr.x - prev.x, 2) + Math.pow(curr.y - prev.y, 2)
             );
             
-            if (distance > 0.003) { // Only draw if there's enough distance
+            if (distance > 0.001) { // Much tighter spacing for dense satin
               if (next) {
                 const cp1x = prev.x + (curr.x - prev.x) / 3;
                 const cp1y = prev.y + (curr.y - prev.y) / 3;
@@ -2223,7 +2242,7 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
               Math.pow(curr.x - prev.x, 2) + Math.pow(curr.y - prev.y, 2)
             );
             
-            if (distance > 0.003 && next) { // Only draw if there's enough distance
+            if (distance > 0.001 && next) { // Much tighter spacing for dense satin
               const angle = Math.atan2(curr.y - prev.y, curr.x - prev.x);
               const perpX = Math.cos(angle + Math.PI/2) * offset;
               const perpY = Math.sin(angle + Math.PI/2) * offset;
