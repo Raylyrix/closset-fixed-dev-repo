@@ -42,7 +42,7 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
   const [threadPalette, setThreadPalette] = useState<string[]>(['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF']);
   const [showPatternLibrary, setShowPatternLibrary] = useState(false);
   const [selectedPattern, setSelectedPattern] = useState<string | null>(null);
-  const [stitchDirection, setStitchDirection] = useState<'horizontal' | 'vertical' | 'diagonal' | 'radial'>('horizontal');
+  const [stitchDirection, setStitchDirection] = useState<'horizontal' | 'vertical' | 'diagonal' | 'perpendicular'>('horizontal');
   const [stitchSpacing, setStitchSpacing] = useState(0.5);
   const [stitchDensity, setStitchDensity] = useState(1.0);
   const [threadTexture, setThreadTexture] = useState('smooth');
@@ -1708,6 +1708,225 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
     }
   };
 
+  // Generate consistent stitch points for satin stitch
+  const generateSatinStitchPoints = (points: {x: number, y: number}[], density: number = 0.5) => {
+    if (points.length < 2) return points;
+    
+    const stitchPoints: {x: number, y: number}[] = [];
+    const minSpacing = 0.002 * (1 - density); // Minimum spacing between stitches
+    const maxSpacing = 0.01 * (1 - density); // Maximum spacing between stitches
+    
+    for (let i = 0; i < points.length - 1; i++) {
+      const start = points[i];
+      const end = points[i + 1];
+      const distance = Math.sqrt((end.x - start.x) ** 2 + (end.y - start.y) ** 2);
+      
+      // Calculate number of stitches based on distance and density
+      const numStitches = Math.max(1, Math.floor(distance / (minSpacing + (maxSpacing - minSpacing) * (1 - density))));
+      
+      // Generate evenly spaced points
+      for (let j = 0; j <= numStitches; j++) {
+        const t = j / numStitches;
+        stitchPoints.push({
+          x: start.x + (end.x - start.x) * t,
+          y: start.y + (end.y - start.y) * t
+        });
+      }
+    }
+    
+    return stitchPoints;
+  };
+
+  // Generate parallel satin stitches for realistic fill
+  const generateSatinFillStitches = (points: {x: number, y: number}[], density: number = 0.5) => {
+    if (points.length < 3) return [points];
+    
+    // Calculate bounding box
+    const minX = Math.min(...points.map(p => p.x));
+    const maxX = Math.max(...points.map(p => p.x));
+    const minY = Math.min(...points.map(p => p.y));
+    const maxY = Math.max(...points.map(p => p.y));
+    
+    const stitchSpacing = 0.003 * (1 - density); // Spacing between parallel stitches
+    const stitchLines: {x: number, y: number}[][] = [];
+    
+    // Determine stitch direction based on user setting and shape
+    const width = maxX - minX;
+    const height = maxY - minY;
+    
+    let isHorizontal = false;
+    if (stitchDirection === 'horizontal') {
+      isHorizontal = true;
+    } else if (stitchDirection === 'vertical') {
+      isHorizontal = false;
+    } else if (stitchDirection === 'diagonal') {
+      // Use diagonal direction
+      const angle = Math.atan2(height, width);
+      return generateDiagonalSatinStitches(points, density, angle);
+    } else if (stitchDirection === 'perpendicular') {
+      // Use perpendicular to the main axis
+      isHorizontal = height > width;
+    } else {
+      // Default: use shape-based direction
+      isHorizontal = width > height;
+    }
+    
+    if (isHorizontal) {
+      // Horizontal satin stitches
+      for (let y = minY; y <= maxY; y += stitchSpacing) {
+        const intersections = getLineIntersections(points, y);
+        for (let i = 0; i < intersections.length; i += 2) {
+          if (intersections[i + 1]) {
+            const startX = intersections[i];
+            const endX = intersections[i + 1];
+            const linePoints = [];
+            
+            for (let x = startX; x <= endX; x += stitchSpacing * 0.5) {
+              linePoints.push({ x, y });
+            }
+            if (linePoints.length > 1) {
+              stitchLines.push(linePoints);
+            }
+          }
+        }
+      }
+    } else {
+      // Vertical satin stitches
+      for (let x = minX; x <= maxX; x += stitchSpacing) {
+        const intersections = getVerticalIntersections(points, x);
+        for (let i = 0; i < intersections.length; i += 2) {
+          if (intersections[i + 1]) {
+            const startY = intersections[i];
+            const endY = intersections[i + 1];
+            const linePoints = [];
+            
+            for (let y = startY; y <= endY; y += stitchSpacing * 0.5) {
+              linePoints.push({ x, y });
+            }
+            if (linePoints.length > 1) {
+              stitchLines.push(linePoints);
+            }
+          }
+        }
+      }
+    }
+    
+    return stitchLines;
+  };
+
+  // Helper function for vertical line intersections
+  const getVerticalIntersections = (points: {x: number, y: number}[], x: number) => {
+    const intersections: number[] = [];
+    
+    for (let i = 0; i < points.length; i++) {
+      const p1 = points[i];
+      const p2 = points[(i + 1) % points.length];
+      
+      if ((p1.x <= x && p2.x >= x) || (p1.x >= x && p2.x <= x)) {
+        if (p1.x !== p2.x) {
+          const t = (x - p1.x) / (p2.x - p1.x);
+          const y = p1.y + t * (p2.y - p1.y);
+          intersections.push(y);
+        }
+      }
+    }
+    
+    return intersections.sort((a, b) => a - b);
+  };
+
+  // Generate diagonal satin stitches
+  const generateDiagonalSatinStitches = (points: {x: number, y: number}[], density: number, angle: number) => {
+    const stitchLines: {x: number, y: number}[][] = [];
+    const stitchSpacing = 0.003 * (1 - density);
+    
+    // Calculate bounding box
+    const minX = Math.min(...points.map(p => p.x));
+    const maxX = Math.max(...points.map(p => p.x));
+    const minY = Math.min(...points.map(p => p.y));
+    const maxY = Math.max(...points.map(p => p.y));
+    
+    // Calculate diagonal line parameters
+    const cosAngle = Math.cos(angle);
+    const sinAngle = Math.sin(angle);
+    const diagonalLength = Math.sqrt((maxX - minX) ** 2 + (maxY - minY) ** 2);
+    
+    // Generate diagonal lines
+    for (let offset = -diagonalLength; offset <= diagonalLength; offset += stitchSpacing) {
+      const linePoints: {x: number, y: number}[] = [];
+      
+      // Calculate line start and end points
+      const centerX = (minX + maxX) / 2;
+      const centerY = (minY + maxY) / 2;
+      
+      const startX = centerX + offset * cosAngle - diagonalLength * sinAngle;
+      const startY = centerY + offset * sinAngle + diagonalLength * cosAngle;
+      const endX = centerX + offset * cosAngle + diagonalLength * sinAngle;
+      const endY = centerY + offset * sinAngle - diagonalLength * cosAngle;
+      
+      // Find intersections with shape
+      const intersections = getLineIntersectionsAdvanced(points, startY, startX, endX, endY);
+      
+      for (let i = 0; i < intersections.length; i += 2) {
+        if (intersections[i + 1]) {
+          const t1 = intersections[i];
+          const t2 = intersections[i + 1];
+          
+          for (let t = t1; t <= t2; t += stitchSpacing * 0.5) {
+            const x = startX + t * (endX - startX);
+            const y = startY + t * (endY - startY);
+            linePoints.push({ x, y });
+          }
+        }
+      }
+      
+      if (linePoints.length > 1) {
+        stitchLines.push(linePoints);
+      }
+    }
+    
+    return stitchLines;
+  };
+
+  // Helper function for line intersections with arbitrary line
+  const getLineIntersectionsAdvanced = (points: {x: number, y: number}[], y: number, startX?: number, endX?: number, endY?: number) => {
+    const intersections: number[] = [];
+    
+    if (startX !== undefined && endX !== undefined && endY !== undefined) {
+      // Diagonal line intersection
+      for (let i = 0; i < points.length; i++) {
+        const p1 = points[i];
+        const p2 = points[(i + 1) % points.length];
+        
+        // Check if line segments intersect
+        const denom = (endX - startX) * (p2.y - p1.y) - (endY - y) * (p2.x - p1.x);
+        if (Math.abs(denom) > 1e-10) {
+          const t1 = ((p1.x - startX) * (endY - y) - (p1.y - y) * (endX - startX)) / denom;
+          const t2 = ((p1.x - startX) * (p2.y - p1.y) - (p1.y - y) * (p2.x - p1.x)) / denom;
+          
+          if (t1 >= 0 && t1 <= 1 && t2 >= 0 && t2 <= 1) {
+            intersections.push(t2);
+          }
+        }
+      }
+    } else {
+      // Horizontal line intersection (original function)
+      for (let i = 0; i < points.length; i++) {
+        const p1 = points[i];
+        const p2 = points[(i + 1) % points.length];
+        
+        if ((p1.y <= y && p2.y >= y) || (p1.y >= y && p2.y <= y)) {
+          if (p1.y !== p2.y) {
+            const t = (y - p1.y) / (p2.y - p1.y);
+            const x = p1.x + t * (p2.x - p1.x);
+            intersections.push(x);
+          }
+        }
+      }
+    }
+    
+    return intersections.sort((a, b) => a - b);
+  };
+
   // Draw stitch on 3D model texture
   const drawStitchOnModel = (stitch: EmbroideryStitch) => {
     // Get the composed canvas from the Zustand store
@@ -1802,55 +2021,165 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
     
     switch (stitch.type) {
       case 'satin':
-        console.log('🧵 SATIN CASE EXECUTING - drawing bezier curves with', points.length, 'points');
-        // Smooth curve for satin stitch with enhanced visibility
-        ctx.lineWidth = stitch.thickness * 1.5;
+        console.log('🧵 SATIN CASE EXECUTING - drawing professional satin stitch with', points.length, 'points');
         
-        for (let i = 1; i < points.length; i++) {
-          const prev = points[i - 1];
-          const curr = points[i];
-          const next = points[i + 1];
+        // Generate consistent stitch points based on density
+        const satinPoints = generateSatinStitchPoints(points, stitchDensity);
+        
+        // Determine if this is a fill area or outline
+        const isFillArea = points.length > 2 && 
+          Math.abs(points[0].x - points[points.length - 1].x) < 0.01 && 
+          Math.abs(points[0].y - points[points.length - 1].y) < 0.01;
+        
+        if (isFillArea) {
+          // Generate parallel satin stitches for fill
+          const stitchLines = generateSatinFillStitches(points, stitchDensity);
           
-          if (next) {
-            const cp1x = prev.x + (curr.x - prev.x) / 3;
-            const cp1y = prev.y + (curr.y - prev.y) / 3;
-            const cp2x = curr.x - (next.x - curr.x) / 3;
-            const cp2y = curr.y - (next.y - curr.y) / 3;
-            ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, curr.x, curr.y);
-          } else {
-            ctx.lineTo(curr.x, curr.y);
+          ctx.lineWidth = stitch.thickness * 0.8;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          
+          stitchLines.forEach((linePoints, lineIndex) => {
+            if (linePoints.length < 2) return;
+            
+            // Create gradient for each line based on lighting
+            const start = linePoints[0];
+            const end = linePoints[linePoints.length - 1];
+            const gradient = ctx.createLinearGradient(start.x, start.y, end.x, end.y);
+            
+            // Calculate lighting effect
+            const lightAngle = lightingDirection === 'top-left' ? -Math.PI/4 : 
+                             lightingDirection === 'top-right' ? Math.PI/4 :
+                             lightingDirection === 'bottom-left' ? -3*Math.PI/4 : 3*Math.PI/4;
+            
+            const lineAngle = Math.atan2(end.y - start.y, end.x - start.x);
+            const lightEffect = Math.cos(lineAngle - lightAngle);
+            
+            const baseColor = stitch.color;
+            const highlightColor = adjustBrightness(baseColor, 20 + lightEffect * 15);
+            const shadowColor = adjustBrightness(baseColor, -20 - lightEffect * 15);
+            
+            gradient.addColorStop(0, highlightColor);
+            gradient.addColorStop(0.5, baseColor);
+            gradient.addColorStop(1, shadowColor);
+            
+            ctx.strokeStyle = gradient;
+            
+            // Draw the satin line
+            ctx.beginPath();
+            ctx.moveTo(linePoints[0].x, linePoints[0].y);
+            
+            for (let i = 1; i < linePoints.length; i++) {
+              const curr = linePoints[i];
+              const prev = linePoints[i - 1];
+              const next = linePoints[i + 1];
+              
+              if (next) {
+                // Smooth curve for satin effect
+                const cp1x = prev.x + (curr.x - prev.x) / 3;
+                const cp1y = prev.y + (curr.y - prev.y) / 3;
+                const cp2x = curr.x - (next.x - curr.x) / 3;
+                const cp2y = curr.y - (next.y - curr.y) / 3;
+                ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, curr.x, curr.y);
+              } else {
+                ctx.lineTo(curr.x, curr.y);
+              }
+            }
+            ctx.stroke();
+            
+            // Add subtle highlight line for 3D effect
+            if (lightEffect > 0.3) {
+              ctx.strokeStyle = adjustBrightness(baseColor, 30);
+              ctx.lineWidth = stitch.thickness * 0.2;
+              ctx.beginPath();
+              ctx.moveTo(linePoints[0].x, linePoints[0].y);
+              for (let i = 1; i < linePoints.length; i++) {
+                const curr = linePoints[i];
+                const prev = linePoints[i - 1];
+                const next = linePoints[i + 1];
+                
+                if (next) {
+                  const cp1x = prev.x + (curr.x - prev.x) / 3;
+                  const cp1y = prev.y + (curr.y - prev.y) / 3;
+                  const cp2x = curr.x - (next.x - curr.x) / 3;
+                  const cp2y = curr.y - (next.y - curr.y) / 3;
+                  ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, curr.x, curr.y);
+                } else {
+                  ctx.lineTo(curr.x, curr.y);
+                }
+              }
+              ctx.stroke();
+            }
+          });
+        } else {
+          // Outline satin stitch
+          ctx.lineWidth = stitch.thickness * 1.2;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          
+          // Create gradient for outline
+          const start = satinPoints[0];
+          const end = satinPoints[satinPoints.length - 1];
+          const gradient = ctx.createLinearGradient(start.x, start.y, end.x, end.y);
+          
+          const baseColor = stitch.color;
+          const highlightColor = adjustBrightness(baseColor, 25);
+          const shadowColor = adjustBrightness(baseColor, -15);
+          
+          gradient.addColorStop(0, highlightColor);
+          gradient.addColorStop(0.5, baseColor);
+          gradient.addColorStop(1, shadowColor);
+          
+          ctx.strokeStyle = gradient;
+          
+          // Draw main satin line
+          ctx.beginPath();
+          ctx.moveTo(satinPoints[0].x, satinPoints[0].y);
+          
+          for (let i = 1; i < satinPoints.length; i++) {
+            const curr = satinPoints[i];
+            const prev = satinPoints[i - 1];
+            const next = satinPoints[i + 1];
+            
+            if (next) {
+              const cp1x = prev.x + (curr.x - prev.x) / 3;
+              const cp1y = prev.y + (curr.y - prev.y) / 3;
+              const cp2x = curr.x - (next.x - curr.x) / 3;
+              const cp2y = curr.y - (next.y - curr.y) / 3;
+              ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, curr.x, curr.y);
+            } else {
+              ctx.lineTo(curr.x, curr.y);
+            }
           }
-        }
-        ctx.stroke();
-        
-        // Add parallel lines for satin effect
-        ctx.lineWidth = stitch.thickness * 0.5;
-        for (let i = 1; i < points.length; i++) {
-          const prev = points[i - 1];
-          const curr = points[i];
-          const next = points[i + 1];
+          ctx.stroke();
           
-          if (next) {
-            const cp1x = prev.x + (curr.x - prev.x) / 3;
-            const cp1y = prev.y + (curr.y - prev.y) / 3;
-            const cp2x = curr.x - (next.x - curr.x) / 3;
-            const cp2y = curr.y - (next.y - curr.y) / 3;
+          // Add parallel lines for depth
+          const offset = stitch.thickness * 0.3;
+          for (let i = 1; i < satinPoints.length; i++) {
+            const curr = satinPoints[i];
+            const prev = satinPoints[i - 1];
+            const next = satinPoints[i + 1];
             
-            // Draw parallel lines above and below
-            const offset = stitch.thickness * 0.3;
-            const angle = Math.atan2(curr.y - prev.y, curr.x - prev.x);
-            const perpX = Math.cos(angle + Math.PI/2) * offset;
-            const perpY = Math.sin(angle + Math.PI/2) * offset;
-            
-            ctx.beginPath();
-            ctx.moveTo(prev.x + perpX, prev.y + perpY);
-            ctx.bezierCurveTo(cp1x + perpX, cp1y + perpY, cp2x + perpX, cp2y + perpY, curr.x + perpX, curr.y + perpY);
-            ctx.stroke();
-            
-            ctx.beginPath();
-            ctx.moveTo(prev.x - perpX, prev.y - perpY);
-            ctx.bezierCurveTo(cp1x - perpX, cp1y - perpY, cp2x - perpX, cp2y - perpY, curr.x - perpX, curr.y - perpY);
-            ctx.stroke();
+            if (next) {
+              const angle = Math.atan2(curr.y - prev.y, curr.x - prev.x);
+              const perpX = Math.cos(angle + Math.PI/2) * offset;
+              const perpY = Math.sin(angle + Math.PI/2) * offset;
+              
+              // Top parallel line
+              ctx.strokeStyle = adjustBrightness(baseColor, 15);
+              ctx.lineWidth = stitch.thickness * 0.4;
+              ctx.beginPath();
+              ctx.moveTo(prev.x + perpX, prev.y + perpY);
+              ctx.lineTo(curr.x + perpX, curr.y + perpY);
+              ctx.stroke();
+              
+              // Bottom parallel line
+              ctx.strokeStyle = adjustBrightness(baseColor, -10);
+              ctx.beginPath();
+              ctx.moveTo(prev.x - perpX, prev.y - perpY);
+              ctx.lineTo(curr.x - perpX, curr.y - perpY);
+              ctx.stroke();
+            }
           }
         }
         break;
@@ -2647,6 +2976,39 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
               accentColor: '#8B5CF6'
             }}
           />
+        </div>
+
+        {/* Stitch Direction */}
+        <div className="control-group" style={{
+          background: 'rgba(139, 92, 246, 0.1)',
+          padding: '12px',
+          borderRadius: '8px',
+          border: '1px solid rgba(139, 92, 246, 0.3)'
+        }}>
+          <label style={{ 
+            display: 'block', 
+            marginBottom: '8px', 
+            fontWeight: '500',
+            color: '#E2E8F0'
+          }}>Stitch Direction</label>
+          <select 
+            value={stitchDirection}
+            onChange={(e) => setStitchDirection(e.target.value as any)}
+            style={{
+              width: '100%',
+              padding: '8px',
+              borderRadius: '4px',
+              border: '1px solid rgba(139, 92, 246, 0.3)',
+              background: 'rgba(15, 23, 42, 0.8)',
+              color: '#E2E8F0',
+              fontSize: '14px'
+            }}
+          >
+            <option value="diagonal">Diagonal</option>
+            <option value="horizontal">Horizontal</option>
+            <option value="vertical">Vertical</option>
+            <option value="perpendicular">Perpendicular</option>
+          </select>
         </div>
 
         {/* Underlay Type */}
