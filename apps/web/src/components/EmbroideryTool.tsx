@@ -45,6 +45,7 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
   const [stitchDirection, setStitchDirection] = useState<'horizontal' | 'vertical' | 'diagonal' | 'perpendicular'>('horizontal');
   const [stitchSpacing, setStitchSpacing] = useState(0.5);
   const [stitchDensity, setStitchDensity] = useState(1.0);
+  const [performanceMode, setPerformanceMode] = useState(false);
   const [threadTexture, setThreadTexture] = useState('smooth');
   const [lightingDirection, setLightingDirection] = useState('top-left');
   const [fabricType, setFabricType] = useState('cotton');
@@ -1713,10 +1714,10 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
     if (points.length < 2) return points;
     
     const stitchPoints: {x: number, y: number}[] = [];
-    const baseSpacing = 0.003; // Much denser base spacing for realistic satin
-    const densityMultiplier = 0.3 + (density * 0.7); // 0.3 to 1.0 range for more density
+    const baseSpacing = performanceMode ? 0.015 : 0.008; // Performance mode uses less dense spacing
+    const densityMultiplier = performanceMode ? 0.7 + (density * 0.3) : 0.5 + (density * 0.5);
     const stitchSpacing = baseSpacing * densityMultiplier;
-    const maxStitchesPerSegment = 50; // Increased for better quality
+    const maxStitchesPerSegment = performanceMode ? 15 : 25; // Performance mode uses fewer stitches
     
     for (let i = 0; i < points.length - 1; i++) {
       const start = points[i];
@@ -1749,12 +1750,12 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
     const minY = Math.min(...points.map(p => p.y));
     const maxY = Math.max(...points.map(p => p.y));
     
-    const baseSpacing = 0.004; // Much denser base spacing for realistic fill
-    const densityMultiplier = 0.4 + (density * 0.6); // 0.4 to 1.0 range for more density
+    const baseSpacing = 0.010; // Balanced spacing for performance and quality
+    const densityMultiplier = 0.6 + (density * 0.4); // 0.6 to 1.0 range for balanced density
     const stitchSpacing = baseSpacing * densityMultiplier;
     const stitchLines: {x: number, y: number}[][] = [];
-    const maxLines = 80; // Increased for better quality
-    const maxPointsPerLine = 40; // Increased for better quality
+    const maxLines = 40; // Reduced for better performance
+    const maxPointsPerLine = 20; // Reduced for better performance
     
     // Determine stitch direction based on user setting and shape
     const width = maxX - minX;
@@ -1789,7 +1790,7 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
             const endX = intersections[j + 1];
             const linePoints = [];
             const lineLength = endX - startX;
-            const pointsCount = Math.min(maxPointsPerLine, Math.max(5, Math.floor(lineLength / (stitchSpacing * 0.5))));
+            const pointsCount = Math.min(maxPointsPerLine, Math.max(3, Math.floor(lineLength / stitchSpacing)));
             
             // Generate consistent points along the line
             for (let k = 0; k <= pointsCount; k++) {
@@ -1817,7 +1818,7 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
             const endY = intersections[j + 1];
             const linePoints = [];
             const lineLength = endY - startY;
-            const pointsCount = Math.min(maxPointsPerLine, Math.max(5, Math.floor(lineLength / (stitchSpacing * 0.5))));
+            const pointsCount = Math.min(maxPointsPerLine, Math.max(3, Math.floor(lineLength / stitchSpacing)));
             
             // Generate consistent points along the line
             for (let k = 0; k <= pointsCount; k++) {
@@ -1861,11 +1862,11 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
   // Generate diagonal satin stitches (optimized)
   const generateDiagonalSatinStitches = (points: {x: number, y: number}[], density: number, angle: number) => {
     const stitchLines: {x: number, y: number}[][] = [];
-    const baseSpacing = 0.005; // Much denser base spacing for realistic diagonal stitches
-    const densityMultiplier = 0.4 + (density * 0.6); // 0.4 to 1.0 range for more density
+    const baseSpacing = 0.012; // Balanced spacing for performance and quality
+    const densityMultiplier = 0.6 + (density * 0.4); // 0.6 to 1.0 range for balanced density
     const stitchSpacing = baseSpacing * densityMultiplier;
-    const maxLines = 60; // Increased for better quality
-    const maxPointsPerLine = 35; // Increased for better quality
+    const maxLines = 30; // Reduced for better performance
+    const maxPointsPerLine = 20; // Reduced for better performance
     
     // Calculate bounding box
     const minX = Math.min(...points.map(p => p.x));
@@ -2063,7 +2064,7 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
         console.log('🧵 SATIN CASE EXECUTING - drawing professional satin stitch with', points.length, 'points');
         
         // Safety check to prevent memory issues
-        if (points.length > 500) {
+        if (points.length > 200) {
           console.warn('Too many points for satin stitch, using simplified version');
           // Simple satin stitch fallback with better quality
           ctx.lineWidth = stitch.thickness * 2;
@@ -2216,7 +2217,7 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
               Math.pow(curr.x - prev.x, 2) + Math.pow(curr.y - prev.y, 2)
             );
             
-            if (distance > 0.001) { // Much tighter spacing for dense satin
+            if (distance > 0.005) { // Balanced spacing for performance
               if (next) {
                 const cp1x = prev.x + (curr.x - prev.x) / 3;
                 const cp1y = prev.y + (curr.y - prev.y) / 3;
@@ -2242,7 +2243,7 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
               Math.pow(curr.x - prev.x, 2) + Math.pow(curr.y - prev.y, 2)
             );
             
-            if (distance > 0.001 && next) { // Much tighter spacing for dense satin
+            if (distance > 0.005 && next) { // Balanced spacing for performance
               const angle = Math.atan2(curr.y - prev.y, curr.x - prev.x);
               const perpX = Math.cos(angle + Math.PI/2) * offset;
               const perpY = Math.sin(angle + Math.PI/2) * offset;
@@ -2754,7 +2755,7 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
       
       // Throttle move events to prevent excessive calculations
       const now = Date.now();
-      if (currentStitch.lastMoveTime && now - currentStitch.lastMoveTime < 16) { // ~60fps
+      if (currentStitch.lastMoveTime && now - currentStitch.lastMoveTime < 32) { // ~30fps for better performance
         return;
       }
       
@@ -3065,9 +3066,33 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
               accentColor: '#8B5CF6'
             }}
           />
-          <small style={{ color: '#94A3B8', fontSize: '12px' }}>
-            Higher density may cause performance issues
+          <small style={{ color: '#F59E0B', fontSize: '12px', fontWeight: '500' }}>
+            ⚠️ High density may cause lag - use 20%-60% for best performance
           </small>
+        </div>
+
+        {/* Performance Mode Toggle */}
+        <div className="control-group" style={{
+          background: 'rgba(139, 92, 246, 0.1)',
+          padding: '12px',
+          borderRadius: '8px',
+          border: '1px solid rgba(139, 92, 246, 0.3)'
+        }}>
+          <label style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '8px',
+            fontWeight: '500',
+            color: '#E2E8F0'
+          }}>
+            <input 
+              type="checkbox" 
+              checked={performanceMode}
+              onChange={(e) => setPerformanceMode(e.target.checked)}
+              style={{ accentColor: '#8B5CF6' }}
+            />
+            🚀 Performance Mode (Reduces quality for better speed)
+          </label>
         </div>
 
         {/* Stitch Direction */}
