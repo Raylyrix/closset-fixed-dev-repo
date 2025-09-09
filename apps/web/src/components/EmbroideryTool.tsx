@@ -770,11 +770,125 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
         break;
 
       case 'outline':
-        // Simple line drawing for outline
+        console.log(`📏 RENDERING HYPERREALISTIC OUTLINE STITCH with ${points.length} points`);
+        // Draw hyperrealistic outline stitch with professional embroidery quality
+        if (points.length < 2) return;
+        
+        const outlineThreadThickness = Math.max(0.8, stitch.thickness * 0.6);
+        
+        // Create realistic thread color variations
+        const threadVariation = (Math.sin(points.length * 0.3) * 5) + (Math.random() * 3 - 1.5);
+        const adjustedColor = adjustBrightness(baseColor, threadVariation);
+        const shadowColor = adjustBrightness(adjustedColor, -15);
+        const highlightColor = adjustBrightness(adjustedColor, 8);
+        
+        // Draw outline shadow (offset slightly)
+        ctx.strokeStyle = shadowColor;
+        ctx.lineWidth = outlineThreadThickness * 1.1;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.globalAlpha = 0.3;
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+        
+        ctx.beginPath();
+        ctx.moveTo(points[0].x + 0.3, points[0].y + 0.3);
         for (let i = 1; i < points.length; i++) {
-          ctx.lineTo(points[i].x, points[i].y);
+          ctx.lineTo(points[i].x + 0.3, points[i].y + 0.3);
         }
         ctx.stroke();
+        
+        // Draw main outline thread
+        ctx.strokeStyle = adjustedColor;
+        ctx.lineWidth = outlineThreadThickness;
+        ctx.globalAlpha = 1;
+        
+        ctx.beginPath();
+        ctx.moveTo(points[0].x, points[0].y);
+        for (let i = 1; i < points.length; i++) {
+          // Add subtle thread texture variations
+          const segmentLength = Math.sqrt(
+            Math.pow(points[i].x - points[i-1].x, 2) + 
+            Math.pow(points[i].y - points[i-1].y, 2)
+          );
+          
+          if (segmentLength > 2) {
+            // Break long segments into smaller parts for texture
+            const numSegments = Math.max(2, Math.floor(segmentLength / 3));
+            for (let j = 1; j <= numSegments; j++) {
+              const t = j / numSegments;
+              const x = points[i-1].x + t * (points[i].x - points[i-1].x);
+              const y = points[i-1].y + t * (points[i].y - points[i-1].y);
+              
+              // Add tiny random variations to simulate thread texture
+              const variation = (Math.random() - 0.5) * 0.2;
+              const perpX = -(points[i].y - points[i-1].y) / segmentLength * variation;
+              const perpY = (points[i].x - points[i-1].x) / segmentLength * variation;
+              
+              ctx.lineTo(x + perpX, y + perpY);
+            }
+          } else {
+            ctx.lineTo(points[i].x, points[i].y);
+          }
+        }
+        ctx.stroke();
+        
+        // Add thread highlight for 3D effect
+        ctx.strokeStyle = highlightColor;
+        ctx.lineWidth = outlineThreadThickness * 0.5;
+        ctx.globalAlpha = 0.7;
+        
+        ctx.beginPath();
+        ctx.moveTo(points[0].x - 0.1, points[0].y - 0.1);
+        for (let i = 1; i < points.length; i++) {
+          const segmentLength = Math.sqrt(
+            Math.pow(points[i].x - points[i-1].x, 2) + 
+            Math.pow(points[i].y - points[i-1].y, 2)
+          );
+          
+          if (segmentLength > 2) {
+            const numSegments = Math.max(2, Math.floor(segmentLength / 3));
+            for (let j = 1; j <= numSegments; j++) {
+              const t = j / numSegments;
+              const x = points[i-1].x + t * (points[i].x - points[i-1].x);
+              const y = points[i-1].y + t * (points[i].y - points[i-1].y);
+              
+              const variation = (Math.random() - 0.5) * 0.1;
+              const perpX = -(points[i].y - points[i-1].y) / segmentLength * variation;
+              const perpY = (points[i].x - points[i-1].x) / segmentLength * variation;
+              
+              ctx.lineTo(x + perpX - 0.1, y + perpY - 0.1);
+            }
+          } else {
+            ctx.lineTo(points[i].x - 0.1, points[i].y - 0.1);
+          }
+        }
+        ctx.stroke();
+        
+        // Add realistic thread texture dots at key points
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = adjustedColor;
+        const dotSize = outlineThreadThickness * 0.3;
+        
+        // Add dots at start and end points
+        ctx.beginPath();
+        ctx.arc(points[0].x, points[0].y, dotSize, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(points[points.length - 1].x, points[points.length - 1].y, dotSize, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Add subtle thread shine highlights
+        ctx.fillStyle = highlightColor;
+        ctx.globalAlpha = 0.6;
+        const shineSize = dotSize * 0.6;
+        ctx.beginPath();
+        ctx.arc(points[0].x - shineSize * 0.3, points[0].y - shineSize * 0.3, shineSize, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(points[points.length - 1].x - shineSize * 0.3, points[points.length - 1].y - shineSize * 0.3, shineSize, 0, Math.PI * 2);
+        ctx.fill();
         break;
 
       case 'french-knot':
@@ -3007,12 +3121,125 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
         break;
 
       case 'outline':
-        console.log('🧵 OUTLINE CASE EXECUTING - drawing simple lines');
-        // Simple line drawing for outline
+        console.log('🧵 HYPERREALISTIC OUTLINE CASE EXECUTING - drawing professional outline lines');
+        // Draw hyperrealistic outline stitch with professional embroidery quality
+        if (points.length < 2) return;
+        
+        const outlineThreadThickness = Math.max(0.8, stitch.thickness * 0.6);
+        
+        // Create realistic thread color variations
+        const threadVariation = (Math.sin(points.length * 0.3) * 5) + (Math.random() * 3 - 1.5);
+        const adjustedColor = adjustBrightness(stitch.color, threadVariation);
+        const shadowColor = adjustBrightness(adjustedColor, -15);
+        const highlightColor = adjustBrightness(adjustedColor, 8);
+        
+        // Draw outline shadow (offset slightly)
+        ctx.strokeStyle = shadowColor;
+        ctx.lineWidth = outlineThreadThickness * 1.1;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.globalAlpha = 0.3;
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+        
+        ctx.beginPath();
+        ctx.moveTo(points[0].x + 0.3, points[0].y + 0.3);
         for (let i = 1; i < points.length; i++) {
-          ctx.lineTo(points[i].x, points[i].y);
+          ctx.lineTo(points[i].x + 0.3, points[i].y + 0.3);
         }
         ctx.stroke();
+        
+        // Draw main outline thread
+        ctx.strokeStyle = adjustedColor;
+        ctx.lineWidth = outlineThreadThickness;
+        ctx.globalAlpha = 1;
+        
+        ctx.beginPath();
+        ctx.moveTo(points[0].x, points[0].y);
+        for (let i = 1; i < points.length; i++) {
+          // Add subtle thread texture variations
+          const segmentLength = Math.sqrt(
+            Math.pow(points[i].x - points[i-1].x, 2) + 
+            Math.pow(points[i].y - points[i-1].y, 2)
+          );
+          
+          if (segmentLength > 2) {
+            // Break long segments into smaller parts for texture
+            const numSegments = Math.max(2, Math.floor(segmentLength / 3));
+            for (let j = 1; j <= numSegments; j++) {
+              const t = j / numSegments;
+              const x = points[i-1].x + t * (points[i].x - points[i-1].x);
+              const y = points[i-1].y + t * (points[i].y - points[i-1].y);
+              
+              // Add tiny random variations to simulate thread texture
+              const variation = (Math.random() - 0.5) * 0.2;
+              const perpX = -(points[i].y - points[i-1].y) / segmentLength * variation;
+              const perpY = (points[i].x - points[i-1].x) / segmentLength * variation;
+              
+              ctx.lineTo(x + perpX, y + perpY);
+            }
+          } else {
+            ctx.lineTo(points[i].x, points[i].y);
+          }
+        }
+        ctx.stroke();
+        
+        // Add thread highlight for 3D effect
+        ctx.strokeStyle = highlightColor;
+        ctx.lineWidth = outlineThreadThickness * 0.5;
+        ctx.globalAlpha = 0.7;
+        
+        ctx.beginPath();
+        ctx.moveTo(points[0].x - 0.1, points[0].y - 0.1);
+        for (let i = 1; i < points.length; i++) {
+          const segmentLength = Math.sqrt(
+            Math.pow(points[i].x - points[i-1].x, 2) + 
+            Math.pow(points[i].y - points[i-1].y, 2)
+          );
+          
+          if (segmentLength > 2) {
+            const numSegments = Math.max(2, Math.floor(segmentLength / 3));
+            for (let j = 1; j <= numSegments; j++) {
+              const t = j / numSegments;
+              const x = points[i-1].x + t * (points[i].x - points[i-1].x);
+              const y = points[i-1].y + t * (points[i].y - points[i-1].y);
+              
+              const variation = (Math.random() - 0.5) * 0.1;
+              const perpX = -(points[i].y - points[i-1].y) / segmentLength * variation;
+              const perpY = (points[i].x - points[i-1].x) / segmentLength * variation;
+              
+              ctx.lineTo(x + perpX - 0.1, y + perpY - 0.1);
+            }
+          } else {
+            ctx.lineTo(points[i].x - 0.1, points[i].y - 0.1);
+          }
+        }
+        ctx.stroke();
+        
+        // Add realistic thread texture dots at key points
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = adjustedColor;
+        const dotSize = outlineThreadThickness * 0.3;
+        
+        // Add dots at start and end points
+        ctx.beginPath();
+        ctx.arc(points[0].x, points[0].y, dotSize, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(points[points.length - 1].x, points[points.length - 1].y, dotSize, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Add subtle thread shine highlights
+        ctx.fillStyle = highlightColor;
+        ctx.globalAlpha = 0.6;
+        const shineSize = dotSize * 0.6;
+        ctx.beginPath();
+        ctx.arc(points[0].x - shineSize * 0.3, points[0].y - shineSize * 0.3, shineSize, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(points[points.length - 1].x - shineSize * 0.3, points[points.length - 1].y - shineSize * 0.3, shineSize, 0, Math.PI * 2);
+        ctx.fill();
         break;
 
       case 'french-knot':
