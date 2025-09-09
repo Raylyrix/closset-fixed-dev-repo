@@ -638,8 +638,8 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
         break;
 
       case 'chain':
-        console.log(`⛓️ RENDERING CHAIN STITCH with ${points.length} points`);
-        // Chain stitch pattern - draw connected oval links with hyperrealistic rendering
+        console.log(`⛓️ RENDERING HYPERREALISTIC CHAIN STITCH with ${points.length} points`);
+        // Chain stitch pattern - draw connected oval links with professional embroidery quality
         for (let i = 0; i < points.length - 1; i++) {
           const curr = points[i];
           const next = points[i + 1];
@@ -647,54 +647,113 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
           const midY = (curr.y + next.y) / 2;
           
           // Calculate link dimensions
-          const linkWidth = stitch.thickness * 2.0;
-          const linkHeight = stitch.thickness * 1.2;
+          const linkWidth = stitch.thickness * 2.5;
+          const linkHeight = stitch.thickness * 1.5;
+          const threadThickness = Math.max(0.8, stitch.thickness * 0.5);
           
-          // Create chain-specific gradient
-          const chainGradient = ctx.createRadialGradient(midX, midY, 0, midX, midY, linkWidth/2);
-          chainGradient.addColorStop(0, highlightColor);
-          chainGradient.addColorStop(0.6, baseColor);
-          chainGradient.addColorStop(1, darkerColor);
+          // Create realistic thread color variations
+          const threadVariation = (Math.sin(i * 0.7) * 6) + (Math.random() * 3 - 1.5);
+          const adjustedColor = adjustBrightness(baseColor, threadVariation);
+          const shadowColor = adjustBrightness(adjustedColor, -18);
+          const highlightColor = adjustBrightness(adjustedColor, 10);
           
-          ctx.strokeStyle = chainGradient;
-          ctx.lineWidth = stitch.thickness * 0.8;
-          ctx.shadowBlur = 2;
-          ctx.shadowOffsetX = 1;
-          ctx.shadowOffsetY = 1;
+          // Calculate link angle for proper orientation
+          const angle = Math.atan2(next.y - curr.y, next.x - curr.x);
           
-          // Draw outer chain link with enhanced rendering
-          ctx.beginPath();
-          ctx.ellipse(midX, midY, linkWidth/2, linkHeight/2, 0, 0, Math.PI * 2);
-          ctx.stroke();
-          
-          // Draw inner oval for chain link hole with darker color
-          ctx.strokeStyle = darkerColor;
-          ctx.lineWidth = stitch.thickness * 0.4;
+          // Draw chain link shadow (offset slightly)
+          ctx.strokeStyle = shadowColor;
+          ctx.lineWidth = threadThickness * 1.2;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          ctx.globalAlpha = 0.3;
           ctx.shadowBlur = 0;
           ctx.shadowOffsetX = 0;
           ctx.shadowOffsetY = 0;
           
           ctx.beginPath();
-          ctx.ellipse(midX, midY, linkWidth/3, linkHeight/3, 0, 0, Math.PI * 2);
+          ctx.ellipse(midX + 0.4, midY + 0.4, linkWidth/2, linkHeight/2, angle, 0, Math.PI * 2);
           ctx.stroke();
           
-          // Add connecting lines between chain links
+          // Draw main chain link
+          ctx.strokeStyle = adjustedColor;
+          ctx.lineWidth = threadThickness;
+          ctx.globalAlpha = 1;
+          
+          ctx.beginPath();
+          ctx.ellipse(midX, midY, linkWidth/2, linkHeight/2, angle, 0, Math.PI * 2);
+          ctx.stroke();
+          
+          // Draw inner oval for chain link hole
+          ctx.beginPath();
+          ctx.ellipse(midX, midY, linkWidth/3, linkHeight/3, angle, 0, Math.PI * 2);
+          ctx.stroke();
+          
+          // Add chain link highlight for 3D effect
+          ctx.strokeStyle = highlightColor;
+          ctx.lineWidth = threadThickness * 0.6;
+          ctx.globalAlpha = 0.8;
+          
+          ctx.beginPath();
+          ctx.ellipse(midX - 0.2, midY - 0.2, linkWidth/2.2, linkHeight/2.2, angle, 0, Math.PI * 2);
+          ctx.stroke();
+          
+          // Add connecting thread between links
           if (i < points.length - 2) {
             const nextNext = points[i + 2];
-            const nextMidX = (next.x + nextNext.x) / 2;
-            const nextMidY = (next.y + nextNext.y) / 2;
+            const connectionX = (next.x + nextNext.x) / 2;
+            const connectionY = (next.y + nextNext.y) / 2;
             
-            ctx.strokeStyle = baseColor;
-            ctx.lineWidth = stitch.thickness * 0.6;
-            ctx.shadowBlur = 1;
-            ctx.shadowOffsetX = 0.5;
-            ctx.shadowOffsetY = 0.5;
+            // Draw connection shadow
+            ctx.strokeStyle = shadowColor;
+            ctx.lineWidth = threadThickness * 0.8;
+            ctx.globalAlpha = 0.3;
             
             ctx.beginPath();
-            ctx.moveTo(midX + linkWidth/2, midY);
-            ctx.lineTo(nextMidX - linkWidth/2, nextMidY);
+            ctx.moveTo(next.x + 0.2, next.y + 0.2);
+            ctx.lineTo(connectionX + 0.2, connectionY + 0.2);
+            ctx.stroke();
+            
+            // Draw main connection thread
+            ctx.strokeStyle = adjustedColor;
+            ctx.lineWidth = threadThickness * 0.6;
+            ctx.globalAlpha = 1;
+            
+            ctx.beginPath();
+            ctx.moveTo(next.x, next.y);
+            ctx.lineTo(connectionX, connectionY);
+            ctx.stroke();
+            
+            // Add connection highlight
+            ctx.strokeStyle = highlightColor;
+            ctx.lineWidth = threadThickness * 0.3;
+            ctx.globalAlpha = 0.7;
+            
+            ctx.beginPath();
+            ctx.moveTo(next.x - 0.1, next.y - 0.1);
+            ctx.lineTo(connectionX - 0.1, connectionY - 0.1);
             ctx.stroke();
           }
+          
+          // Add realistic thread texture dots at key points
+          ctx.globalAlpha = 1;
+          ctx.fillStyle = adjustedColor;
+          const dotSize = threadThickness * 0.4;
+          
+          // Top and bottom of chain link
+          ctx.beginPath();
+          ctx.arc(midX + Math.cos(angle) * linkWidth/2, midY + Math.sin(angle) * linkWidth/2, dotSize, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(midX - Math.cos(angle) * linkWidth/2, midY - Math.sin(angle) * linkWidth/2, dotSize, 0, Math.PI * 2);
+          ctx.fill();
+          
+          // Add subtle thread shine highlights
+          ctx.fillStyle = highlightColor;
+          ctx.globalAlpha = 0.6;
+          const shineSize = dotSize * 0.5;
+          ctx.beginPath();
+          ctx.arc(midX + Math.cos(angle) * linkWidth/2 - shineSize * 0.3, midY + Math.sin(angle) * linkWidth/2 - shineSize * 0.3, shineSize, 0, Math.PI * 2);
+          ctx.fill();
         }
         break;
 
@@ -2815,8 +2874,8 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
         break;
 
       case 'chain':
-        console.log('🧵 CHAIN CASE EXECUTING - drawing chain links');
-        // Chain stitch pattern - draw connected oval links
+        console.log('🧵 HYPERREALISTIC CHAIN CASE EXECUTING - drawing professional chain links');
+        // Chain stitch pattern - draw connected oval links with professional embroidery quality
         for (let i = 0; i < points.length - 1; i++) {
           const curr = points[i];
           const next = points[i + 1];
@@ -2824,26 +2883,113 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
           const midY = (curr.y + next.y) / 2;
           
           // Calculate link dimensions
-          const linkWidth = stitch.thickness * 2.0;
-          const linkHeight = stitch.thickness * 1.2;
+          const linkWidth = stitch.thickness * 2.5;
+          const linkHeight = stitch.thickness * 1.5;
+          const threadThickness = Math.max(0.8, stitch.thickness * 0.5);
           
-          // Draw oval chain link
+          // Create realistic thread color variations
+          const threadVariation = (Math.sin(i * 0.7) * 6) + (Math.random() * 3 - 1.5);
+          const adjustedColor = adjustBrightness(stitch.color, threadVariation);
+          const shadowColor = adjustBrightness(adjustedColor, -18);
+          const highlightColor = adjustBrightness(adjustedColor, 10);
+          
+          // Calculate link angle for proper orientation
+          const angle = Math.atan2(next.y - curr.y, next.x - curr.x);
+          
+          // Draw chain link shadow (offset slightly)
+          ctx.strokeStyle = shadowColor;
+          ctx.lineWidth = threadThickness * 1.2;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          ctx.globalAlpha = 0.3;
+          ctx.shadowBlur = 0;
+          ctx.shadowOffsetX = 0;
+          ctx.shadowOffsetY = 0;
+          
           ctx.beginPath();
-          ctx.ellipse(midX, midY, linkWidth/2, linkHeight/2, 0, 0, Math.PI * 2);
+          ctx.ellipse(midX + 0.4, midY + 0.4, linkWidth/2, linkHeight/2, angle, 0, Math.PI * 2);
+          ctx.stroke();
+          
+          // Draw main chain link
+          ctx.strokeStyle = adjustedColor;
+          ctx.lineWidth = threadThickness;
+          ctx.globalAlpha = 1;
+          
+          ctx.beginPath();
+          ctx.ellipse(midX, midY, linkWidth/2, linkHeight/2, angle, 0, Math.PI * 2);
           ctx.stroke();
           
           // Draw inner oval for chain link hole
           ctx.beginPath();
-          ctx.ellipse(midX, midY, linkWidth/3, linkHeight/3, 0, 0, Math.PI * 2);
+          ctx.ellipse(midX, midY, linkWidth/3, linkHeight/3, angle, 0, Math.PI * 2);
           ctx.stroke();
           
-          // Add connecting lines between links
+          // Add chain link highlight for 3D effect
+          ctx.strokeStyle = highlightColor;
+          ctx.lineWidth = threadThickness * 0.6;
+          ctx.globalAlpha = 0.8;
+          
+          ctx.beginPath();
+          ctx.ellipse(midX - 0.2, midY - 0.2, linkWidth/2.2, linkHeight/2.2, angle, 0, Math.PI * 2);
+          ctx.stroke();
+          
+          // Add connecting thread between links
           if (i < points.length - 2) {
+            const nextNext = points[i + 2];
+            const connectionX = (next.x + nextNext.x) / 2;
+            const connectionY = (next.y + nextNext.y) / 2;
+            
+            // Draw connection shadow
+            ctx.strokeStyle = shadowColor;
+            ctx.lineWidth = threadThickness * 0.8;
+            ctx.globalAlpha = 0.3;
+            
+            ctx.beginPath();
+            ctx.moveTo(next.x + 0.2, next.y + 0.2);
+            ctx.lineTo(connectionX + 0.2, connectionY + 0.2);
+            ctx.stroke();
+            
+            // Draw main connection thread
+            ctx.strokeStyle = adjustedColor;
+            ctx.lineWidth = threadThickness * 0.6;
+            ctx.globalAlpha = 1;
+            
             ctx.beginPath();
             ctx.moveTo(next.x, next.y);
-            ctx.lineTo(next.x, next.y);
+            ctx.lineTo(connectionX, connectionY);
+            ctx.stroke();
+            
+            // Add connection highlight
+            ctx.strokeStyle = highlightColor;
+            ctx.lineWidth = threadThickness * 0.3;
+            ctx.globalAlpha = 0.7;
+            
+            ctx.beginPath();
+            ctx.moveTo(next.x - 0.1, next.y - 0.1);
+            ctx.lineTo(connectionX - 0.1, connectionY - 0.1);
             ctx.stroke();
           }
+          
+          // Add realistic thread texture dots at key points
+          ctx.globalAlpha = 1;
+          ctx.fillStyle = adjustedColor;
+          const dotSize = threadThickness * 0.4;
+          
+          // Top and bottom of chain link
+          ctx.beginPath();
+          ctx.arc(midX + Math.cos(angle) * linkWidth/2, midY + Math.sin(angle) * linkWidth/2, dotSize, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(midX - Math.cos(angle) * linkWidth/2, midY - Math.sin(angle) * linkWidth/2, dotSize, 0, Math.PI * 2);
+          ctx.fill();
+          
+          // Add subtle thread shine highlights
+          ctx.fillStyle = highlightColor;
+          ctx.globalAlpha = 0.6;
+          const shineSize = dotSize * 0.5;
+          ctx.beginPath();
+          ctx.arc(midX + Math.cos(angle) * linkWidth/2 - shineSize * 0.3, midY + Math.sin(angle) * linkWidth/2 - shineSize * 0.3, shineSize, 0, Math.PI * 2);
+          ctx.fill();
         }
         break;
 
