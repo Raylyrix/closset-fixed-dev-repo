@@ -337,9 +337,10 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
         const height = maxY - minY;
         const isHorizontal = width > height;
         
-        // Calculate optimal line spacing
-        const baseSpacing = stitch.thickness * 1.5;
-        const maxLines = 40;
+        // Calculate realistic thread spacing - much tighter for embroidery look
+        const threadThickness = Math.max(0.5, stitch.thickness * 0.3); // Much thinner threads
+        const baseSpacing = threadThickness * 0.8; // Tighter spacing
+        const maxLines = 80; // More lines for realistic coverage
         
         // Generate fill lines
         const fillLines: {x1: number, y1: number, x2: number, y2: number, index: number}[] = [];
@@ -384,32 +385,54 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
           }
         }
         
-        // Render fill lines with realistic effects
+        // Render fill lines as realistic embroidered threads
         fillLines.forEach((line) => {
           const isEvenRow = line.index % 2 === 0;
-          const highlightColor = adjustBrightness(baseColor, 12);
-          const shadowColor = adjustBrightness(baseColor, -8);
+          const baseColor = stitch.color;
           
-          // Create gradient for each line
-          const gradient = ctx.createLinearGradient(line.x1, line.y1, line.x2, line.y2);
-          gradient.addColorStop(0, isEvenRow ? highlightColor : shadowColor);
-          gradient.addColorStop(0.5, baseColor);
-          gradient.addColorStop(1, isEvenRow ? shadowColor : highlightColor);
+          // Create realistic thread appearance with subtle variations
+          const threadVariation = (Math.sin(line.index * 0.3) * 5) + (Math.random() * 3 - 1.5);
+          const adjustedColor = adjustBrightness(baseColor, threadVariation);
           
-          // Set line properties
-          ctx.strokeStyle = gradient;
-          ctx.lineWidth = stitch.thickness * 0.7;
+          // Set very thin thread properties
+          ctx.strokeStyle = adjustedColor;
+          ctx.lineWidth = threadThickness;
           ctx.lineCap = 'round';
           ctx.lineJoin = 'round';
           
-          // Draw the line
+          // Add subtle thread texture with small random variations
+          const lineLength = Math.sqrt((line.x2 - line.x1) ** 2 + (line.y2 - line.y1) ** 2);
+          const numSegments = Math.max(3, Math.floor(lineLength / 2)); // Break into small segments
+          
           ctx.beginPath();
           if (isEvenRow) {
             ctx.moveTo(line.x1, line.y1);
-            ctx.lineTo(line.x2, line.y2);
+            for (let i = 1; i <= numSegments; i++) {
+              const t = i / numSegments;
+              const x = line.x1 + t * (line.x2 - line.x1);
+              const y = line.y1 + t * (line.y2 - line.y1);
+              
+              // Add tiny random variations to simulate thread texture
+              const variation = (Math.random() - 0.5) * 0.3;
+              const perpX = -(line.y2 - line.y1) / lineLength * variation;
+              const perpY = (line.x2 - line.x1) / lineLength * variation;
+              
+              ctx.lineTo(x + perpX, y + perpY);
+            }
           } else {
             ctx.moveTo(line.x2, line.y2);
-            ctx.lineTo(line.x1, line.y1);
+            for (let i = 1; i <= numSegments; i++) {
+              const t = i / numSegments;
+              const x = line.x2 - t * (line.x2 - line.x1);
+              const y = line.y2 - t * (line.y2 - line.y1);
+              
+              // Add tiny random variations to simulate thread texture
+              const variation = (Math.random() - 0.5) * 0.3;
+              const perpX = (line.y2 - line.y1) / lineLength * variation;
+              const perpY = -(line.x2 - line.x1) / lineLength * variation;
+              
+              ctx.lineTo(x + perpX, y + perpY);
+            }
           }
           ctx.stroke();
         });
@@ -2348,9 +2371,10 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
         const height = maxY - minY;
         const isHorizontal = width > height;
         
-        // Calculate optimal line spacing based on performance mode
-        const baseSpacing = performanceMode ? stitch.thickness * 2.5 : stitch.thickness * 1.8;
-        const maxLines = performanceMode ? 30 : 50;
+        // Calculate realistic thread spacing - much tighter for embroidery look
+        const threadThickness = Math.max(0.5, stitch.thickness * 0.3); // Much thinner threads
+        const baseSpacing = performanceMode ? threadThickness * 1.2 : threadThickness * 0.8; // Tighter spacing
+        const maxLines = performanceMode ? 60 : 100; // More lines for realistic coverage
         
         // Generate fill lines
         const fillLines: {x1: number, y1: number, x2: number, y2: number, index: number}[] = [];
@@ -2395,62 +2419,59 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
           }
         }
         
-        // Render fill lines with realistic effects
+        // Render fill lines as realistic embroidered threads
         fillLines.forEach((line, lineIndex) => {
           const isEvenRow = line.index % 2 === 0;
           const baseColor = stitch.color;
-          const highlightColor = adjustBrightness(baseColor, 15);
-          const shadowColor = adjustBrightness(baseColor, -10);
           
-          // Create gradient for each line
-          const gradient = ctx.createLinearGradient(line.x1, line.y1, line.x2, line.y2);
-          gradient.addColorStop(0, isEvenRow ? highlightColor : shadowColor);
-          gradient.addColorStop(0.5, baseColor);
-          gradient.addColorStop(1, isEvenRow ? shadowColor : highlightColor);
+          // Create realistic thread appearance with subtle variations
+          const threadVariation = (Math.sin(line.index * 0.3) * 5) + (Math.random() * 3 - 1.5);
+          const adjustedColor = adjustBrightness(baseColor, threadVariation);
           
-          // Set line properties
-          ctx.strokeStyle = gradient;
-          ctx.lineWidth = stitch.thickness * 0.8;
+          // Set very thin thread properties
+          ctx.strokeStyle = adjustedColor;
+          ctx.lineWidth = threadThickness;
           ctx.lineCap = 'round';
           ctx.lineJoin = 'round';
           
-          // Add subtle shadow for depth
-          ctx.shadowColor = 'rgba(0, 0, 0, 0.1)';
-          ctx.shadowBlur = 1;
-          ctx.shadowOffsetX = 0.5;
-          ctx.shadowOffsetY = 0.5;
+          // Add subtle thread texture with small random variations
+          const lineLength = Math.sqrt((line.x2 - line.x1) ** 2 + (line.y2 - line.y1) ** 2);
+          const numSegments = Math.max(3, Math.floor(lineLength / 2)); // Break into small segments
           
-          // Draw the line
           ctx.beginPath();
           if (isEvenRow) {
             ctx.moveTo(line.x1, line.y1);
-            ctx.lineTo(line.x2, line.y2);
+            for (let i = 1; i <= numSegments; i++) {
+              const t = i / numSegments;
+              const x = line.x1 + t * (line.x2 - line.x1);
+              const y = line.y1 + t * (line.y2 - line.y1);
+              
+              // Add tiny random variations to simulate thread texture
+              const variation = (Math.random() - 0.5) * 0.3;
+              const perpX = -(line.y2 - line.y1) / lineLength * variation;
+              const perpY = (line.x2 - line.x1) / lineLength * variation;
+              
+              ctx.lineTo(x + perpX, y + perpY);
+            }
           } else {
             ctx.moveTo(line.x2, line.y2);
-            ctx.lineTo(line.x1, line.y1);
+            for (let i = 1; i <= numSegments; i++) {
+              const t = i / numSegments;
+              const x = line.x2 - t * (line.x2 - line.x1);
+              const y = line.y2 - t * (line.y2 - line.y1);
+              
+              // Add tiny random variations to simulate thread texture
+              const variation = (Math.random() - 0.5) * 0.3;
+              const perpX = (line.y2 - line.y1) / lineLength * variation;
+              const perpY = -(line.x2 - line.x1) / lineLength * variation;
+              
+              ctx.lineTo(x + perpX, y + perpY);
+            }
           }
           ctx.stroke();
-          
-          // Reset shadow
-          ctx.shadowColor = 'transparent';
-          ctx.shadowBlur = 0;
-          ctx.shadowOffsetX = 0;
-          ctx.shadowOffsetY = 0;
         });
         
-        // Add subtle texture overlay
-        if (!performanceMode) {
-          ctx.globalAlpha = 0.1;
-          ctx.fillStyle = baseColor;
-          ctx.beginPath();
-          ctx.moveTo(points[0].x, points[0].y);
-          for (let i = 1; i < points.length; i++) {
-            ctx.lineTo(points[i].x, points[i].y);
-          }
-          ctx.closePath();
-          ctx.fill();
-          ctx.globalAlpha = 1;
-        }
+        // No texture overlay - let the individual threads create the texture naturally
         
         break;
 
