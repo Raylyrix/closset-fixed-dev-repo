@@ -152,6 +152,45 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
   }, []);
 
+  // Keyboard shortcuts for undo/redo
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Check if Ctrl (or Cmd on Mac) is pressed
+      const isCtrlPressed = event.ctrlKey || event.metaKey;
+      
+      if (isCtrlPressed) {
+        switch (event.key.toLowerCase()) {
+          case 'z':
+            event.preventDefault();
+            if (event.shiftKey) {
+              // Ctrl+Shift+Z for redo
+              console.log('🔄 REDO ACTION triggered via Ctrl+Shift+Z');
+              redoAction();
+            } else {
+              // Ctrl+Z for undo
+              console.log('↶ UNDO ACTION triggered via Ctrl+Z');
+              undoAction();
+            }
+            break;
+          case 'y':
+            event.preventDefault();
+            // Ctrl+Y for redo
+            console.log('🔄 REDO ACTION triggered via Ctrl+Y');
+            redoAction();
+            break;
+        }
+      }
+    };
+
+    // Add event listener
+    document.addEventListener('keydown', handleKeyDown);
+
+    // Cleanup
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [undoStack, redoStack, embroideryStitches]);
+
   // Draw embroidery stitches
   const drawStitches = () => {
     const startTime = performance.now();
@@ -1512,7 +1551,24 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
     }
   };
 
+  // Helper function to save current state to undo stack
+  const saveToUndoStack = (action: string = 'action') => {
+    setUndoStack(prev => [...prev, { 
+      stitches: [...embroideryStitches], 
+      layers: [...designLayers],
+      currentLayer: currentLayer,
+      action: action,
+      timestamp: Date.now()
+    }]);
+    // Clear redo stack when new action is performed
+    setRedoStack([]);
+    console.log(`💾 SAVED TO UNDO STACK: ${action} (${embroideryStitches.length} stitches, ${designLayers.length} layers)`);
+  };
+
   const addDesignLayer = (layerName: string) => {
+    // Save current state before adding layer
+    saveToUndoStack('add_layer');
+    
     const newLayer = {
       id: Date.now(),
       name: layerName,
@@ -1523,21 +1579,92 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
     setDesignLayers(prev => [...prev, newLayer]);
   };
 
+  const removeDesignLayer = (layerId: number) => {
+    // Save current state before removing layer
+    saveToUndoStack('remove_layer');
+    
+    setDesignLayers(prev => prev.filter(layer => layer.id !== layerId));
+    
+    // Adjust current layer if needed
+    if (currentLayer >= designLayers.length - 1) {
+      setCurrentLayer(Math.max(0, designLayers.length - 2));
+    }
+  };
+
+  const toggleLayerVisibility = (layerId: number) => {
+    // Save current state before toggling visibility
+    saveToUndoStack('toggle_layer_visibility');
+    
+    setDesignLayers(prev => prev.map(layer => 
+      layer.id === layerId ? { ...layer, visible: !layer.visible } : layer
+    ));
+  };
+
+  const toggleLayerLock = (layerId: number) => {
+    // Save current state before toggling lock
+    saveToUndoStack('toggle_layer_lock');
+    
+    setDesignLayers(prev => prev.map(layer => 
+      layer.id === layerId ? { ...layer, locked: !layer.locked } : layer
+    ));
+  };
+
+  const renameLayer = (layerId: number, newName: string) => {
+    // Save current state before renaming
+    saveToUndoStack('rename_layer');
+    
+    setDesignLayers(prev => prev.map(layer => 
+      layer.id === layerId ? { ...layer, name: newName } : layer
+    ));
+  };
+
   const undoAction = () => {
     if (undoStack.length > 0) {
       const lastState = undoStack[undoStack.length - 1];
-      setRedoStack(prev => [...prev, { stitches: embroideryStitches }]);
-      setEmbroideryStitches(lastState.stitches);
+      setRedoStack(prev => [...prev, { 
+        stitches: embroideryStitches, 
+        layers: designLayers,
+        currentLayer: currentLayer 
+      }]);
+      
+      // Restore state
+      if (lastState.stitches !== undefined) {
+        setEmbroideryStitches(lastState.stitches);
+      }
+      if (lastState.layers !== undefined) {
+        setDesignLayers(lastState.layers);
+      }
+      if (lastState.currentLayer !== undefined) {
+        setCurrentLayer(lastState.currentLayer);
+      }
+      
       setUndoStack(prev => prev.slice(0, -1));
+      console.log('↶ UNDO: Restored previous state');
     }
   };
 
   const redoAction = () => {
     if (redoStack.length > 0) {
       const nextState = redoStack[redoStack.length - 1];
-      setUndoStack(prev => [...prev, { stitches: embroideryStitches }]);
-      setEmbroideryStitches(nextState.stitches);
+      setUndoStack(prev => [...prev, { 
+        stitches: embroideryStitches, 
+        layers: designLayers,
+        currentLayer: currentLayer 
+      }]);
+      
+      // Restore state
+      if (nextState.stitches !== undefined) {
+        setEmbroideryStitches(nextState.stitches);
+      }
+      if (nextState.layers !== undefined) {
+        setDesignLayers(nextState.layers);
+      }
+      if (nextState.currentLayer !== undefined) {
+        setCurrentLayer(nextState.currentLayer);
+      }
+      
       setRedoStack(prev => prev.slice(0, -1));
+      console.log('🔄 REDO: Restored next state');
     }
   };
 
@@ -1718,8 +1845,8 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
     try {
       setIsDrawing(false);
       
-      // Add to undo stack before making changes
-      setUndoStack(prev => [...prev, { stitches: embroideryStitches }]);
+      // Save current state before adding stitch
+      saveToUndoStack('add_stitch');
       
       // Add the completed stitch
       setEmbroideryStitches([...embroideryStitches, currentStitch]);
@@ -2088,6 +2215,9 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
 
   // Clear all stitches
   const clearStitches = () => {
+    // Save current state before clearing
+    saveToUndoStack('clear_stitches');
+    
     setEmbroideryStitches([]);
     setCurrentStitch(null);
     drawStitches();
@@ -4590,6 +4720,7 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
             <button
               onClick={undoAction}
               disabled={undoStack.length === 0}
+              title={`Undo (Ctrl+Z) - ${undoStack.length} actions available`}
               style={{
                 padding: '6px 12px',
                 fontSize: '11px',
@@ -4600,12 +4731,13 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
                 cursor: undoStack.length === 0 ? 'not-allowed' : 'pointer'
               }}
             >
-              ↶ Undo
+              ↶ Undo ({undoStack.length})
             </button>
             
             <button
               onClick={redoAction}
               disabled={redoStack.length === 0}
+              title={`Redo (Ctrl+Y or Ctrl+Shift+Z) - ${redoStack.length} actions available`}
               style={{
                 padding: '6px 12px',
                 fontSize: '11px',
@@ -4616,7 +4748,7 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
                 cursor: redoStack.length === 0 ? 'not-allowed' : 'pointer'
               }}
             >
-              ↷ Redo
+              ↷ Redo ({redoStack.length})
             </button>
             
             <button
@@ -4672,6 +4804,10 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
               Layers: {designLayers.length} | Current: {currentLayer + 1}
             </div>
           )}
+          
+          <div style={{ fontSize: '9px', color: '#32CD32', marginTop: '4px', opacity: 0.8 }}>
+            ⌨️ Shortcuts: Ctrl+Z (Undo) | Ctrl+Y (Redo) | Ctrl+Shift+Z (Redo)
+          </div>
         </div>
 
         {/* Performance Monitoring */}
@@ -4788,6 +4924,9 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
             </button>
             <button
               onClick={() => {
+                // Save current state before clearing
+                saveToUndoStack('clear_all');
+                
                 // Clear canvas
                 setEmbroideryStitches([]);
                 if (canvasRef.current) {
