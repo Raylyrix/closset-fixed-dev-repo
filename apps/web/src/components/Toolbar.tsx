@@ -42,6 +42,7 @@ const tools = [
 
 type CheckpointMeta = { id: string; name: string; createdAt: number; sizeBytes: number };
 
+
 export function Toolbar() {
   const activeTool = useApp(s => s.activeTool);
   const setTool = useApp(s => s.setTool);
@@ -180,6 +181,7 @@ export function Toolbar() {
               Delete
             </button>
           </div>
+
         </div>
       </div>
     </div>

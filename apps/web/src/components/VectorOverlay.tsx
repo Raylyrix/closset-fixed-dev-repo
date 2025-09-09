@@ -75,8 +75,27 @@ export function VectorOverlay() {
     shapes.forEach((shape) => {
       // path
       drawBezier(shape.path.points);
-      if (shape.path.fill) { ctx.fillStyle = shape.path.fillColor; ctx.fill(); }
-      if (shape.path.stroke) { ctx.strokeStyle = shape.path.strokeColor; ctx.lineWidth = shape.path.strokeWidth; ctx.stroke(); }
+      
+      // Set opacity for fill
+      if (shape.path.fill) { 
+        ctx.save();
+        ctx.globalAlpha = shape.path.fillOpacity || 1.0;
+        ctx.fillStyle = shape.path.fillColor; 
+        ctx.fill(); 
+        ctx.restore();
+      }
+      
+      // Set opacity for stroke
+      if (shape.path.stroke) { 
+        ctx.save();
+        ctx.globalAlpha = shape.path.strokeOpacity || 1.0;
+        ctx.strokeStyle = shape.path.strokeColor; 
+        ctx.lineWidth = shape.path.strokeWidth;
+        ctx.lineJoin = shape.path.strokeJoin || 'round';
+        ctx.lineCap = shape.path.strokeCap || 'round';
+        ctx.stroke(); 
+        ctx.restore();
+      }
 
       // selection box + anchors if selected
       if (selected.includes(shape.id)){
@@ -105,8 +124,28 @@ export function VectorOverlay() {
 
     if (currentPath && currentPath.points.length){
       drawBezier(currentPath.points);
-      if (currentPath.fill){ ctx.fillStyle = currentPath.fillColor; ctx.fill(); }
-      if (currentPath.stroke){ ctx.strokeStyle = currentPath.strokeColor; ctx.lineWidth = currentPath.strokeWidth; ctx.stroke(); }
+      
+      // Set opacity for fill
+      if (currentPath.fill){ 
+        ctx.save();
+        ctx.globalAlpha = currentPath.fillOpacity || 1.0;
+        ctx.fillStyle = currentPath.fillColor; 
+        ctx.fill(); 
+        ctx.restore();
+      }
+      
+      // Set opacity for stroke
+      if (currentPath.stroke){ 
+        ctx.save();
+        ctx.globalAlpha = currentPath.strokeOpacity || 1.0;
+        ctx.strokeStyle = currentPath.strokeColor; 
+        ctx.lineWidth = currentPath.strokeWidth;
+        ctx.lineJoin = currentPath.strokeJoin || 'round';
+        ctx.lineCap = currentPath.strokeCap || 'round';
+        ctx.stroke(); 
+        ctx.restore();
+      }
+      
       currentPath.points.forEach((p,i)=>{
         ctx.fillStyle = i===0 ? '#10B981' : '#3B82F6';
         ctx.beginPath(); ctx.arc(p.x,p.y,4,0,Math.PI*2); ctx.fill();

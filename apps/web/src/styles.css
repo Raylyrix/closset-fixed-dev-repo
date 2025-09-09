@@ -1677,6 +1677,26 @@ input[type="checkbox"] {
   font-weight: 600;
 }
 
+/* Dropdown Menu Z-Index Fix */
+.dropdown-menu {
+  z-index: 99999999999 !important;
+  position: absolute !important;
+  isolation: isolate !important;
+  will-change: transform !important;
+  transform: translateZ(0) !important; /* Force hardware acceleration */
+}
+
+/* Canvas Area Z-Index Fix */
+.canvas-area {
+  z-index: 0 !important;
+  position: relative !important;
+}
+
+/* Ensure 3D canvas doesn't interfere with dropdowns */
+canvas {
+  z-index: 0 !important;
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
   .embroidery-sidebar {

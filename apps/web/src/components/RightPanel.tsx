@@ -14,6 +14,7 @@ import { AnimationTools } from './AnimationTools';
 import { DesignTemplates } from './DesignTemplates';
 import { BatchProcessing } from './BatchProcessing';
 import { FeatureShowcase } from './FeatureShowcase';
+import { VectorTools } from './VectorTools';
 
 interface RightPanelProps {
   activeToolSidebar?: string | null;
@@ -1142,6 +1143,11 @@ export function RightPanel({ activeToolSidebar }: RightPanelProps) {
       {/* Batch Processing & Automation */}
       {activeToolSidebar === 'batch' && (
         <BatchProcessing active={true} />
+      )}
+
+      {/* Vector Tools */}
+      {activeToolSidebar === 'vectorTools' && (
+        <VectorTools active={true} />
       )}
 
       {/* Feature Showcase - Always show when no specific tool is active */}

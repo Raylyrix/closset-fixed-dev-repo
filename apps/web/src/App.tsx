@@ -88,6 +88,8 @@ interface AppState {
   // Tools
   activeTool: Tool;
   setTool: (tool: Tool) => void;
+  vectorMode: boolean;
+  setVectorMode: (enabled: boolean) => void;
   
   // Brush settings
   brushColor: string;
@@ -195,6 +197,20 @@ interface AppState {
   modelManagerOpen: boolean;
   backgroundManagerOpen: boolean;
   
+  // Universal Grid & Scale settings
+  showGrid: boolean;
+  gridSize: number;
+  gridColor: string;
+  gridOpacity: number;
+  showRulers: boolean;
+  rulerUnits: 'px' | 'mm' | 'in';
+  scale: number;
+  showGuides: boolean;
+  guideColor: string;
+  snapToGrid: boolean;
+  snapDistance: number;
+  showMeasurements: boolean;
+  measurementUnits: 'px' | 'mm' | 'in';
   
   // Controls
   controlsEnabled: boolean;
@@ -248,6 +264,21 @@ interface AppState {
   setControlsEnabled: (enabled: boolean) => void;
   setControlsTarget: (target: [number, number, number]) => void;
   setControlsDistance: (distance: number) => void;
+  
+  // Grid & Scale setters
+  setShowGrid: (show: boolean) => void;
+  setGridSize: (size: number) => void;
+  setGridColor: (color: string) => void;
+  setGridOpacity: (opacity: number) => void;
+  setShowRulers: (show: boolean) => void;
+  setRulerUnits: (units: 'px' | 'mm' | 'in') => void;
+  setScale: (scale: number) => void;
+  setShowGuides: (show: boolean) => void;
+  setGuideColor: (color: string) => void;
+  setSnapToGrid: (snap: boolean) => void;
+  setSnapDistance: (distance: number) => void;
+  setShowMeasurements: (show: boolean) => void;
+  setMeasurementUnits: (units: 'px' | 'mm' | 'in') => void;
   
   // Puff Print setters
   setPuffBrushSize: (size: number) => void;
@@ -319,6 +350,8 @@ export const useApp = create<AppState>((set, get) => ({
   // Default state
   activeTool: 'brush',
   setTool: (tool: Tool) => set({ activeTool: tool }),
+  vectorMode: false,
+  setVectorMode: (enabled: boolean) => set({ vectorMode: enabled }),
   brushColor: '#ff3366',
   brushSize: 50,
   brushOpacity: 1,
@@ -401,6 +434,22 @@ export const useApp = create<AppState>((set, get) => ({
   rightPanelOpen: true,
   modelManagerOpen: false,
   backgroundManagerOpen: false,
+  
+  // Universal Grid & Scale defaults
+  showGrid: true,
+  gridSize: 20,
+  gridColor: '#333333',
+  gridOpacity: 0.3,
+  showRulers: true,
+  rulerUnits: 'px',
+  scale: 1.0,
+  showGuides: false,
+  guideColor: '#FF0000',
+  snapToGrid: true,
+  snapDistance: 5,
+  showMeasurements: false,
+  measurementUnits: 'px',
+  
   controlsEnabled: true,
   controlsTarget: [0, 0, 0],
   controlsDistance: 2,
@@ -452,6 +501,21 @@ export const useApp = create<AppState>((set, get) => ({
   setControlsEnabled: (enabled) => set({ controlsEnabled: enabled }),
   setControlsTarget: (target) => set({ controlsTarget: target }),
   setControlsDistance: (distance) => set({ controlsDistance: distance }),
+  
+  // Grid & Scale setters
+  setShowGrid: (show) => set({ showGrid: show }),
+  setGridSize: (size) => set({ gridSize: size }),
+  setGridColor: (color) => set({ gridColor: color }),
+  setGridOpacity: (opacity) => set({ gridOpacity: opacity }),
+  setShowRulers: (show) => set({ showRulers: show }),
+  setRulerUnits: (units) => set({ rulerUnits: units }),
+  setScale: (scale) => set({ scale: scale }),
+  setShowGuides: (show) => set({ showGuides: show }),
+  setGuideColor: (color) => set({ guideColor: color }),
+  setSnapToGrid: (snap) => set({ snapToGrid: snap }),
+  setSnapDistance: (distance) => set({ snapDistance: distance }),
+  setShowMeasurements: (show) => set({ showMeasurements: show }),
+  setMeasurementUnits: (units) => set({ measurementUnits: units }),
 
   
   // Puff Print setters

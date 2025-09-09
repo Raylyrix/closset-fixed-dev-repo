@@ -24,7 +24,7 @@ export type VectorShape = {
   bounds: { x: number; y: number; width: number; height: number };
 };
 
-export type VectorTool = 'pen' | 'pathSelection' | 'addAnchor' | 'removeAnchor' | 'convertAnchor' | 'pathOperations' | 'shapeBuilder';
+export type VectorTool = 'pen' | 'pathSelection' | 'addAnchor' | 'removeAnchor' | 'convertAnchor' | 'curvature' | 'pathOperations' | 'shapeBuilder';
 
 export type VectorState = {
   shapes: VectorShape[];

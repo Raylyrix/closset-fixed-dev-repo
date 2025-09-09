@@ -26,6 +26,8 @@ interface VectorPath {
   fill: boolean;
   stroke: boolean;
   fillType?: FillType;
+  fillOpacity?: number;
+  strokeOpacity?: number;
   gradient?: {
     type: 'linear' | 'radial';
     color1: string;
@@ -50,7 +52,7 @@ interface VectorShape {
   bounds: { x: number; y: number; width: number; height: number };
 }
 
-type VectorTool = 'pen' | 'pathSelection' | 'addAnchor' | 'removeAnchor' | 'convertAnchor' | 'pathOperations' | 'shapeBuilder';
+type VectorTool = 'pen' | 'pathSelection' | 'addAnchor' | 'removeAnchor' | 'convertAnchor' | 'curvature' | 'pathOperations' | 'shapeBuilder';
 
 export function VectorTools({ active }: VectorToolsProps) {
   // Console log removed
@@ -65,12 +67,22 @@ export function VectorTools({ active }: VectorToolsProps) {
     commit
   } = useApp();
 
-  // Vector state
-  const [vectorTool, setVectorTool] = useState<VectorTool>('pen');
-  const [currentPath, setCurrentPath] = useState<VectorPath | null>(null);
-  const [vectorShapes, setVectorShapes] = useState<VectorShape[]>([]);
-  const [selectedShapes, setSelectedShapes] = useState<string[]>([]);
-  const [isDrawing, setIsDrawing] = useState(false);
+  // Vector state - use only vector store state
+
+  // Get current state from vector store
+  const [vectorState, setVectorState] = useState(vectorStore.getState());
+  const vectorTool = vectorState.tool;
+  const currentPath = vectorState.currentPath;
+  const vectorShapes = vectorState.shapes;
+  const selectedShapes = vectorState.selected;
+
+  // Subscribe to vector store changes
+  useEffect(() => {
+    const unsubscribe = vectorStore.subscribe(() => {
+      setVectorState(vectorStore.getState());
+    });
+    return unsubscribe;
+  }, []);
   const [snapToGrid, setSnapToGrid] = useState(false);
   const [gridSize, setGridSize] = useState(20);
   const [showGrid, setShowGrid] = useState(false);
@@ -78,6 +90,12 @@ export function VectorTools({ active }: VectorToolsProps) {
   const [defaultGradient, setDefaultGradient] = useState({ type: 'linear' as const, color1: '#FF6B6B', color2: '#4F46E5', angle: 0 });
   const [defaultStrokeJoin, setDefaultStrokeJoin] = useState<CanvasLineJoin>('round');
   const [defaultStrokeCap, setDefaultStrokeCap] = useState<CanvasLineCap>('round');
+  const [defaultStrokeColor, setDefaultStrokeColor] = useState<string>(brushColor);
+  const [defaultStrokeWidth, setDefaultStrokeWidth] = useState<number>(brushSize);
+  const [defaultStrokeEnabled, setDefaultStrokeEnabled] = useState<boolean>(true);
+  const [defaultFillColor, setDefaultFillColor] = useState<string>(brushColor);
+  const [defaultFillOpacity, setDefaultFillOpacity] = useState<number>(1.0);
+  const [defaultStrokeOpacity, setDefaultStrokeOpacity] = useState<number>(1.0);
   const [imageFillState, setImageFillState] = useState<{ src: string | null; img?: HTMLImageElement; scale: number; offsetX: number; offsetY: number }>({ src: null, img: undefined, scale: 1, offsetX: 0, offsetY: 0 });
 
   // Path operation state
@@ -93,14 +111,9 @@ export function VectorTools({ active }: VectorToolsProps) {
     exclusion: false
   });
 
-  // Refs
+  // Refs for canvas rendering
   const [vectorCanvas, setVectorCanvas] = useState<HTMLCanvasElement | null>(null);
   const [previewCanvas, setPreviewCanvas] = useState<HTMLCanvasElement | null>(null);
-  const isDrawingRef = useRef(false);
-  const lastPointRef = useRef<VectorPoint | null>(null);
-  const draggingPointRef = useRef<{ shapeId: string; index: number } | null>(null);
-  const draggingBoundsRef = useRef<{ shapeId: string; edge: 'left'|'right'|'top'|'bottom'|'corner'; startX: number; startY: number; startBounds: VectorShape['bounds'] } | null>(null);
-  const draggingHandleRef = useRef<{ shapeId: string; index: number; which: 'in'|'out'; start: { x:number; y:number } } | null>(null);
 
   // Initialize vector canvas
   useEffect(() => {
@@ -141,27 +154,29 @@ export function VectorTools({ active }: VectorToolsProps) {
 
   // Create new path
   const createNewPath = useCallback((startPoint: VectorPoint): VectorPath => {
-    // Console log removed
-
     const newPath: VectorPath = {
       id: `path_${Date.now()}`,
       points: [startPoint],
       closed: false,
-      fillColor: brushColor,
-      strokeColor: brushColor,
-      strokeWidth: Math.max(1, Math.round(brushSize)),
-      fill: true,
-      stroke: true,
+      fillColor: defaultFillColor,
+      strokeColor: defaultStrokeColor,
+      strokeWidth: Math.max(1, Math.round(defaultStrokeWidth)),
+      fill: defaultFillType !== 'none',
+      stroke: defaultStrokeEnabled,
       fillType: defaultFillType,
+      fillOpacity: defaultFillOpacity,
+      strokeOpacity: defaultStrokeOpacity,
       gradient: defaultFillType !== 'solid' ? { ...defaultGradient } : undefined,
       imageFill: defaultFillType === 'image' && imageFillState.src ? { src: imageFillState.src, img: imageFillState.img, scale: imageFillState.scale, offsetX: imageFillState.offsetX, offsetY: imageFillState.offsetY } : undefined,
       strokeJoin: defaultStrokeJoin,
       strokeCap: defaultStrokeCap
     };
 
-    // Console log removed
+    // Update vector store
+    vectorStore.set('currentPath', newPath);
+    console.log('VectorTools: Created new path:', newPath.id);
     return newPath;
-  }, [brushColor, brushSize]);
+  }, [defaultFillColor, defaultFillType, defaultGradient, defaultStrokeColor, defaultStrokeWidth, defaultStrokeEnabled, defaultFillOpacity, defaultStrokeOpacity, defaultStrokeJoin, defaultStrokeCap, imageFillState]);
 
   // Add point to current path
   const addPointToPath = useCallback((point: VectorPoint) => {
@@ -177,8 +192,7 @@ export function VectorTools({ active }: VectorToolsProps) {
       points: [...currentPath.points, point]
     };
 
-    setCurrentPath(updatedPath);
-    // Console log removed
+    vectorStore.set('currentPath', updatedPath);
   }, [currentPath]);
 
   // Close current path
@@ -204,11 +218,68 @@ export function VectorTools({ active }: VectorToolsProps) {
       bounds
     };
 
-    setVectorShapes(prev => [...prev, shape]);
-    setCurrentPath(null);
-
-    // Console log removed
+    // Update vector store directly
+    const currentShapes = vectorStore.getState().shapes;
+    vectorStore.setAll({
+      shapes: [...currentShapes, shape],
+      currentPath: null,
+      selected: [shape.id]
+    });
+    console.log('VectorTools: Completed shape:', shape.id, 'Total shapes:', currentShapes.length + 1);
   }, [currentPath]);
+
+  // Apply fill/stroke settings to selected shapes and update current path
+  const applySettingsToSelected = useCallback(() => {
+    const currentShapes = vectorStore.getState().shapes;
+    const currentPath = vectorStore.getState().currentPath;
+    
+    // Update selected shapes
+    if (selectedShapes.length > 0) {
+      const updatedShapes = currentShapes.map(shape => {
+        if (selectedShapes.includes(shape.id)) {
+          const updatedPath = {
+            ...shape.path,
+            fillColor: defaultFillColor,
+            strokeColor: defaultStrokeColor,
+            strokeWidth: defaultStrokeWidth,
+            fill: defaultFillType !== 'none',
+            stroke: defaultStrokeEnabled,
+            fillType: defaultFillType,
+            fillOpacity: defaultFillOpacity,
+            strokeOpacity: defaultStrokeOpacity,
+            gradient: defaultFillType !== 'solid' ? { ...defaultGradient } : undefined,
+            strokeJoin: defaultStrokeJoin,
+            strokeCap: defaultStrokeCap
+          };
+          return { ...shape, path: updatedPath };
+        }
+        return shape;
+      });
+      
+      vectorStore.set('shapes', updatedShapes);
+      console.log('Applied settings to selected shapes:', selectedShapes.length);
+    }
+    
+    // Update current path if it exists
+    if (currentPath) {
+      const updatedCurrentPath = {
+        ...currentPath,
+        fillColor: defaultFillColor,
+        strokeColor: defaultStrokeColor,
+        strokeWidth: defaultStrokeWidth,
+        fill: defaultFillType !== 'none',
+        stroke: defaultStrokeEnabled,
+        fillType: defaultFillType,
+        fillOpacity: defaultFillOpacity,
+        strokeOpacity: defaultStrokeOpacity,
+        gradient: defaultFillType !== 'solid' ? { ...defaultGradient } : undefined,
+        strokeJoin: defaultStrokeJoin,
+        strokeCap: defaultStrokeCap
+      };
+      vectorStore.set('currentPath', updatedCurrentPath);
+      console.log('Updated current path with new settings');
+    }
+  }, [selectedShapes, defaultFillColor, defaultStrokeColor, defaultStrokeWidth, defaultFillType, defaultStrokeEnabled, defaultFillOpacity, defaultStrokeOpacity, defaultGradient, defaultStrokeJoin, defaultStrokeCap]);
 
   // Calculate path bounds
   const calculatePathBounds = useCallback((path: VectorPath): { x: number; y: number; width: number; height: number } => {
@@ -272,8 +343,6 @@ export function VectorTools({ active }: VectorToolsProps) {
   const renderVectorShapes = useCallback(() => {
     if (!vectorCanvas || !previewCanvas) return;
 
-    // Console log removed
-
     const vectorCtx = vectorCanvas.getContext('2d')!;
     const previewCtx = previewCanvas.getContext('2d')!;
 
@@ -287,9 +356,14 @@ export function VectorTools({ active }: VectorToolsProps) {
       drawGrid(previewCtx);
     }
 
+    // Get current state from vector store
+    const currentState = vectorStore.getState();
+    const currentShapes = currentState.shapes;
+    const currentSelected = currentState.selected;
+
     // Draw all shapes
-    vectorShapes.forEach(shape => {
-      const isSelected = selectedShapes.includes(shape.id);
+    currentShapes.forEach(shape => {
+      const isSelected = currentSelected.includes(shape.id);
       
       vectorCtx.save();
       previewCtx.save();
@@ -495,66 +569,56 @@ export function VectorTools({ active }: VectorToolsProps) {
     ctx.setLineDash([]);
   }, [composedCanvas, gridSize]);
 
-  // Path operations using paper.js
-  const performPathOperation = useCallback(async (operation: keyof typeof pathOperations) => {
+  // Path operations (simplified without paper.js)
+  const performPathOperation = useCallback((operation: keyof typeof pathOperations) => {
     if (selectedShapes.length < 2) {
-      // Console log removed
+      console.log('Need at least 2 shapes for path operations');
       return;
     }
-    const paper = await import('paper');
-    paper.setup(document.createElement('canvas'));
-
-    const toPaper = (shape: VectorShape) => {
-      const path = new paper.Path();
-      shape.path.points.forEach((pt, i) => {
-        const seg = new paper.Segment(new paper.Point(pt.x, pt.y));
-        if (pt.controlIn) seg.handleIn = new paper.Point(pt.controlIn.x, pt.controlIn.y);
-        if (pt.controlOut) seg.handleOut = new paper.Point(pt.controlOut.x, pt.controlOut.y);
-        path.add(seg);
-      });
-      if (shape.path.closed) path.closed = true; else path.closed = false;
-      return path;
-    };
-
-    const fromPaper = (p: any): VectorShape => {
-      const pts: VectorPoint[] = p.segments.map((seg: any) => ({
-        x: seg.point.x,
-        y: seg.point.y,
-        type: 'smooth',
-        controlIn: seg.handleIn && (seg.handleIn.x !== 0 || seg.handleIn.y !== 0) ? { x: seg.handleIn.x, y: seg.handleIn.y } : undefined,
-        controlOut: seg.handleOut && (seg.handleOut.x !== 0 || seg.handleOut.y !== 0) ? { x: seg.handleOut.x, y: seg.handleOut.y } : undefined,
-      }));
-      const path: VectorPath = {
-        id: `path_${Date.now()}`,
-        points: pts,
-        closed: p.closed,
-        fillColor: '#ffffff',
-        strokeColor: '#000000',
-        strokeWidth: 1,
-        fill: true,
-        stroke: false,
-      };
-      return { id: `shape_${Date.now()}`, type: 'path', path, bounds: calculatePathBounds(path) };
-    };
-
-    const s1 = vectorShapes.find(s => s.id === selectedShapes[0]);
-    const s2 = vectorShapes.find(s => s.id === selectedShapes[1]);
+    
+    // For now, just combine the shapes into a single shape
+    // This is a simplified implementation without complex boolean operations
+    const shapes = vectorStore.getState().shapes;
+    const s1 = shapes.find(s => s.id === selectedShapes[0]);
+    const s2 = shapes.find(s => s.id === selectedShapes[1]);
     if (!s1 || !s2) return;
 
-    const p1 = toPaper(s1);
-    const p2 = toPaper(s2);
-    let result: any = null;
-    switch (operation) {
-      case 'union': result = p1.unite(p2); break;
-      case 'difference': result = p1.subtract(p2); break;
-      case 'intersection': result = p1.intersect(p2); break;
-      case 'exclusion': result = p1.exclude(p2); break;
-    }
-    if (!result) return;
-    const resShape = fromPaper(result);
-    setVectorShapes(prev => [ ...prev.filter(s => !selectedShapes.includes(s.id)), resShape ]);
-    setSelectedShapes([resShape.id]);
-  }, [selectedShapes, vectorShapes]);
+    // Create a combined shape by merging points
+    const combinedPoints = [...s1.path.points, ...s2.path.points];
+    const combinedPath: VectorPath = {
+      id: `path_${Date.now()}`,
+      points: combinedPoints,
+      closed: false,
+      fillColor: s1.path.fillColor,
+      strokeColor: s1.path.strokeColor,
+      strokeWidth: s1.path.strokeWidth,
+      fill: s1.path.fill,
+      stroke: s1.path.stroke,
+      fillType: s1.path.fillType,
+      fillOpacity: s1.path.fillOpacity,
+      strokeOpacity: s1.path.strokeOpacity,
+      gradient: s1.path.gradient,
+      strokeJoin: s1.path.strokeJoin,
+      strokeCap: s1.path.strokeCap
+    };
+    
+    const combinedShape: VectorShape = {
+      id: `shape_${Date.now()}`,
+      type: 'path',
+      path: combinedPath,
+      bounds: calculatePathBounds(combinedPath)
+    };
+
+    // Update vector store
+    const updatedShapes = shapes.filter(s => !selectedShapes.includes(s.id));
+    vectorStore.setAll({
+      shapes: [...updatedShapes, combinedShape],
+      selected: [combinedShape.id],
+      currentPath: null
+    });
+    
+    console.log(`Path operation ${operation} completed`);
+  }, [selectedShapes, calculatePathBounds]);
 
   // Apply vector shapes to design
   const applyVectorShapes = useCallback(() => {
@@ -603,230 +667,401 @@ export function VectorTools({ active }: VectorToolsProps) {
     return null;
   };
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if (!active || !composedCanvas) return;
+  // Mouse events are handled by VectorOverlay component
+  // This component only provides the UI controls
 
-    const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
-    const x = (e.clientX - rect.left) * (composedCanvas.width / rect.width);
-    const y = (e.clientY - rect.top) * (composedCanvas.height / rect.height);
-    const snappedPoint = snapToGridPoint(x, y);
-
-    // Console log removed
-
-    setIsDrawing(true);
-    isDrawingRef.current = true;
-
-    switch (vectorTool) {
-      case 'pen':
-        const newPoint: VectorPoint = {
-          x: snappedPoint.x,
-          y: snappedPoint.y,
-          type: 'corner'
-        };
-
-        if (!currentPath) {
-          const newPath = createNewPath(newPoint);
-          setCurrentPath(newPath);
-        } else {
-          addPointToPath(newPoint);
-        }
-        break;
-
-      case 'pathSelection': {
-        // Select shape and possibly start dragging a point or bounds
-        const clickedShape = [...vectorShapes].reverse().find(shape => (
-          snappedPoint.x >= shape.bounds.x &&
-          snappedPoint.x <= shape.bounds.x + shape.bounds.width &&
-          snappedPoint.y >= shape.bounds.y &&
-          snappedPoint.y <= shape.bounds.y + shape.bounds.height
-        ));
-        if (clickedShape) {
-          // select
-          if (e.ctrlKey || e.metaKey) {
-            setSelectedShapes(prev => prev.includes(clickedShape.id) ? prev.filter(id => id !== clickedShape.id) : [...prev, clickedShape.id]);
-          } else {
-            setSelectedShapes([clickedShape.id]);
-          }
-
-          // test handle hit first
-          const handleHit = hitTestHandle(snappedPoint, clickedShape);
-          if (handleHit) {
-            draggingHandleRef.current = { shapeId: clickedShape.id, index: handleHit.index, which: handleHit.which, start: snappedPoint };
-          } else {
-            // test anchor hit
-            const hitIndex = hitTestPoint(snappedPoint, clickedShape);
-            if (hitIndex !== null) {
-              draggingPointRef.current = { shapeId: clickedShape.id, index: hitIndex };
-            } else {
-              // test bounds handle (corners)
-              const b = clickedShape.bounds;
-              const hs = 8;
-              const near = (x:number,y:number)=> Math.abs(snappedPoint.x - x) <= hs && Math.abs(snappedPoint.y - y) <= hs;
-              if (near(b.x, b.y) || near(b.x+b.width, b.y) || near(b.x, b.y+b.height) || near(b.x+b.width, b.y+b.height)) {
-                draggingBoundsRef.current = { shapeId: clickedShape.id, edge: 'corner', startX: snappedPoint.x, startY: snappedPoint.y, startBounds: { ...b } };
-              }
-            }
-          }
-        } else {
-          setSelectedShapes([]);
-        }
-        break; }
-
-      case 'convertAnchor': {
-        const clickedShape = [...vectorShapes].reverse().find(shape => (
-          snappedPoint.x >= shape.bounds.x &&
-          snappedPoint.x <= shape.bounds.x + shape.bounds.width &&
-          snappedPoint.y >= shape.bounds.y &&
-          snappedPoint.y <= shape.bounds.y + shape.bounds.height
-        ));
-        if (clickedShape) {
-          const idx = hitTestPoint(snappedPoint, clickedShape);
-          if (idx !== null) {
-            setVectorShapes(prev => prev.map(s => {
-              if (s.id !== clickedShape.id) return s;
-              const pts = [...s.path.points];
-              const cur = pts[idx];
-              // toggle type
-              const nextType = cur.type === 'corner' ? 'smooth' : cur.type === 'smooth' ? 'symmetric' : 'corner';
-              let controlIn = cur.controlIn;
-              let controlOut = cur.controlOut;
-              if (nextType === 'corner') { controlIn = undefined; controlOut = undefined; }
-              if (nextType === 'smooth' || nextType === 'symmetric') {
-                controlIn = controlIn || { x: -20, y: 0 };
-                controlOut = controlOut || { x: 20, y: 0 };
-                if (nextType === 'symmetric') {
-                  controlIn = { x: -Math.abs(controlOut!.x), y: -Math.abs(controlOut!.y) };
-                }
-              }
-              pts[idx] = { ...cur, type: nextType, controlIn, controlOut };
-              const newPath = { ...s.path, points: pts };
-              return { ...s, path: newPath, bounds: calculatePathBounds(newPath) };
-            }));
-          }
-        }
-        break; }
-    }
-  }, [active, composedCanvas, snapToGridPoint, vectorTool, currentPath, createNewPath, addPointToPath, vectorShapes]);
-
-  const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!isDrawing || !isDrawingRef.current) return;
-
-    const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
-    const x = (e.clientX - rect.left) * (composedCanvas!.width / rect.width);
-    const y = (e.clientY - rect.top) * (composedCanvas!.height / rect.height);
-    const snappedPoint = snapToGridPoint(x, y);
-
-    // Console log removed
-
-    // Update preview for current path or drag operations
-    if (currentPath && vectorTool === 'pen') {
-      // This would update a preview point in a real implementation
-    }
-    // Dragging point / handle / bounds
-    if (vectorTool === 'pathSelection') {
-      if (draggingPointRef.current) {
-        const { shapeId, index } = draggingPointRef.current;
-        setVectorShapes(prev => prev.map(s => {
-          if (s.id !== shapeId) return s;
-          const pts = [...s.path.points];
-          pts[index] = { ...pts[index], x: snappedPoint.x, y: snappedPoint.y };
-          const newPath = { ...s.path, points: pts };
-          return { ...s, path: newPath, bounds: calculatePathBounds(newPath) };
-        }));
-      } else if (draggingHandleRef.current) {
-        const { shapeId, index, which } = draggingHandleRef.current;
-        setVectorShapes(prev => prev.map(s => {
-          if (s.id !== shapeId) return s;
-          const pts = [...s.path.points];
-          const p = { ...pts[index] };
-          const dx = snappedPoint.x - p.x;
-          const dy = snappedPoint.y - p.y;
-          if (which === 'in') {
-            p.controlIn = { x: dx, y: dy };
-            if (!e.altKey && p.type === 'symmetric') {
-              p.controlOut = { x: -dx, y: -dy };
-            }
-          } else {
-            p.controlOut = { x: dx, y: dy };
-            if (!e.altKey && p.type === 'symmetric') {
-              p.controlIn = { x: -dx, y: -dy };
-            }
-          }
-          // Shift to constrain angle to 45deg steps
-          if (e.shiftKey) {
-            const handle = which === 'in' ? p.controlIn! : p.controlOut!;
-            const angle = Math.atan2(handle.y, handle.x);
-            const step = Math.PI / 4;
-            const snappedAngle = Math.round(angle / step) * step;
-            const len = Math.hypot(handle.x, handle.y);
-            const nx = Math.cos(snappedAngle) * len;
-            const ny = Math.sin(snappedAngle) * len;
-            if (which === 'in') p.controlIn = { x: nx, y: ny }; else p.controlOut = { x: nx, y: ny };
-          }
-          pts[index] = p;
-          const newPath = { ...s.path, points: pts };
-          return { ...s, path: newPath, bounds: calculatePathBounds(newPath) };
-        }));
-      } else if (draggingBoundsRef.current) {
-        const { shapeId, startX, startY, startBounds } = draggingBoundsRef.current;
-        const dx = snappedPoint.x - startX;
-        const dy = snappedPoint.y - startY;
-        setVectorShapes(prev => prev.map(s => {
-          if (s.id !== shapeId) return s;
-          const scaleX = (startBounds.width + dx) / Math.max(1, startBounds.width);
-          const scaleY = (startBounds.height + dy) / Math.max(1, startBounds.height);
-          const cx = startBounds.x;
-          const cy = startBounds.y;
-          const pts = s.path.points.map(p => ({
-            ...p,
-            x: cx + (p.x - cx) * scaleX,
-            y: cy + (p.y - cy) * scaleY
-          }));
-          const newPath = { ...s.path, points: pts };
-          return { ...s, path: newPath, bounds: calculatePathBounds(newPath) };
-        }));
-      }
-    }
-  }, [isDrawing, composedCanvas, snapToGridPoint, currentPath, vectorTool]);
-
-  const handleMouseUp = useCallback(() => {
-    if (!isDrawing) return;
-
-    // Console log removed
-
-    isDrawingRef.current = false;
-    setIsDrawing(false);
-    draggingPointRef.current = null;
-    draggingBoundsRef.current = null;
-    draggingHandleRef.current = null;
-  }, [isDrawing]);
-
-  const handleDoubleClick = useCallback(() => {
-    if (vectorTool === 'pen' && currentPath) {
-      // Console log removed
-      closeCurrentPath();
-    }
-  }, [vectorTool, currentPath, closeCurrentPath]);
+  // Mouse events are handled by VectorOverlay component
 
   // Render shapes when they change
   useEffect(() => {
     renderVectorShapes();
-    // sync to global store for 3D editing
-    vectorStore.setAll({
-      shapes: vectorShapes as any,
-      selected: selectedShapes,
-      currentPath,
-      tool: vectorTool,
-    });
   }, [renderVectorShapes]);
 
+  // Re-render when vector store changes
+  useEffect(() => {
+    const unsubscribe = vectorStore.subscribe(() => {
+      renderVectorShapes();
+    });
+    return unsubscribe;
+  }, [renderVectorShapes]);
+
+  // Update current path when settings change
+  useEffect(() => {
+    const currentPath = vectorStore.getState().currentPath;
+    if (currentPath) {
+      const updatedCurrentPath = {
+        ...currentPath,
+        fillColor: defaultFillColor,
+        strokeColor: defaultStrokeColor,
+        strokeWidth: defaultStrokeWidth,
+        fill: defaultFillType !== 'none',
+        stroke: defaultStrokeEnabled,
+        fillType: defaultFillType,
+        fillOpacity: defaultFillOpacity,
+        strokeOpacity: defaultStrokeOpacity,
+        gradient: defaultFillType !== 'solid' ? { ...defaultGradient } : undefined,
+        strokeJoin: defaultStrokeJoin,
+        strokeCap: defaultStrokeCap
+      };
+      vectorStore.set('currentPath', updatedCurrentPath);
+      
+      // Trigger re-render by calling the 3D canvas render function
+      // This will update the vector rendering on the 3D model
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('vectorSettingsChanged'));
+      }
+    }
+  }, [defaultFillColor, defaultStrokeColor, defaultStrokeWidth, defaultFillType, defaultStrokeEnabled, defaultFillOpacity, defaultStrokeOpacity, defaultGradient, defaultStrokeJoin, defaultStrokeCap]);
+
   if (!active) {
-    // Console log removed
     return null;
   }
 
-  // Headless mode: don't render popup UI; interactions happen directly on 3D Shirt
-  // Console log removed
-  return null;
+  return (
+    <div style={{
+      position: 'fixed',
+      top: '80px',
+      right: '20px',
+      width: '300px',
+      background: 'linear-gradient(135deg, rgb(30, 41, 59) 0%, rgb(15, 23, 42) 100%)',
+      border: '2px solid rgb(139, 92, 246)',
+      borderRadius: '12px',
+      padding: '16px',
+      color: 'white',
+      zIndex: 1000,
+      maxHeight: '80vh',
+      overflowY: 'auto'
+    }}>
+      <div style={{
+        background: 'linear-gradient(135deg, rgb(139, 92, 246) 0%, rgb(168, 85, 247) 100%)',
+        color: 'white',
+        padding: '12px 16px',
+        borderRadius: '8px',
+        marginBottom: '16px',
+        textAlign: 'center'
+      }}>
+        <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>🎨 Vector Tools</h3>
+      </div>
+
+      {/* Tool Selection */}
+      <div style={{ marginBottom: '16px' }}>
+        <div style={{ marginBottom: '8px', fontWeight: 500, color: '#E2E8F0' }}>Tool</div>
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+          {(['pen', 'pathSelection', 'addAnchor', 'removeAnchor', 'convertAnchor', 'curvature'] as VectorTool[]).map(tool => (
+            <button
+              key={tool}
+              className={`btn ${vectorTool === tool ? 'active' : ''}`}
+              onClick={() => {
+                vectorStore.set('tool', tool);
+              }}
+              style={{
+                padding: '6px 12px',
+                borderRadius: '6px',
+                border: '1px solid rgba(139, 92, 246, 0.3)',
+                background: vectorTool === tool ? 'rgb(139, 92, 246)' : 'rgba(139, 92, 246, 0.1)',
+                color: 'white',
+                fontSize: '12px',
+                cursor: 'pointer'
+              }}
+            >
+              {tool.charAt(0).toUpperCase() + tool.slice(1).replace(/([A-Z])/g, ' $1')}
+            </button>
+          ))}
+        </div>
+      </div>
+
+
+      {/* Fill & Stroke Controls */}
+      <div style={{ marginBottom: '16px' }}>
+        <div style={{ marginBottom: '12px', fontWeight: 500, color: '#E2E8F0' }}>Fill & Stroke</div>
+        
+        {/* Fill Controls */}
+        <div style={{ 
+          background: 'rgba(139, 92, 246, 0.1)', 
+          padding: '12px', 
+          borderRadius: '8px', 
+          marginBottom: '12px',
+          border: '1px solid rgba(139, 92, 246, 0.3)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: '8px' }}>
+            <input
+              type="checkbox"
+              checked={defaultFillType !== 'none'}
+              onChange={(e) => {
+                setDefaultFillType(e.target.checked ? 'solid' : 'none');
+                applySettingsToSelected();
+              }}
+              style={{ marginRight: '8px' }}
+            />
+            <span style={{ fontWeight: 500 }}>Fill</span>
+          </div>
+          
+          {defaultFillType !== 'none' && (
+            <>
+              <div style={{ marginBottom: '8px' }}>
+                <div style={{ marginBottom: '4px', fontSize: '12px', color: '#CBD5E1' }}>Fill Type</div>
+                <select
+                  value={defaultFillType}
+                  onChange={(e) => {
+                    setDefaultFillType(e.target.value as FillType);
+                    applySettingsToSelected();
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '6px',
+                    borderRadius: '4px',
+                    border: '1px solid rgba(139, 92, 246, 0.3)',
+                    background: 'rgba(15, 23, 42, 0.8)',
+                    color: 'white'
+                  }}
+                >
+                  <option value="solid">Solid Color</option>
+                  <option value="linear">Linear Gradient</option>
+                  <option value="radial">Radial Gradient</option>
+                  <option value="image">Image Fill</option>
+                </select>
+              </div>
+
+              <div style={{ marginBottom: '8px' }}>
+                <div style={{ marginBottom: '4px', fontSize: '12px', color: '#CBD5E1' }}>Fill Color</div>
+                <input
+                  type="color"
+                  value={defaultFillType === 'solid' ? defaultFillColor : defaultGradient.color1}
+                  onChange={(e) => {
+                    if (defaultFillType === 'solid') {
+                      setDefaultFillColor(e.target.value);
+                    } else {
+                      setDefaultGradient(prev => ({ ...prev, color1: e.target.value }));
+                    }
+                    applySettingsToSelected();
+                  }}
+                  style={{
+                    width: '100%',
+                    height: '32px',
+                    border: '1px solid rgba(139, 92, 246, 0.3)',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                />
+              </div>
+
+              <div style={{ marginBottom: '8px' }}>
+                <div style={{ marginBottom: '4px', fontSize: '12px', color: '#CBD5E1' }}>Fill Opacity: {Math.round(defaultFillOpacity * 100)}%</div>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  value={defaultFillOpacity}
+                  onChange={(e) => {
+                    setDefaultFillOpacity(Number(e.target.value));
+                    applySettingsToSelected();
+                  }}
+                  style={{ width: '100%' }}
+                />
+              </div>
+
+              {(defaultFillType === 'linear' || defaultFillType === 'radial') && (
+                <div style={{ marginBottom: '8px' }}>
+                  <div style={{ marginBottom: '4px', fontSize: '12px', color: '#CBD5E1' }}>Gradient Color 2</div>
+                  <input
+                    type="color"
+                    value={defaultGradient.color2}
+                    onChange={(e) => setDefaultGradient(prev => ({ ...prev, color2: e.target.value }))}
+                    style={{
+                      width: '100%',
+                      height: '32px',
+                      border: '1px solid rgba(139, 92, 246, 0.3)',
+                      borderRadius: '4px',
+                      cursor: 'pointer'
+                    }}
+                  />
+                </div>
+              )}
+
+              {defaultFillType === 'linear' && (
+                <div style={{ marginBottom: '8px' }}>
+                  <div style={{ marginBottom: '4px', fontSize: '12px', color: '#CBD5E1' }}>Angle: {defaultGradient.angle}°</div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="360"
+                    value={defaultGradient.angle}
+                    onChange={(e) => setDefaultGradient(prev => ({ ...prev, angle: Number(e.target.value) }))}
+                    style={{ width: '100%' }}
+                  />
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Stroke Controls */}
+        <div style={{ 
+          background: 'rgba(139, 92, 246, 0.1)', 
+          padding: '12px', 
+          borderRadius: '8px',
+          border: '1px solid rgba(139, 92, 246, 0.3)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: '8px' }}>
+            <input
+              type="checkbox"
+              checked={defaultStrokeEnabled}
+              onChange={(e) => {
+                setDefaultStrokeEnabled(e.target.checked);
+                applySettingsToSelected();
+              }}
+              style={{ marginRight: '8px' }}
+            />
+            <span style={{ fontWeight: 500 }}>Stroke</span>
+          </div>
+          
+          {defaultStrokeEnabled && (
+            <>
+              <div style={{ marginBottom: '8px' }}>
+                <div style={{ marginBottom: '4px', fontSize: '12px', color: '#CBD5E1' }}>Stroke Color</div>
+                <input
+                  type="color"
+                  value={defaultStrokeColor}
+                  onChange={(e) => {
+                    setDefaultStrokeColor(e.target.value);
+                    applySettingsToSelected();
+                  }}
+                  style={{
+                    width: '100%',
+                    height: '32px',
+                    border: '1px solid rgba(139, 92, 246, 0.3)',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                />
+              </div>
+
+              <div style={{ marginBottom: '8px' }}>
+                <div style={{ marginBottom: '4px', fontSize: '12px', color: '#CBD5E1' }}>Stroke Width: {defaultStrokeWidth}px</div>
+                <input
+                  type="range"
+                  min="1"
+                  max="20"
+                  value={defaultStrokeWidth}
+                  onChange={(e) => {
+                    setDefaultStrokeWidth(Number(e.target.value));
+                    applySettingsToSelected();
+                  }}
+                  style={{ width: '100%' }}
+                />
+              </div>
+
+              <div style={{ marginBottom: '8px' }}>
+                <div style={{ marginBottom: '4px', fontSize: '12px', color: '#CBD5E1' }}>Stroke Opacity: {Math.round(defaultStrokeOpacity * 100)}%</div>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  value={defaultStrokeOpacity}
+                  onChange={(e) => {
+                    setDefaultStrokeOpacity(Number(e.target.value));
+                    applySettingsToSelected();
+                  }}
+                  style={{ width: '100%' }}
+                />
+              </div>
+            </>
+          )}
+
+          <div style={{ marginBottom: '8px' }}>
+            <div style={{ marginBottom: '4px', fontSize: '12px', color: '#CBD5E1' }}>Line Join</div>
+            <select
+              value={defaultStrokeJoin}
+              onChange={(e) => {
+                setDefaultStrokeJoin(e.target.value as CanvasLineJoin);
+                applySettingsToSelected();
+              }}
+              style={{
+                width: '100%',
+                padding: '6px',
+                borderRadius: '4px',
+                border: '1px solid rgba(139, 92, 246, 0.3)',
+                background: 'rgba(15, 23, 42, 0.8)',
+                color: 'white'
+              }}
+            >
+              <option value="round">Round</option>
+              <option value="bevel">Bevel</option>
+              <option value="miter">Miter</option>
+            </select>
+          </div>
+
+          <div>
+            <div style={{ marginBottom: '4px', fontSize: '12px', color: '#CBD5E1' }}>Line Cap</div>
+            <select
+              value={defaultStrokeCap}
+              onChange={(e) => {
+                setDefaultStrokeCap(e.target.value as CanvasLineCap);
+                applySettingsToSelected();
+              }}
+              style={{
+                width: '100%',
+                padding: '6px',
+                borderRadius: '4px',
+                border: '1px solid rgba(139, 92, 246, 0.3)',
+                background: 'rgba(15, 23, 42, 0.8)',
+                color: 'white'
+              }}
+            >
+              <option value="round">Round</option>
+              <option value="butt">Butt</option>
+              <option value="square">Square</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div style={{ display: 'flex', gap: '8px', flexDirection: 'column' }}>
+        {selectedShapes.length > 0 && (
+          <button
+            onClick={applySettingsToSelected}
+            style={{
+              width: '100%',
+              padding: '8px 16px',
+              borderRadius: '6px',
+              border: '1px solid rgba(34, 197, 94, 0.3)',
+              background: 'rgba(34, 197, 94, 0.1)',
+              color: '#86EFAC',
+              cursor: 'pointer',
+              fontSize: '14px'
+            }}
+          >
+            Apply to Selected ({selectedShapes.length})
+          </button>
+        )}
+        
+        <button
+          onClick={() => {
+            // Trigger the clear event - all clearing logic is handled in the event listener
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('clearActiveLayer'));
+            }
+            
+            console.log('🧹 Clear All button clicked');
+          }}
+          style={{
+            width: '100%',
+            padding: '8px 16px',
+            borderRadius: '6px',
+            border: '1px solid rgba(239, 68, 68, 0.3)',
+            background: 'rgba(239, 68, 68, 0.1)',
+            color: '#FCA5A5',
+            cursor: 'pointer',
+            fontSize: '14px'
+          }}
+        >
+          Clear All
+        </button>
+      </div>
+    </div>
+  );
 }
 

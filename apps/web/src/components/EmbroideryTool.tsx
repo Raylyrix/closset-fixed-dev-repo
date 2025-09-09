@@ -50,6 +50,23 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
   const [lightingDirection, setLightingDirection] = useState('top-left');
   const [fabricType, setFabricType] = useState('cotton');
   
+  // Use global grid settings
+  const {
+    showGrid,
+    gridSize,
+    gridColor,
+    gridOpacity,
+    showRulers,
+    rulerUnits,
+    scale,
+    showGuides,
+    guideColor,
+    snapToGrid,
+    snapDistance,
+    showMeasurements,
+    measurementUnits
+  } = useApp();
+  
   // Backend integration state
   const [backendConnected, setBackendConnected] = useState(false);
   const [backendHealth, setBackendHealth] = useState<any>(null);
@@ -152,44 +169,6 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
   }, []);
 
-  // Keyboard shortcuts for undo/redo
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      // Check if Ctrl (or Cmd on Mac) is pressed
-      const isCtrlPressed = event.ctrlKey || event.metaKey;
-      
-      if (isCtrlPressed) {
-        switch (event.key.toLowerCase()) {
-          case 'z':
-            event.preventDefault();
-            if (event.shiftKey) {
-              // Ctrl+Shift+Z for redo
-              console.log('🔄 REDO ACTION triggered via Ctrl+Shift+Z');
-              redoAction();
-            } else {
-              // Ctrl+Z for undo
-              console.log('↶ UNDO ACTION triggered via Ctrl+Z');
-              undoAction();
-            }
-            break;
-          case 'y':
-            event.preventDefault();
-            // Ctrl+Y for redo
-            console.log('🔄 REDO ACTION triggered via Ctrl+Y');
-            redoAction();
-            break;
-        }
-      }
-    };
-
-    // Add event listener
-    document.addEventListener('keydown', handleKeyDown);
-
-    // Cleanup
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [undoStack, redoStack, embroideryStitches]);
 
   // Draw embroidery stitches
   const drawStitches = () => {
@@ -801,14 +780,68 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
         break;
 
       case 'backstitch':
-        // Backstitch pattern - draw each segment separately
+        console.log(`📏 RENDERING HYPERREALISTIC BACKSTITCH with ${points.length} points`);
+        // Draw hyperrealistic backstitch with professional embroidery quality
+        const backstitchThreadThickness = Math.max(0.8, stitch.thickness * 0.6);
+        
+        // Create realistic thread color variations
+        const backstitchThreadVariation = 0.1 + Math.random() * 0.2;
+        const backstitchAdjustedColor = adjustBrightness(stitch.color, (Math.random() - 0.5) * 20 * backstitchThreadVariation);
+        const backstitchShadowColor = adjustBrightness(backstitchAdjustedColor, -25);
+        const backstitchHighlightColor = adjustBrightness(backstitchAdjustedColor, 20);
+        
+        // Draw each backstitch segment with realistic thread appearance
         for (let i = 0; i < points.length - 1; i++) {
           const curr = points[i];
           const next = points[i + 1];
+          
+          // Calculate segment direction and perpendicular
+          const dx = next.x - curr.x;
+          const dy = next.y - curr.y;
+          const length = Math.sqrt(dx * dx + dy * dy);
+          const perpX = -dy / length * 0.3;
+          const perpY = dx / length * 0.3;
+          
+          // Shadow layer
+          ctx.strokeStyle = backstitchShadowColor;
+          ctx.lineWidth = backstitchThreadThickness * 1.2;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          ctx.globalAlpha = 0.4;
+          ctx.shadowBlur = 0;
+          
+          ctx.beginPath();
+          ctx.moveTo(curr.x + perpX, curr.y + perpY);
+          ctx.lineTo(next.x + perpX, next.y + perpY);
+          ctx.stroke();
+          
+          // Main thread
+          ctx.strokeStyle = backstitchAdjustedColor;
+          ctx.lineWidth = backstitchThreadThickness;
+          ctx.globalAlpha = 1;
+          
           ctx.beginPath();
           ctx.moveTo(curr.x, curr.y);
           ctx.lineTo(next.x, next.y);
           ctx.stroke();
+          
+          // Highlight layer
+          ctx.strokeStyle = backstitchHighlightColor;
+          ctx.lineWidth = backstitchThreadThickness * 0.5;
+          ctx.globalAlpha = 0.7;
+          
+          ctx.beginPath();
+          ctx.moveTo(curr.x - perpX * 0.3, curr.y - perpY * 0.3);
+          ctx.lineTo(next.x - perpX * 0.3, next.y - perpY * 0.3);
+          ctx.stroke();
+          
+          // Add thread texture dots
+          const dotSize = backstitchThreadThickness * 0.3;
+          ctx.fillStyle = backstitchHighlightColor;
+          ctx.globalAlpha = 0.8;
+          ctx.beginPath();
+          ctx.arc(curr.x, curr.y, dotSize, 0, Math.PI * 2);
+          ctx.fill();
         }
         break;
 
@@ -835,12 +868,12 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
         ctx.shadowOffsetX = 0;
         ctx.shadowOffsetY = 0;
         
-        ctx.beginPath();
+      ctx.beginPath();
         ctx.moveTo(points[0].x + 0.3, points[0].y + 0.3);
         for (let i = 1; i < points.length; i++) {
           ctx.lineTo(points[i].x + 0.3, points[i].y + 0.3);
         }
-        ctx.stroke();
+      ctx.stroke();
         
         // Draw main outline thread
         ctx.strokeStyle = adjustedColor;
@@ -882,7 +915,7 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
         ctx.lineWidth = outlineThreadThickness * 0.6;
         ctx.globalAlpha = 0.8;
         
-        ctx.beginPath();
+      ctx.beginPath();
         ctx.moveTo(points[0].x - 0.1, points[0].y - 0.1);
         for (let i = 1; i < points.length; i++) {
           const segmentLength = Math.sqrt(
@@ -926,7 +959,7 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
         ctx.fillStyle = highlightColor;
         ctx.globalAlpha = 0.6;
         const shineSize = dotSize * 0.6;
-        ctx.beginPath();
+      ctx.beginPath();
         ctx.arc(points[0].x - shineSize * 0.3, points[0].y - shineSize * 0.3, shineSize, 0, Math.PI * 2);
         ctx.fill();
         ctx.beginPath();
@@ -935,64 +968,166 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
         break;
 
       case 'french-knot':
-        // French knot - small circular knots with realistic texture
+        console.log(`🎯 RENDERING HYPERREALISTIC FRENCH KNOTS with ${points.length} points`);
+        // Draw hyperrealistic French knots with professional embroidery quality
+        const knotThreadThickness = Math.max(0.6, stitch.thickness * 0.4);
+        
         points.forEach((point, i) => {
           if (i % 3 === 0) {
-            // Main knot body
+            // Create realistic thread color variations
+            const threadVariation = 0.1 + Math.random() * 0.2;
+            const adjustedColor = adjustBrightness(stitch.color, (Math.random() - 0.5) * 15 * threadVariation);
+            const shadowColor = adjustBrightness(adjustedColor, -30);
+            const highlightColor = adjustBrightness(adjustedColor, 25);
+            
+            const knotSize = stitch.thickness * 2.5;
+            const innerSize = knotSize * 0.6;
+            const coreSize = knotSize * 0.3;
+            
+            // Shadow layer
+            ctx.fillStyle = shadowColor;
+            ctx.globalAlpha = 0.4;
             ctx.beginPath();
-            ctx.arc(point.x, point.y, stitch.thickness * 0.8, 0, Math.PI * 2);
+            ctx.arc(point.x + 0.3, point.y + 0.3, knotSize, 0, Math.PI * 2);
             ctx.fill();
             
-            // Add highlight for 3D effect
-            const originalFillStyle = ctx.fillStyle;
-            ctx.fillStyle = adjustBrightness(stitch.color, 40);
+            // Main knot body with gradient
+            const gradient = ctx.createRadialGradient(
+              point.x - knotSize * 0.3, point.y - knotSize * 0.3, 0,
+              point.x, point.y, knotSize
+            );
+            gradient.addColorStop(0, highlightColor);
+            gradient.addColorStop(0.7, adjustedColor);
+            gradient.addColorStop(1, shadowColor);
+            
+            ctx.fillStyle = gradient;
+            ctx.globalAlpha = 1;
             ctx.beginPath();
-            ctx.arc(point.x - stitch.thickness * 0.3, point.y - stitch.thickness * 0.3, stitch.thickness * 0.2, 0, Math.PI * 2);
+            ctx.arc(point.x, point.y, knotSize, 0, Math.PI * 2);
             ctx.fill();
             
-            // Add shadow for depth
-            ctx.fillStyle = adjustBrightness(stitch.color, -20);
+            // Inner knot layer
+            ctx.fillStyle = adjustBrightness(adjustedColor, 10);
+            ctx.globalAlpha = 0.8;
             ctx.beginPath();
-            ctx.arc(point.x + stitch.thickness * 0.2, point.y + stitch.thickness * 0.2, stitch.thickness * 0.1, 0, Math.PI * 2);
+            ctx.arc(point.x, point.y, innerSize, 0, Math.PI * 2);
             ctx.fill();
             
-            // Reset fill style
-            ctx.fillStyle = originalFillStyle;
+            // Core highlight
+            ctx.fillStyle = highlightColor;
+            ctx.globalAlpha = 0.9;
+            ctx.beginPath();
+            ctx.arc(point.x - knotSize * 0.2, point.y - knotSize * 0.2, coreSize, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Thread texture lines
+            ctx.strokeStyle = highlightColor;
+            ctx.lineWidth = knotThreadThickness * 0.3;
+            ctx.globalAlpha = 0.6;
+            
+            for (let j = 0; j < 4; j++) {
+              const angle = (j * Math.PI * 2) / 4;
+              const startX = point.x + Math.cos(angle) * innerSize;
+              const startY = point.y + Math.sin(angle) * innerSize;
+              const endX = point.x + Math.cos(angle) * knotSize * 0.8;
+              const endY = point.y + Math.sin(angle) * knotSize * 0.8;
+              
+              ctx.beginPath();
+              ctx.moveTo(startX, startY);
+              ctx.lineTo(endX, endY);
+      ctx.stroke();
+    }
+            
+            // Shine highlight
+            ctx.fillStyle = adjustBrightness(highlightColor, 20);
+            ctx.globalAlpha = 0.7;
+            const shineSize = coreSize * 0.4;
+            ctx.beginPath();
+            ctx.arc(point.x - knotSize * 0.3, point.y - knotSize * 0.3, shineSize, 0, Math.PI * 2);
+            ctx.fill();
           }
         });
         break;
 
       case 'bullion':
-        // Bullion stitch - twisted rope-like appearance with realistic texture
+        console.log(`🌾 RENDERING HYPERREALISTIC BULLION STITCH with ${points.length} points`);
+        // Draw hyperrealistic bullion stitch with professional embroidery quality
+        const bullionThreadThickness = Math.max(0.8, stitch.thickness * 0.5);
+        
         for (let i = 0; i < points.length - 1; i++) {
           const start = points[i];
           const end = points[i + 1];
           const distance = Math.sqrt((end.x - start.x) ** 2 + (end.y - start.y) ** 2);
-          const twists = Math.max(3, Math.floor(distance / (stitch.thickness * 1.5)));
+          const twists = Math.max(5, Math.floor(distance / (stitch.thickness * 1.2)));
+          
+          // Create realistic thread color variations
+          const threadVariation = 0.1 + Math.random() * 0.2;
+          const adjustedColor = adjustBrightness(stitch.color, (Math.random() - 0.5) * 15 * threadVariation);
+          const shadowColor = adjustBrightness(adjustedColor, -25);
+          const highlightColor = adjustBrightness(adjustedColor, 20);
           
           // Create gradient for rope effect
           const gradient = ctx.createLinearGradient(start.x, start.y, end.x, end.y);
-          gradient.addColorStop(0, adjustBrightness(stitch.color, -10));
-          gradient.addColorStop(0.5, stitch.color);
-          gradient.addColorStop(1, adjustBrightness(stitch.color, 10));
+          gradient.addColorStop(0, shadowColor);
+          gradient.addColorStop(0.3, adjustedColor);
+          gradient.addColorStop(0.7, adjustedColor);
+          gradient.addColorStop(1, highlightColor);
           
           for (let t = 0; t < twists; t++) {
             const progress = t / twists;
             const x = start.x + (end.x - start.x) * progress;
             const y = start.y + (end.y - start.y) * progress;
-            const offset = Math.sin(progress * Math.PI * 6) * stitch.thickness * 0.4;
-            const perpOffset = Math.cos(progress * Math.PI * 6) * stitch.thickness * 0.2;
+            const offset = Math.sin(progress * Math.PI * 8) * stitch.thickness * 0.5;
+            const perpOffset = Math.cos(progress * Math.PI * 8) * stitch.thickness * 0.3;
             
-            // Main rope segment
-            ctx.fillStyle = gradient;
-            ctx.beginPath();
-            ctx.arc(x + offset, y + perpOffset, stitch.thickness * 0.5, 0, Math.PI * 2);
+            const segmentSize = stitch.thickness * 0.6;
+            const innerSize = segmentSize * 0.6;
+            
+            // Shadow layer
+            ctx.fillStyle = shadowColor;
+            ctx.globalAlpha = 0.4;
+      ctx.beginPath();
+            ctx.arc(x + offset + 0.2, y + perpOffset + 0.2, segmentSize, 0, Math.PI * 2);
             ctx.fill();
             
-            // Add highlight for 3D effect
-            ctx.fillStyle = adjustBrightness(stitch.color, 30);
+            // Main rope segment with gradient
+            ctx.fillStyle = gradient;
+            ctx.globalAlpha = 1;
             ctx.beginPath();
-            ctx.arc(x + offset - stitch.thickness * 0.2, y + perpOffset - stitch.thickness * 0.2, stitch.thickness * 0.15, 0, Math.PI * 2);
+            ctx.arc(x + offset, y + perpOffset, segmentSize, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Inner rope highlight
+            ctx.fillStyle = highlightColor;
+            ctx.globalAlpha = 0.8;
+            ctx.beginPath();
+            ctx.arc(x + offset - segmentSize * 0.2, y + perpOffset - segmentSize * 0.2, innerSize, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Thread twist lines
+            ctx.strokeStyle = highlightColor;
+            ctx.lineWidth = bullionThreadThickness * 0.2;
+            ctx.globalAlpha = 0.6;
+            
+            for (let j = 0; j < 3; j++) {
+              const angle = (j * Math.PI * 2) / 3 + progress * Math.PI * 4;
+              const lineStartX = x + offset + Math.cos(angle) * segmentSize * 0.3;
+              const lineStartY = y + perpOffset + Math.sin(angle) * segmentSize * 0.3;
+              const lineEndX = x + offset + Math.cos(angle) * segmentSize * 0.8;
+              const lineEndY = y + perpOffset + Math.sin(angle) * segmentSize * 0.8;
+              
+              ctx.beginPath();
+              ctx.moveTo(lineStartX, lineStartY);
+              ctx.lineTo(lineEndX, lineEndY);
+      ctx.stroke();
+    }
+            
+            // Shine highlight
+            ctx.fillStyle = adjustBrightness(highlightColor, 15);
+            ctx.globalAlpha = 0.7;
+            const shineSize = innerSize * 0.4;
+            ctx.beginPath();
+            ctx.arc(x + offset - segmentSize * 0.3, y + perpOffset - segmentSize * 0.3, shineSize, 0, Math.PI * 2);
             ctx.fill();
           }
         }
@@ -1044,9 +1179,9 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
             
             ctx.strokeStyle = gradient;
             ctx.lineWidth = stitch.thickness;
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-            
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
             ctx.beginPath();
             ctx.moveTo(start.x, start.y);
             ctx.lineTo(middle.x, middle.y);
@@ -1405,6 +1540,7 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
     return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
   };
 
+
   // Backend integration functions
   const checkBackendConnection = async () => {
     try {
@@ -1551,20 +1687,6 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
     }
   };
 
-  // Helper function to save current state to undo stack
-  const saveToUndoStack = (action: string = 'action') => {
-    setUndoStack(prev => [...prev, { 
-      stitches: [...embroideryStitches], 
-      layers: [...designLayers],
-      currentLayer: currentLayer,
-      action: action,
-      timestamp: Date.now()
-    }]);
-    // Clear redo stack when new action is performed
-    setRedoStack([]);
-    console.log(`💾 SAVED TO UNDO STACK: ${action} (${embroideryStitches.length} stitches, ${designLayers.length} layers)`);
-  };
-
   const addDesignLayer = (layerName: string) => {
     // Save current state before adding layer
     saveToUndoStack('add_layer');
@@ -1618,6 +1740,20 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
     ));
   };
 
+  // Helper function to save current state to undo stack
+  const saveToUndoStack = (action: string = 'action') => {
+    setUndoStack(prev => [...prev, { 
+      stitches: [...embroideryStitches], 
+      layers: [...designLayers],
+      currentLayer: currentLayer,
+      action: action,
+      timestamp: Date.now()
+    }]);
+    // Clear redo stack when new action is performed
+    setRedoStack([]);
+    console.log(`💾 SAVED TO UNDO STACK: ${action} (${embroideryStitches.length} stitches, ${designLayers.length} layers)`);
+  };
+
   const undoAction = () => {
     if (undoStack.length > 0) {
       const lastState = undoStack[undoStack.length - 1];
@@ -1668,7 +1804,49 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
     }
   };
 
+  // Keyboard shortcuts for undo/redo
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Check if Ctrl (or Cmd on Mac) is pressed
+      const isCtrlPressed = event.ctrlKey || event.metaKey;
+      
+      if (isCtrlPressed) {
+        switch (event.key.toLowerCase()) {
+          case 'z':
+            event.preventDefault();
+            if (event.shiftKey) {
+              // Ctrl+Shift+Z for redo
+              console.log('🔄 REDO ACTION triggered via Ctrl+Shift+Z', { redoStackLength: redoStack.length });
+              redoAction();
+            } else {
+              // Ctrl+Z for undo
+              console.log('↶ UNDO ACTION triggered via Ctrl+Z', { undoStackLength: undoStack.length });
+              undoAction();
+            }
+            break;
+          case 'y':
+            event.preventDefault();
+            // Ctrl+Y for redo
+            console.log('🔄 REDO ACTION triggered via Ctrl+Y', { redoStackLength: redoStack.length });
+            redoAction();
+            break;
+        }
+      }
+    };
+
+    // Add event listener
+    document.addEventListener('keydown', handleKeyDown);
+
+    // Cleanup
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [undoStack, redoStack, embroideryStitches, designLayers, currentLayer, undoAction, redoAction]);
+
   const enhanceStitchQuality = () => {
+    // Save current state before enhancing quality
+    saveToUndoStack('enhance_quality');
+
     // Enhance stitch quality based on fabric type and thread texture
     const enhancedStitches = embroideryStitches.map(stitch => {
       let enhancedStitch = { ...stitch };
@@ -1697,6 +1875,9 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
   };
 
   const optimizeForFabric = () => {
+    // Save current state before fabric optimization
+    saveToUndoStack('fabric_optimize');
+
     // Optimize stitches for specific fabric characteristics
     const optimizedStitches = embroideryStitches.map(stitch => {
       let optimizedStitch = { ...stitch };
@@ -1751,6 +1932,9 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
       return;
     }
 
+    // Save current state before importing
+    saveToUndoStack('import_file');
+
     try {
       const plan = await embroideryBackend.parseMachineFile(file);
       const importedStitches = embroideryBackend.convertBackendToFrontendFormat(plan);
@@ -1767,8 +1951,17 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
     if (!canvasRef.current) return;
 
     const rect = canvasRef.current.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / rect.width;
-    const y = (e.clientY - rect.top) / rect.height;
+    let x = (e.clientX - rect.left) / rect.width;
+    let y = (e.clientY - rect.top) / rect.height;
+
+    // Apply snap to grid if enabled
+    if (snapToGrid && (window as any).snapToGridPoint) {
+      const pixelX = x * rect.width;
+      const pixelY = y * rect.height;
+      const snapped = (window as any).snapToGridPoint(pixelX, pixelY);
+      x = snapped.x / rect.width;
+      y = snapped.y / rect.height;
+    }
 
     console.log(`🖱️ MOUSE DOWN: Starting ${embroideryStitchType} stitch at (${x.toFixed(3)}, ${y.toFixed(3)})`);
     
@@ -1789,8 +1982,17 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
 
     try {
       const rect = canvasRef.current.getBoundingClientRect();
-      const x = (e.clientX - rect.left) / rect.width;
-      const y = (e.clientY - rect.top) / rect.height;
+      let x = (e.clientX - rect.left) / rect.width;
+      let y = (e.clientY - rect.top) / rect.height;
+
+      // Apply snap to grid if enabled
+      if (snapToGrid && (window as any).snapToGridPoint) {
+        const pixelX = x * rect.width;
+        const pixelY = y * rect.height;
+        const snapped = (window as any).snapToGridPoint(pixelX, pixelY);
+        x = snapped.x / rect.width;
+        y = snapped.y / rect.height;
+      }
 
       // Throttle updates for better performance
       const now = Date.now();
@@ -1872,6 +2074,9 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
       console.warn('⚠️ No pattern description provided');
       return;
     }
+
+    // Save current state before generating pattern
+    saveToUndoStack('generate_pattern');
 
     console.log('🤖 AI GENERATING PATTERN:', embroideryPatternDescription);
     setIsGenerating(true);
@@ -2136,6 +2341,9 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
       console.warn('⚠️ No stitches to optimize');
       return;
     }
+
+    // Save current state before ML optimization
+    saveToUndoStack('ml_optimize');
 
     console.log('🤖 ML OPTIMIZING STITCHES:', embroideryStitches.length);
     setIsOptimizing(true);
@@ -2607,12 +2815,12 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
           gradient.addColorStop(1, shadowColor);
           
           ctx.strokeStyle = gradient;
-          ctx.beginPath();
-          ctx.moveTo(points[0].x, points[0].y);
-          for (let i = 1; i < points.length; i++) {
-            ctx.lineTo(points[i].x, points[i].y);
-          }
-          ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) {
+      ctx.lineTo(points[i].x, points[i].y);
+    }
+    ctx.stroke();
           break;
         }
         
@@ -2659,7 +2867,7 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
             ctx.strokeStyle = gradient;
             
             // Draw the satin line
-            ctx.beginPath();
+        ctx.beginPath();
             ctx.moveTo(linePoints[0].x, linePoints[0].y);
             
             for (let i = 1; i < linePoints.length; i++) {
@@ -2707,9 +2915,9 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
         } else {
           // Outline satin stitch
           ctx.lineWidth = stitch.thickness * 1.2;
-          ctx.lineCap = 'round';
-          ctx.lineJoin = 'round';
-          
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    
           // Create gradient for outline
           const start = satinPoints[0];
           const end = satinPoints[satinPoints.length - 1];
@@ -2726,7 +2934,7 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
           ctx.strokeStyle = gradient;
           
           // Draw main satin line with consistent spacing
-          ctx.beginPath();
+    ctx.beginPath();
           ctx.moveTo(satinPoints[0].x, satinPoints[0].y);
           
           for (let i = 1; i < satinPoints.length; i++) {
@@ -2776,11 +2984,11 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
               ctx.beginPath();
               ctx.moveTo(prev.x + perpX, prev.y + perpY);
               ctx.lineTo(curr.x + perpX, curr.y + perpY);
-              ctx.stroke();
+    ctx.stroke();
               
               // Bottom parallel line
               ctx.strokeStyle = adjustBrightness(baseColor, -10);
-              ctx.beginPath();
+        ctx.beginPath();
               ctx.moveTo(prev.x - perpX, prev.y - perpY);
               ctx.lineTo(curr.x - perpX, curr.y - perpY);
               ctx.stroke();
@@ -2797,13 +3005,13 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
           console.warn('Too many points for fill stitch, using simplified version');
           // Simple fill fallback
           ctx.fillStyle = stitch.color;
-          ctx.beginPath();
+        ctx.beginPath();
           ctx.moveTo(points[0].x, points[0].y);
           for (let i = 1; i < points.length; i++) {
             ctx.lineTo(points[i].x, points[i].y);
           }
           ctx.closePath();
-          ctx.fill();
+        ctx.fill();
           break;
         }
         
@@ -2883,11 +3091,11 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
           // Create thread shadow (darker, slightly offset)
           ctx.strokeStyle = adjustBrightness(adjustedColor, -30);
           ctx.lineWidth = threadThickness * 1.4;
-          ctx.lineCap = 'round';
-          ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
           ctx.globalAlpha = 0.6;
-          
-          ctx.beginPath();
+    
+    ctx.beginPath();
           if (isEvenRow) {
             ctx.moveTo(line.x1 + 0.3, line.y1 + 0.3);
             for (let i = 1; i <= numSegments; i++) {
@@ -2917,14 +3125,14 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
               ctx.lineTo(x + perpX, y + perpY);
             }
           }
-          ctx.stroke();
+    ctx.stroke();
           
           // Create thread highlight (brighter, on top)
           ctx.strokeStyle = adjustBrightness(adjustedColor, 20);
           ctx.lineWidth = threadThickness * 0.7;
           ctx.globalAlpha = 0.9;
           
-          ctx.beginPath();
+      ctx.beginPath();
           if (isEvenRow) {
             ctx.moveTo(line.x1, line.y1);
             for (let i = 1; i <= numSegments; i++) {
@@ -2960,14 +3168,14 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
               ctx.lineTo(x + perpX, y + perpY);
             }
           }
-          ctx.stroke();
-          
+      ctx.stroke();
+      
           // Create main thread (base color)
           ctx.strokeStyle = adjustedColor;
           ctx.lineWidth = threadThickness;
           ctx.globalAlpha = 1;
           
-          ctx.beginPath();
+        ctx.beginPath();
           if (isEvenRow) {
             ctx.moveTo(line.x1, line.y1);
             for (let i = 1; i <= numSegments; i++) {
@@ -3028,8 +3236,8 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
             // Draw cross-stitch shadow (offset slightly)
             ctx.strokeStyle = shadowColor;
             ctx.lineWidth = threadThickness * 1.3;
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
             ctx.globalAlpha = 0.6;
             ctx.shadowBlur = 0;
             ctx.shadowOffsetX = 0;
@@ -3048,16 +3256,16 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
             ctx.globalAlpha = 1;
             
             // First diagonal (bottom-left to top-right)
-            ctx.beginPath();
+      ctx.beginPath();
             ctx.moveTo(point.x - size, point.y - size);
             ctx.lineTo(point.x + size, point.y + size);
-            ctx.stroke();
-            
+      ctx.stroke();
+      
             // Second diagonal (top-left to bottom-right)
-            ctx.beginPath();
+      ctx.beginPath();
             ctx.moveTo(point.x - size, point.y + size);
             ctx.lineTo(point.x + size, point.y - size);
-            ctx.stroke();
+      ctx.stroke();
             
             // Add thread highlights for 3D effect
             ctx.strokeStyle = highlightColor;
@@ -3065,7 +3273,7 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
             ctx.globalAlpha = 0.7;
             
             // Highlight first diagonal
-            ctx.beginPath();
+        ctx.beginPath();
             ctx.moveTo(point.x - size + 0.3, point.y - size + 0.3);
             ctx.lineTo(point.x + size - 0.3, point.y + size - 0.3);
             ctx.stroke();
@@ -3084,11 +3292,11 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
             // Center intersection dot
             ctx.beginPath();
             ctx.arc(point.x, point.y, dotSize * 0.6, 0, Math.PI * 2);
-            ctx.fill();
+      ctx.fill();
             
             // Corner dots for thread ends
             const cornerDotSize = threadThickness * 0.5;
-            ctx.beginPath();
+        ctx.beginPath();
             ctx.arc(point.x - size, point.y - size, cornerDotSize, 0, Math.PI * 2);
             ctx.fill();
             ctx.beginPath();
@@ -3116,8 +3324,8 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
             ctx.fill();
             ctx.beginPath();
             ctx.arc(point.x + size + shineSize * 0.5, point.y - size - shineSize * 0.5, shineSize, 0, Math.PI * 2);
-            ctx.fill();
-          }
+        ctx.fill();
+      }
         });
         break;
 
@@ -3147,8 +3355,8 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
           // Draw chain link shadow (offset slightly)
           ctx.strokeStyle = shadowColor;
           ctx.lineWidth = threadThickness * 1.4;
-          ctx.lineCap = 'round';
-          ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
           ctx.globalAlpha = 0.5;
           ctx.shadowBlur = 0;
           ctx.shadowOffsetX = 0;
@@ -3162,15 +3370,15 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
           ctx.strokeStyle = adjustedColor;
           ctx.lineWidth = threadThickness;
           ctx.globalAlpha = 1;
-          
-          ctx.beginPath();
+      
+      ctx.beginPath();
           ctx.ellipse(midX, midY, linkWidth/2, linkHeight/2, angle, 0, Math.PI * 2);
-          ctx.stroke();
-          
+      ctx.stroke();
+      
           // Draw inner oval for chain link hole
-          ctx.beginPath();
+      ctx.beginPath();
           ctx.ellipse(midX, midY, linkWidth/3, linkHeight/3, angle, 0, Math.PI * 2);
-          ctx.stroke();
+        ctx.stroke();
           
           // Add chain link highlight for 3D effect
           ctx.strokeStyle = highlightColor;
@@ -3215,8 +3423,8 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
             ctx.beginPath();
             ctx.moveTo(next.x - 0.1, next.y - 0.1);
             ctx.lineTo(connectionX - 0.1, connectionY - 0.1);
-            ctx.stroke();
-          }
+      ctx.stroke();
+    }
           
           // Add realistic thread texture dots at key points
           ctx.globalAlpha = 1;
@@ -3224,7 +3432,7 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
           const dotSize = threadThickness * 0.4;
           
           // Top and bottom of chain link
-          ctx.beginPath();
+        ctx.beginPath();
           ctx.arc(midX + Math.cos(angle) * linkWidth/2, midY + Math.sin(angle) * linkWidth/2, dotSize, 0, Math.PI * 2);
           ctx.fill();
           ctx.beginPath();
@@ -3237,21 +3445,73 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
           const shineSize = dotSize * 0.5;
           ctx.beginPath();
           ctx.arc(midX + Math.cos(angle) * linkWidth/2 - shineSize * 0.3, midY + Math.sin(angle) * linkWidth/2 - shineSize * 0.3, shineSize, 0, Math.PI * 2);
-          ctx.fill();
-        }
+        ctx.fill();
+      }
         break;
 
       case 'backstitch':
-        console.log('🧵 BACKSTITCH CASE EXECUTING - drawing individual segments');
-        // Backstitch pattern - draw each segment separately
+        console.log('🧵 HYPERREALISTIC BACKSTITCH CASE EXECUTING - drawing professional backstitch segments');
+        // Draw hyperrealistic backstitch with professional embroidery quality
+        const backstitchThreadThickness = Math.max(0.8, stitch.thickness * 0.6);
+
+        // Create realistic thread color variations
+        const backstitchThreadVariation = 0.1 + Math.random() * 0.2;
+        const backstitchAdjustedColor = adjustBrightness(stitch.color, (Math.random() - 0.5) * 20 * backstitchThreadVariation);
+        const backstitchShadowColor = adjustBrightness(backstitchAdjustedColor, -25);
+        const backstitchHighlightColor = adjustBrightness(backstitchAdjustedColor, 20);
+        // Draw each backstitch segment with realistic thread appearance
     for (let i = 0; i < points.length - 1; i++) {
           const curr = points[i];
       const next = points[i + 1];
-        ctx.beginPath();
+          
+          // Calculate segment direction and perpendicular
+          const dx = next.x - curr.x;
+          const dy = next.y - curr.y;
+          const length = Math.sqrt(dx * dx + dy * dy);
+          const perpX = -dy / length * 0.3;
+          const perpY = dx / length * 0.3;
+          
+          // Shadow layer
+          ctx.strokeStyle = backstitchShadowColor;
+          ctx.lineWidth = backstitchThreadThickness * 1.2;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          ctx.globalAlpha = 0.4;
+          ctx.shadowBlur = 0;
+          
+          ctx.beginPath();
+          ctx.moveTo(curr.x + perpX, curr.y + perpY);
+          ctx.lineTo(next.x + perpX, next.y + perpY);
+          ctx.stroke();
+          
+          // Main thread
+          ctx.strokeStyle = backstitchAdjustedColor;
+          ctx.lineWidth = backstitchThreadThickness;
+          ctx.globalAlpha = 1;
+          
+          ctx.beginPath();
           ctx.moveTo(curr.x, curr.y);
-      ctx.lineTo(next.x, next.y);
-        ctx.stroke();
-      }
+          ctx.lineTo(next.x, next.y);
+          ctx.stroke();
+          
+          // Highlight layer
+          ctx.strokeStyle = backstitchHighlightColor;
+          ctx.lineWidth = backstitchThreadThickness * 0.5;
+          ctx.globalAlpha = 0.7;
+          
+          ctx.beginPath();
+          ctx.moveTo(curr.x - perpX * 0.3, curr.y - perpY * 0.3);
+          ctx.lineTo(next.x - perpX * 0.3, next.y - perpY * 0.3);
+          ctx.stroke();
+          
+          // Add thread texture dots
+          const dotSize = backstitchThreadThickness * 0.3;
+          ctx.fillStyle = backstitchHighlightColor;
+          ctx.globalAlpha = 0.8;
+          ctx.beginPath();
+          ctx.arc(curr.x, curr.y, dotSize, 0, Math.PI * 2);
+          ctx.fill();
+        }
         break;
 
       case 'outline':
@@ -3345,7 +3605,7 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
               
               ctx.lineTo(x + perpX - 0.1, y + perpY - 0.1);
             }
-          } else {
+        } else {
             ctx.lineTo(points[i].x - 0.1, points[i].y - 0.1);
           }
         }
@@ -3377,46 +3637,167 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
         break;
 
       case 'french-knot':
-        console.log('🧵 FRENCH-KNOT CASE EXECUTING - drawing circular knots');
+        console.log('🧵 HYPERREALISTIC FRENCH-KNOT CASE EXECUTING - drawing professional circular knots');
+        // Draw hyperrealistic French knots with professional embroidery quality
+        const knotThreadThickness = Math.max(0.6, stitch.thickness * 0.4);
+        
         points.forEach((point, i) => {
-          const size = stitch.thickness * 3;
-          // Draw multiple concentric circles for realistic knot
-          ctx.beginPath();
-          ctx.arc(point.x, point.y, size, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.beginPath();
-          ctx.arc(point.x, point.y, size * 0.7, 0, Math.PI * 2);
-          ctx.stroke();
-          ctx.beginPath();
-          ctx.arc(point.x, point.y, size * 0.3, 0, Math.PI * 2);
-          ctx.fill();
+          if (i % 3 === 0) {
+            // Create realistic thread color variations
+            const threadVariation = 0.1 + Math.random() * 0.2;
+            const adjustedColor = adjustBrightness(stitch.color, (Math.random() - 0.5) * 15 * threadVariation);
+            const shadowColor = adjustBrightness(adjustedColor, -30);
+            const highlightColor = adjustBrightness(adjustedColor, 25);
+            
+            const knotSize = stitch.thickness * 2.5;
+            const innerSize = knotSize * 0.6;
+            const coreSize = knotSize * 0.3;
+            
+            // Shadow layer
+            ctx.fillStyle = shadowColor;
+            ctx.globalAlpha = 0.4;
+            ctx.beginPath();
+            ctx.arc(point.x + 0.3, point.y + 0.3, knotSize, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Main knot body with gradient
+            const gradient = ctx.createRadialGradient(
+              point.x - knotSize * 0.3, point.y - knotSize * 0.3, 0,
+              point.x, point.y, knotSize
+            );
+            gradient.addColorStop(0, highlightColor);
+            gradient.addColorStop(0.7, adjustedColor);
+            gradient.addColorStop(1, shadowColor);
+            
+            ctx.fillStyle = gradient;
+            ctx.globalAlpha = 1;
+            ctx.beginPath();
+            ctx.arc(point.x, point.y, knotSize, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Inner knot layer
+            ctx.fillStyle = adjustBrightness(adjustedColor, 10);
+            ctx.globalAlpha = 0.8;
+            ctx.beginPath();
+            ctx.arc(point.x, point.y, innerSize, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Core highlight
+            ctx.fillStyle = highlightColor;
+            ctx.globalAlpha = 0.9;
+            ctx.beginPath();
+            ctx.arc(point.x - knotSize * 0.2, point.y - knotSize * 0.2, coreSize, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Thread texture lines
+            ctx.strokeStyle = highlightColor;
+            ctx.lineWidth = knotThreadThickness * 0.3;
+            ctx.globalAlpha = 0.6;
+            
+            for (let j = 0; j < 4; j++) {
+              const angle = (j * Math.PI * 2) / 4;
+              const startX = point.x + Math.cos(angle) * innerSize;
+              const startY = point.y + Math.sin(angle) * innerSize;
+              const endX = point.x + Math.cos(angle) * knotSize * 0.8;
+              const endY = point.y + Math.sin(angle) * knotSize * 0.8;
+              
+              ctx.beginPath();
+              ctx.moveTo(startX, startY);
+              ctx.lineTo(endX, endY);
+              ctx.stroke();
+            }
+            
+            // Shine highlight
+            ctx.fillStyle = adjustBrightness(highlightColor, 20);
+            ctx.globalAlpha = 0.7;
+            const shineSize = coreSize * 0.4;
+            ctx.beginPath();
+            ctx.arc(point.x - knotSize * 0.3, point.y - knotSize * 0.3, shineSize, 0, Math.PI * 2);
+            ctx.fill();
+          }
         });
         break;
 
       case 'bullion':
-        console.log('🧵 BULLION CASE EXECUTING - drawing twisted rope');
+        console.log('🧵 HYPERREALISTIC BULLION CASE EXECUTING - drawing professional twisted rope');
+        // Draw hyperrealistic bullion stitch with professional embroidery quality
+        const bullionThreadThickness = Math.max(0.8, stitch.thickness * 0.5);
+        
         for (let i = 0; i < points.length - 1; i++) {
-          const curr = points[i];
-          const next = points[i + 1];
-          const midX = (curr.x + next.x) / 2;
-          const midY = (curr.y + next.y) / 2;
-          const length = Math.sqrt((next.x - curr.x) ** 2 + (next.y - curr.y) ** 2);
-          const angle = Math.atan2(next.y - curr.y, next.x - curr.x);
+          const start = points[i];
+          const end = points[i + 1];
+          const distance = Math.sqrt((end.x - start.x) ** 2 + (end.y - start.y) ** 2);
+          const twists = Math.max(5, Math.floor(distance / (stitch.thickness * 1.2)));
           
-          // Draw twisted rope effect with multiple ellipses
-          for (let j = 0; j < 5; j++) {
-            const offset = (j - 2) * stitch.thickness * 0.4;
-            const offsetX = Math.cos(angle + Math.PI/2) * offset;
-            const offsetY = Math.sin(angle + Math.PI/2) * offset;
+          // Create realistic thread color variations
+          const threadVariation = 0.1 + Math.random() * 0.2;
+          const adjustedColor = adjustBrightness(stitch.color, (Math.random() - 0.5) * 15 * threadVariation);
+          const shadowColor = adjustBrightness(adjustedColor, -25);
+          const highlightColor = adjustBrightness(adjustedColor, 20);
+          
+          // Create gradient for rope effect
+          const gradient = ctx.createLinearGradient(start.x, start.y, end.x, end.y);
+          gradient.addColorStop(0, shadowColor);
+          gradient.addColorStop(0.3, adjustedColor);
+          gradient.addColorStop(0.7, adjustedColor);
+          gradient.addColorStop(1, highlightColor);
+          
+          for (let t = 0; t < twists; t++) {
+            const progress = t / twists;
+            const x = start.x + (end.x - start.x) * progress;
+            const y = start.y + (end.y - start.y) * progress;
+            const offset = Math.sin(progress * Math.PI * 8) * stitch.thickness * 0.5;
+            const perpOffset = Math.cos(progress * Math.PI * 8) * stitch.thickness * 0.3;
             
+            const segmentSize = stitch.thickness * 0.6;
+            const innerSize = segmentSize * 0.6;
+            
+            // Shadow layer
+            ctx.fillStyle = shadowColor;
+            ctx.globalAlpha = 0.4;
             ctx.beginPath();
-            ctx.ellipse(midX + offsetX, midY + offsetY, length / 2, stitch.thickness * 1.2, angle, 0, Math.PI * 2);
+            ctx.arc(x + offset + 0.2, y + perpOffset + 0.2, segmentSize, 0, Math.PI * 2);
             ctx.fill();
             
-            // Add stroke for visibility
+            // Main rope segment with gradient
+            ctx.fillStyle = gradient;
+            ctx.globalAlpha = 1;
             ctx.beginPath();
-            ctx.ellipse(midX + offsetX, midY + offsetY, length / 2, stitch.thickness * 1.2, angle, 0, Math.PI * 2);
-            ctx.stroke();
+            ctx.arc(x + offset, y + perpOffset, segmentSize, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Inner rope highlight
+            ctx.fillStyle = highlightColor;
+            ctx.globalAlpha = 0.8;
+            ctx.beginPath();
+            ctx.arc(x + offset - segmentSize * 0.2, y + perpOffset - segmentSize * 0.2, innerSize, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Thread twist lines
+            ctx.strokeStyle = highlightColor;
+            ctx.lineWidth = bullionThreadThickness * 0.2;
+            ctx.globalAlpha = 0.6;
+            
+            for (let j = 0; j < 3; j++) {
+              const angle = (j * Math.PI * 2) / 3 + progress * Math.PI * 4;
+              const lineStartX = x + offset + Math.cos(angle) * segmentSize * 0.3;
+              const lineStartY = y + perpOffset + Math.sin(angle) * segmentSize * 0.3;
+              const lineEndX = x + offset + Math.cos(angle) * segmentSize * 0.8;
+              const lineEndY = y + perpOffset + Math.sin(angle) * segmentSize * 0.8;
+              
+              ctx.beginPath();
+              ctx.moveTo(lineStartX, lineStartY);
+              ctx.lineTo(lineEndX, lineEndY);
+              ctx.stroke();
+            }
+            
+            // Shine highlight
+            ctx.fillStyle = adjustBrightness(highlightColor, 15);
+            ctx.globalAlpha = 0.7;
+            const shineSize = innerSize * 0.4;
+            ctx.beginPath();
+            ctx.arc(x + offset - segmentSize * 0.3, y + perpOffset - segmentSize * 0.3, shineSize, 0, Math.PI * 2);
+            ctx.fill();
           }
         }
         break;
@@ -3506,12 +3887,12 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
             const offsetY = (Math.random() - 0.5) * size * 2;
             const dotSize = size * (0.2 + Math.random() * 0.3);
             
-            ctx.beginPath();
+      ctx.beginPath();
             ctx.arc(point.x + offsetX, point.y + offsetY, dotSize, 0, Math.PI * 2);
-            ctx.fill();
-            
+      ctx.fill();
+      
             // Add stroke for visibility
-            ctx.beginPath();
+      ctx.beginPath();
             ctx.arc(point.x + offsetX, point.y + offsetY, dotSize, 0, Math.PI * 2);
             ctx.stroke();
           }
@@ -3696,7 +4077,7 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
             ctx.moveTo(prev.x, prev.y);
             ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, curr.x, curr.y);
             ctx.stroke();
-          } else {
+      } else {
             ctx.beginPath();
             ctx.moveTo(prev.x, prev.y);
             ctx.lineTo(curr.x, curr.y);
@@ -4085,7 +4466,7 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
             />
             🚀 Performance Mode (Reduces quality for better speed)
           </label>
-        </div>
+      </div>
 
         {/* Stitch Direction */}
         <div className="control-group" style={{
@@ -4645,6 +5026,10 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
               🎨 Suggest Colors
             </button>
           </div>
+          
+          <div style={{ fontSize: '9px', color: '#32CD32', marginTop: '4px', opacity: 0.8 }}>
+            ⌨️ Shortcuts: Ctrl+Z (Undo) | Ctrl+Y (Redo) | Ctrl+Shift+Z (Redo)
+          </div>
         </div>
 
         {/* Real-time Collaboration & AR/VR */}
@@ -4804,10 +5189,6 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
               Layers: {designLayers.length} | Current: {currentLayer + 1}
             </div>
           )}
-          
-          <div style={{ fontSize: '9px', color: '#32CD32', marginTop: '4px', opacity: 0.8 }}>
-            ⌨️ Shortcuts: Ctrl+Z (Undo) | Ctrl+Y (Redo) | Ctrl+Shift+Z (Redo)
-          </div>
         </div>
 
         {/* Performance Monitoring */}
@@ -4840,6 +5221,7 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
             </div>
           </div>
         </div>
+
 
         {/* Action Buttons */}
         <div className="action-buttons">
@@ -4924,9 +5306,6 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
             </button>
             <button
               onClick={() => {
-                // Save current state before clearing
-                saveToUndoStack('clear_all');
-                
                 // Clear canvas
                 setEmbroideryStitches([]);
                 if (canvasRef.current) {

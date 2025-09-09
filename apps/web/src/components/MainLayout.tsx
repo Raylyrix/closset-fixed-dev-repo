@@ -1,14 +1,401 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Navigation } from './Navigation';
 import { Toolbar } from './Toolbar';
 import { RightPanel } from './RightPanel';
 import { LeftPanel } from './LeftPanel';
 import { EmbroiderySidebar } from './EmbroiderySidebar';
+import { GridOverlay } from './GridOverlay';
+import { VectorOverlay } from './VectorOverlay';
 import { useApp } from '../App';
 
 interface MainLayoutProps {
   children: React.ReactNode;
 }
+
+// Grid & Scale Controls for Main Toolbar
+const GridToolbarControls = () => {
+  const { 
+    showGrid, setShowGrid,
+    showRulers, setShowRulers,
+    snapToGrid, setSnapToGrid,
+    scale, setScale,
+    gridSize, setGridSize,
+    gridColor, setGridColor,
+    gridOpacity, setGridOpacity,
+    rulerUnits, setRulerUnits,
+    snapDistance, setSnapDistance
+  } = useApp();
+  
+  const [showScaleMenu, setShowScaleMenu] = useState(false);
+  const [showGridMenu, setShowGridMenu] = useState(false);
+  const scaleRef = useRef<HTMLDivElement>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
+  
+  // Close menus when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (scaleRef.current && !scaleRef.current.contains(event.target as Node)) {
+        setShowScaleMenu(false);
+      }
+      if (gridRef.current && !gridRef.current.contains(event.target as Node)) {
+        setShowGridMenu(false);
+      }
+    };
+    
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  return (
+    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+      {/* Grid Toggle */}
+      <button
+        onClick={() => setShowGrid(!showGrid)}
+        style={{
+          padding: '8px 12px',
+          background: showGrid ? '#10B981' : '#475569',
+          color: 'white',
+          border: 'none',
+          borderRadius: '6px',
+          fontSize: '12px',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '4px',
+          transition: 'all 0.2s ease'
+        }}
+        title="Toggle Grid"
+      >
+        <span>📐</span>
+        <span>Grid</span>
+      </button>
+
+      {/* Rulers Toggle */}
+      <button
+        onClick={() => setShowRulers(!showRulers)}
+        style={{
+          padding: '8px 12px',
+          background: showRulers ? '#10B981' : '#475569',
+          color: 'white',
+          border: 'none',
+          borderRadius: '6px',
+          fontSize: '12px',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '4px',
+          transition: 'all 0.2s ease'
+        }}
+        title="Toggle Rulers"
+      >
+        <span>📏</span>
+        <span>Rulers</span>
+      </button>
+
+      {/* Snap Toggle */}
+      <button
+        onClick={() => setSnapToGrid(!snapToGrid)}
+        style={{
+          padding: '8px 12px',
+          background: snapToGrid ? '#10B981' : '#475569',
+          color: 'white',
+          border: 'none',
+          borderRadius: '6px',
+          fontSize: '12px',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '4px',
+          transition: 'all 0.2s ease'
+        }}
+        title="Toggle Snap to Grid"
+      >
+        <span>🧲</span>
+        <span>Snap</span>
+      </button>
+
+      {/* Scale Controls */}
+      <div ref={scaleRef} style={{ position: 'relative', zIndex: 1 }}>
+        <button
+          onClick={() => setShowScaleMenu(!showScaleMenu)}
+          style={{
+            padding: '8px 12px',
+            background: '#475569',
+            color: 'white',
+            border: 'none',
+            borderRadius: '6px',
+            fontSize: '12px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            transition: 'all 0.2s ease'
+          }}
+          title="Scale Controls"
+        >
+          <span>🔍</span>
+          <span>{Math.round(scale * 100)}%</span>
+        </button>
+        
+        {showScaleMenu && (
+          <div className="dropdown-menu" style={{
+            position: 'absolute',
+            top: '100%',
+            left: '0',
+            marginTop: '4px',
+            background: 'linear-gradient(135deg, #1E293B 0%, #0F172A 100%)',
+            border: '1px solid #334155',
+            borderRadius: '8px',
+            padding: '12px',
+            minWidth: '200px',
+            zIndex: 99999999999,
+            boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
+            isolation: 'isolate',
+            willChange: 'transform'
+          }}>
+            <label style={{
+              display: 'block',
+              marginBottom: '8px',
+              fontWeight: '500',
+              color: '#E2E8F0',
+              fontSize: '12px'
+            }}>
+              Scale: {Math.round(scale * 100)}%
+            </label>
+            <input
+              type="range"
+              min="0.1"
+              max="3"
+              step="0.1"
+              value={scale}
+              onChange={(e) => setScale(Number(e.target.value))}
+              style={{
+                width: '100%',
+                accentColor: '#10B981'
+              }}
+            />
+            <div style={{
+              display: 'flex',
+              gap: '4px',
+              marginTop: '8px'
+            }}>
+              <button
+                onClick={() => setScale(0.5)}
+                style={{
+                  flex: 1,
+                  padding: '4px 8px',
+                  background: '#6B7280',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '10px'
+                }}
+              >
+                50%
+              </button>
+              <button
+                onClick={() => setScale(1.0)}
+                style={{
+                  flex: 1,
+                  padding: '4px 8px',
+                  background: '#10B981',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '10px'
+                }}
+              >
+                100%
+              </button>
+              <button
+                onClick={() => setScale(2.0)}
+                style={{
+                  flex: 1,
+                  padding: '4px 8px',
+                  background: '#6B7280',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '10px'
+                }}
+              >
+                200%
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Grid Settings */}
+      <div ref={gridRef} style={{ position: 'relative', zIndex: 1 }}>
+        <button
+          onClick={() => setShowGridMenu(!showGridMenu)}
+          style={{
+            padding: '8px 12px',
+            background: '#475569',
+            color: 'white',
+            border: 'none',
+            borderRadius: '6px',
+            fontSize: '12px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            transition: 'all 0.2s ease'
+          }}
+          title="Grid Settings"
+        >
+          <span>⚙️</span>
+          <span>Settings</span>
+        </button>
+        
+        {showGridMenu && (
+          <div className="dropdown-menu" style={{
+            position: 'absolute',
+            top: '100%',
+            left: '0',
+            marginTop: '4px',
+            background: 'linear-gradient(135deg, #1E293B 0%, #0F172A 100%)',
+            border: '1px solid #334155',
+            borderRadius: '8px',
+            padding: '16px',
+            minWidth: '250px',
+            zIndex: 99999999999,
+            boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
+            isolation: 'isolate',
+            willChange: 'transform'
+          }}>
+            <h4 style={{
+              margin: '0 0 12px 0',
+              fontSize: '14px',
+              fontWeight: '600',
+              color: '#10B981'
+            }}>
+              Grid Settings
+            </h4>
+            
+            {/* Grid Size */}
+            <div style={{ marginBottom: '12px' }}>
+              <label style={{
+                display: 'block',
+                marginBottom: '4px',
+                fontWeight: '500',
+                color: '#E2E8F0',
+                fontSize: '12px'
+              }}>Grid Size: {gridSize}px</label>
+              <input
+                type="range"
+                min="5"
+                max="50"
+                step="5"
+                value={gridSize}
+                onChange={(e) => setGridSize(Number(e.target.value))}
+                style={{
+                  width: '100%',
+                  accentColor: '#10B981'
+                }}
+              />
+            </div>
+            
+            {/* Grid Color */}
+            <div style={{ marginBottom: '12px' }}>
+              <label style={{
+                display: 'block',
+                marginBottom: '4px',
+                fontWeight: '500',
+                color: '#E2E8F0',
+                fontSize: '12px'
+              }}>Grid Color</label>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <input
+                  type="color"
+                  value={gridColor}
+                  onChange={(e) => setGridColor(e.target.value)}
+                  style={{
+                    width: '30px',
+                    height: '30px',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                />
+                <input
+                  type="range"
+                  min="0.1"
+                  max="1"
+                  step="0.1"
+                  value={gridOpacity}
+                  onChange={(e) => setGridOpacity(Number(e.target.value))}
+                  style={{
+                    flex: 1,
+                    accentColor: '#10B981'
+                  }}
+                />
+                <span style={{ fontSize: '10px', color: '#9CA3AF', minWidth: '30px' }}>
+                  {Math.round(gridOpacity * 100)}%
+                </span>
+              </div>
+            </div>
+            
+            {/* Units */}
+            <div style={{ marginBottom: '12px' }}>
+              <label style={{
+                display: 'block',
+                marginBottom: '4px',
+                fontWeight: '500',
+                color: '#E2E8F0',
+                fontSize: '12px'
+              }}>Units</label>
+              <select
+                value={rulerUnits}
+                onChange={(e) => setRulerUnits(e.target.value as any)}
+                style={{
+                  width: '100%',
+                  padding: '6px',
+                  borderRadius: '4px',
+                  border: '1px solid rgba(16, 185, 129, 0.3)',
+                  background: 'rgba(15, 23, 42, 0.8)',
+                  color: '#E2E8F0',
+                  fontSize: '12px'
+                }}
+              >
+                <option value="px">Pixels (px)</option>
+                <option value="mm">Millimeters (mm)</option>
+                <option value="in">Inches (in)</option>
+              </select>
+            </div>
+            
+            {/* Snap Distance */}
+            <div style={{ marginBottom: '12px' }}>
+              <label style={{
+                display: 'block',
+                marginBottom: '4px',
+                fontWeight: '500',
+                color: '#E2E8F0',
+                fontSize: '12px'
+              }}>Snap Distance: {snapDistance}px</label>
+              <input
+                type="range"
+                min="1"
+                max="20"
+                step="1"
+                value={snapDistance}
+                onChange={(e) => setSnapDistance(Number(e.target.value))}
+                style={{
+                  width: '100%',
+                  accentColor: '#10B981'
+                }}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 export function MainLayout({ children }: MainLayoutProps) {
   // Console log removed
@@ -19,8 +406,12 @@ export function MainLayout({ children }: MainLayoutProps) {
   const [leftWidth, setLeftWidth] = useState(300);
   const [rightWidth, setRightWidth] = useState(320);
   const [activeToolSidebar, setActiveToolSidebar] = useState<string | null>(null);
+  const canvasRef = React.useRef<HTMLCanvasElement>(null);
 
   const activeTool = useApp(s => s.activeTool);
+  const setActiveTool = useApp(s => s.setActiveTool);
+  const vectorMode = useApp(s => s.vectorMode);
+  const setVectorMode = useApp(s => s.setVectorMode);
 
   // Handle tool changes and sidebar switching
   useEffect(() => {
@@ -101,7 +492,8 @@ export function MainLayout({ children }: MainLayoutProps) {
           alignItems: 'center',
           padding: '0 16px',
           gap: '16px',
-          zIndex: 100
+          zIndex: 1000,
+          position: 'relative'
         }}>
           {/* Panel Toggle Buttons */}
           <div className="panel-toggles" style={{
@@ -207,6 +599,32 @@ export function MainLayout({ children }: MainLayoutProps) {
             <span>🎯</span>
             <span>Active: {activeTool}</span>
           </div>
+
+          {/* Vector Path Tool */}
+          <button
+            onClick={() => setVectorMode(!vectorMode)}
+            style={{
+              background: vectorMode ? 'rgb(139, 92, 246)' : 'rgba(139, 92, 246, 0.1)',
+              border: '1px solid rgba(139, 92, 246, 0.3)',
+              borderRadius: '6px',
+              padding: '8px 12px',
+              fontSize: '14px',
+              fontWeight: '500',
+              color: 'white',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              transition: 'all 0.2s ease'
+            }}
+            title="Vector Path Tool - Draw precise vector paths with any tool effect"
+          >
+            <span>✏️</span>
+            <span>Vector</span>
+          </button>
+
+          {/* Grid & Scale Controls */}
+          <GridToolbarControls />
 
           {/* Spacer */}
           <div style={{ flex: 1 }} />
@@ -318,9 +736,11 @@ export function MainLayout({ children }: MainLayoutProps) {
             flex: 1,
             position: 'relative',
             background: '#0F172A',
-            overflow: 'hidden'
+            overflow: 'hidden',
+            zIndex: 0
           }}>
             {children}
+            <GridOverlay canvasRef={canvasRef} />
           </div>
 
           {/* Right Panel */}
