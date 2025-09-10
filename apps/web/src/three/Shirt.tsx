@@ -9,6 +9,45 @@ import * as THREE from 'three';
 import { useApp } from '../App';
 import { Html } from '@react-three/drei';
 import { vectorStore } from '../vector/vectorState';
+import { renderStitchType } from '../utils/stitchRendering';
+import { vectorToolManager } from '../utils/vectorToolManager';
+import { enhancedStitchRenderer, EnhancedStitchConfig } from '../utils/enhancedStitchRendering';
+import { ultraRealisticStitchRenderer, UltraStitchConfig } from '../utils/ultraRealisticStitchRendering';
+import { errorLogger, logVectorError, logRenderingError } from '../utils/errorLogger';
+import { errorPrevention } from '../utils/errorPrevention';
+import { 
+  calculateSmoothControlPoints, 
+  calculateSymmetricControlPoints, 
+  calculateAutoControlPoints,
+  snapToGrid,
+  snapToPoint,
+  simplifyPath
+} from '../utils/vectorMath';
+import { 
+  pathUnion, 
+  pathIntersection, 
+  pathDifference, 
+  pathExclusion,
+  offsetPath,
+  pathToCurves
+} from '../utils/pathOperations';
+import { 
+  createRectangularMarquee, 
+  createEllipticalMarquee, 
+  createLassoSelection,
+  pointInRectangularSelection,
+  pointInEllipticalSelection,
+  pointInLassoSelection
+} from '../utils/selectionTools';
+import { 
+  createTransformHandles,
+  scalePoints,
+  rotatePoints,
+  skewPoints,
+  perspectiveTransform,
+  flipPointsHorizontally,
+  flipPointsVertically
+} from '../utils/transformTools';
 
 const DEFAULT_MODEL = '/models/shirt.glb';
 const DEFAULT_FALLBACK_URLS = [
@@ -45,6 +84,99 @@ export function Shirt() {
   const symmetryZ = useApp(s => s.symmetryZ);
   const activeTool = useApp(s => s.activeTool);
   const vectorMode = useApp(s => s.vectorMode);
+  
+  // Debug vector mode changes and cleanup
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🎨 Vector mode changed to:', vectorMode);
+    }
+    
+    // Clear anchor points and selection when vector mode is disabled
+    if (!vectorMode) {
+      // Log the error if anchor points are not being cleared
+      logVectorError('Anchor points not being cleared when exiting vector mode', ['vector-tools', 'anchor-points']);
+      
+      setSelectedAnchor(null);
+      setDraggingAnchor(null);
+      setDraggingControl(null);
+      setCurvatureSegment(null);
+      setPreviewLine(null);
+      
+      // Clear any vector-specific state
+      vectorStore.set('selected', []);
+      
+      // CRITICAL: Clear anchor points from canvas immediately
+      const layer = getActiveLayer();
+      if (layer) {
+        const ctx = layer.canvas.getContext('2d');
+        if (ctx) {
+          // Clear the entire canvas to remove all UI elements including anchor points
+          ctx.clearRect(0, 0, layer.canvas.width, layer.canvas.height);
+        }
+      }
+      
+      // Re-render all layers to ensure vector paths are preserved
+      // This ensures stitches don't disappear when exiting vector mode
+      setTimeout(() => {
+        try {
+          // Force re-render of all vector shapes to preserve them
+          renderVectorsToActiveLayer();
+          
+          // Also re-render any existing embroidery stitches
+          const appState = useApp.getState();
+          if (appState.embroideryStitches && Array.isArray(appState.embroideryStitches)) {
+            console.log(`🧵 Re-rendering ${appState.embroideryStitches.length} existing embroidery stitches after vector mode exit`);
+            
+            const layer = getActiveLayer();
+            if (layer) {
+              const ctx = layer.canvas.getContext('2d');
+              if (ctx) {
+                ctx.save();
+                appState.embroideryStitches.forEach((stitch: any) => {
+                  if (stitch && stitch.points && Array.isArray(stitch.points)) {
+                    // Re-render each embroidery stitch
+                    const stitchConfig = {
+                      type: stitch.stitchType || 'satin',
+                      color: stitch.color || appState.embroideryColor || '#ff69b4',
+                      thickness: stitch.thickness || appState.embroideryThickness || 3,
+                      opacity: stitch.opacity || appState.embroideryOpacity || 1.0
+                    };
+                    
+                    try {
+                      renderStitchType(ctx, stitch.points, stitchConfig);
+                    } catch (error) {
+                      console.error('Error re-rendering embroidery stitch:', error);
+                      logRenderingError(`Failed to re-render embroidery stitch: ${error}`, ['embroidery', 'stitch-rendering']);
+                    }
+                  }
+                });
+                ctx.restore();
+              }
+            }
+          }
+          
+          // Compose all layers
+          composeLayers();
+          
+          console.log('✅ Successfully re-rendered all content after vector mode exit');
+          
+          // Mark the error as resolved
+          errorLogger.addFix('anchor_points_not_cleared', 'Added immediate canvas clear and proper cleanup sequence');
+        } catch (error) {
+          console.error('❌ Error re-rendering content after vector mode exit:', error);
+          logRenderingError(`Failed to re-render content after vector mode exit: ${error}`, ['vector-tools', 'layer-rendering']);
+        }
+      }, 100); // Increased delay to ensure all state is properly updated
+    }
+  }, [vectorMode]);
+  
+  // Cleanup vector store listeners on unmount
+  useEffect(() => {
+    return () => {
+      // Cleanup any vector store listeners if needed
+      console.log('🧹 Cleaning up vector tools');
+    };
+  }, []);
   const snapshot = useApp(s => s.snapshot);
   const commit = useApp(s => s.commit);
   const setState = useApp.setState;
@@ -66,100 +198,31 @@ export function Shirt() {
   const [curvatureCurrentPoint, setCurvatureCurrentPoint] = useState<{x: number, y: number} | null>(null);
   const [curvatureSegment, setCurvatureSegment] = useState<{shapeId: string, segmentIndex: number, grabPoint: {x: number, y: number}} | null>(null);
   
-  // Create a separate canvas for anchor points that overlays the main canvas
-  const anchorCanvasRef = useRef<HTMLCanvasElement>(null);
-
-  // Draw anchor points to canvas
-  const drawAnchorPointsToCanvas = (ctx: CanvasRenderingContext2D, points: any[], shapeId: string) => {
-    ctx.save();
-    ctx.globalAlpha = 1.0;
-    
-    // Draw anchor points
-    points.forEach((point, index) => {
-      const isSelected = selectedAnchor && 
-        selectedAnchor.shapeId === shapeId && 
-        selectedAnchor.pointIndex === index;
-      
-      if (isSelected) {
-        // Selected anchor point - larger, red color
-        ctx.fillStyle = '#FF3B30'; // Red for selected
-        ctx.strokeStyle = '#FFFFFF'; // White border
-        ctx.lineWidth = 2;
-        const size = 12;
-        ctx.fillRect(point.x - size/2, point.y - size/2, size, size);
-        ctx.strokeRect(point.x - size/2, point.y - size/2, size, size);
-      } else {
-        // Regular anchor point - blue square
-        ctx.fillStyle = '#0078FF'; // Blue color like Photoshop
-        ctx.strokeStyle = '#FFFFFF'; // White border
-        ctx.lineWidth = 1;
-        const size = 8;
-        ctx.fillRect(point.x - size/2, point.y - size/2, size, size);
-        ctx.strokeRect(point.x - size/2, point.y - size/2, size, size);
-      }
-      
-      // Draw control handles for smooth/symmetric points
-      if (point.controlIn) {
-        // Control in handle
-        ctx.strokeStyle = '#00FF00'; // Green for control in
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(point.x, point.y);
-        ctx.lineTo(point.x + point.controlIn.x, point.y + point.controlIn.y);
-        ctx.stroke();
-        
-        // Control in handle point
-        ctx.fillStyle = '#00FF00';
-        ctx.beginPath();
-        ctx.arc(point.x + point.controlIn.x, point.y + point.controlIn.y, 4, 0, 2 * Math.PI);
-        ctx.fill();
-      }
-      
-      if (point.controlOut) {
-        // Control out handle
-        ctx.strokeStyle = '#FF0000'; // Red for control out
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(point.x, point.y);
-        ctx.lineTo(point.x + point.controlOut.x, point.y + point.controlOut.y);
-        ctx.stroke();
-        
-        // Control out handle point
-        ctx.fillStyle = '#FF0000';
-        ctx.beginPath();
-        ctx.arc(point.x + point.controlOut.x, point.y + point.controlOut.y, 4, 0, 2 * Math.PI);
-        ctx.fill();
-      }
-    });
-    
-    ctx.restore();
-  };
-
-  // Render anchor points to the anchor canvas
-  const renderAnchorPoints = () => {
-    const anchorCanvas = anchorCanvasRef.current;
-    if (!anchorCanvas) return;
-
-    const ctx = anchorCanvas.getContext('2d');
-    if (!ctx) return;
-
-    // Clear the anchor canvas
-    ctx.clearRect(0, 0, anchorCanvas.width, anchorCanvas.height);
-
-    const st = vectorStore.getState();
-
-    // Draw anchor points for current path
-    if (st.currentPath && st.currentPath.points.length > 0) {
-      drawAnchorPointsToCanvas(ctx, st.currentPath.points, 'current');
-    }
-
-    // Draw anchor points for existing shapes
-    st.shapes.forEach((shape: any) => {
-      if (shape?.path?.points) {
-        drawAnchorPointsToCanvas(ctx, shape.path.points, shape.id);
-      }
-    });
-  };
+  // Debouncing for pen tool to prevent excessive point creation
+  const lastPenPointRef = useRef<{x: number, y: number, time: number} | null>(null);
+  const PEN_DEBOUNCE_DISTANCE = 5; // Minimum distance between points
+  const PEN_DEBOUNCE_TIME = 16; // Minimum time between points (60fps)
+  
+  // Preview line for pen tool
+  const [previewLine, setPreviewLine] = useState<{start: {x: number, y: number}, end: {x: number, y: number}} | null>(null);
+  
+  // Advanced pen tool features
+  const [snapToGridEnabled, setSnapToGridEnabled] = useState(false);
+  const [gridSize, setGridSize] = useState(10);
+  const [snapToPointsEnabled, setSnapToPointsEnabled] = useState(false);
+  const [snapDistance, setSnapDistance] = useState(10);
+  const [autoSmooth, setAutoSmooth] = useState(true);
+  const [smoothTension, setSmoothTension] = useState(0.5);
+  
+  // Selection tools state
+  const [marqueeSelection, setMarqueeSelection] = useState<{start: {x: number, y: number}, end: {x: number, y: number}, type: 'rectangular' | 'elliptical'} | null>(null);
+  const [lassoSelection, setLassoSelection] = useState<{x: number, y: number}[]>([]);
+  const [isLassoDrawing, setIsLassoDrawing] = useState(false);
+  
+  // Transform tools state
+  const [transformHandles, setTransformHandles] = useState<any[]>([]);
+  const [isTransforming, setIsTransforming] = useState(false);
+  const [transformCenter, setTransformCenter] = useState<{x: number, y: number} | null>(null);
   
   // Store original materials to restore them when needed
   const originalMaterialsRef = useRef<Map<THREE.Mesh, THREE.Material | THREE.Material[]>>(new Map());
@@ -352,9 +415,9 @@ export function Shirt() {
     const onKey = (ev: KeyboardEvent) => {
       console.log('🎹 Keyboard event:', ev.key, 'activeTool:', useApp.getState().activeTool);
       if (!useApp.getState().vectorMode) return;
-    if (ev.key.toLowerCase() === 'p') (vectorStore as any).set('tool', 'pen');
-    if (ev.key.toLowerCase() === 'v') (vectorStore as any).set('tool', 'pathSelection');
-    if (ev.key.toLowerCase() === 'c') (vectorStore as any).set('tool', 'convertAnchor');
+      if (ev.key.toLowerCase() === 'p') (vectorStore as any).set('tool', 'pen');
+      if (ev.key.toLowerCase() === 'v') (vectorStore as any).set('tool', 'pathSelection');
+      if (ev.key.toLowerCase() === 'c') (vectorStore as any).set('tool', 'convertAnchor');
     if (ev.key.toLowerCase() === 'u') (vectorStore as any).set('tool', 'curvature');
       
       // Handle Delete key for selected anchor points
@@ -464,7 +527,10 @@ export function Shirt() {
   }, [selectedAnchor, composeLayers]);
 
   const onPointerDown = (e: any) => {
-    console.log('Shirt: onPointerDown called with activeTool:', activeTool, 'vectorMode:', vectorMode);
+    // Reduced logging for performance
+    if (process.env.NODE_ENV === 'development' && Math.random() < 0.1) {
+      console.log('Shirt: onPointerDown called with activeTool:', activeTool, 'vectorMode:', vectorMode);
+    }
     
     // If we're already dragging something, don't process new pointer down events
     if (draggingAnchor || draggingControl) {
@@ -487,11 +553,21 @@ export function Shirt() {
       setControlsEnabled(false);
       // Pen tool
       if (tool === 'pen') {
-        console.log('🎯 Pen tool - Current path points:', st.currentPath?.points?.length || 0);
+        console.log('🎯 Pen tool - Current path points:', st.currentPath?.points?.length || 0, 'buttons:', e.buttons);
         
         // First check if we're already dragging something - if so, don't add new points
         if (draggingAnchor || draggingControl) {
           console.log('🎯 Pen tool - Already dragging, skipping new point creation');
+          return;
+        }
+        
+        // Only start drawing if mouse button is pressed
+        if (e.buttons === 1) {
+          // Start continuous drawing mode
+          paintingActiveRef.current = true;
+          console.log('🎯 Pen tool - Started continuous drawing mode, paintingActive:', paintingActiveRef.current);
+        } else {
+          console.log('🎯 Pen tool - Mouse not pressed, skipping drawing');
           return;
         }
         
@@ -506,8 +582,7 @@ export function Shirt() {
               // Ctrl+click: Select anchor point
               console.log('🎯 Pen tool - Selecting anchor point:', anchorIndex);
               setSelectedAnchor({shapeId: 'current', pointIndex: anchorIndex});
-              renderVectorsToActiveLayer();
-              renderAnchorPoints();
+              renderVectorsWithAnchors();
               return;
             } else if (selectedAnchor && selectedAnchor.shapeId === 'current' && selectedAnchor.pointIndex === anchorIndex) {
               // Regular click on selected anchor: Start dragging
@@ -519,8 +594,7 @@ export function Shirt() {
               // Regular click on different anchor: Select it (clear any previous selection first)
               console.log('🎯 Pen tool - Selecting different anchor point:', anchorIndex);
               setSelectedAnchor({shapeId: 'current', pointIndex: anchorIndex});
-              renderVectorsToActiveLayer();
-              renderAnchorPoints();
+              renderVectorsWithAnchors();
               return;
             }
           }
@@ -537,29 +611,96 @@ export function Shirt() {
         
         // Only add new points if we're not already dragging something
         if (!draggingAnchor && !draggingControl) {
+          // Validate coordinates before creating/adding to path
+          if (!isFinite(x) || !isFinite(y) || x < 0 || y < 0 || x > canvas.width || y > canvas.height) {
+            console.warn('🎯 Pen tool - Invalid coordinates for path creation:', { x, y, canvasWidth: canvas.width, canvasHeight: canvas.height });
+            return;
+          }
+          
+          // Apply snapping
+          let snappedPoint = { x, y };
+          if (snapToGridEnabled) {
+            snappedPoint = snapToGrid(snappedPoint, gridSize);
+          }
+          if (snapToPointsEnabled && st.currentPath && st.currentPath.points.length > 0) {
+            snappedPoint = snapToPoint(snappedPoint, st.currentPath.points, snapDistance);
+          }
+          
           if (!st.currentPath) {
+            // Start a new path with validation
+            const appState = useApp.getState();
             const newPath = { 
-              id: `path_${Date.now()}`, 
-              points: [{ x, y, type: 'corner' as const }], 
+              id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, 
+              points: [{ x: snappedPoint.x, y: snappedPoint.y, type: 'corner' as const }], 
               closed: false, 
               fill: true, 
               stroke: true, 
-              fillColor: useApp.getState().brushColor, 
-              strokeColor: useApp.getState().brushColor, 
-              strokeWidth: Math.max(1, Math.round(useApp.getState().brushSize)),
+              fillColor: appState.brushColor || '#000000', 
+              strokeColor: appState.brushColor || '#000000', 
+              strokeWidth: Math.max(1, Math.round(appState.brushSize || 5)),
               fillOpacity: 1.0,
               strokeOpacity: 1.0,
               strokeJoin: 'round' as CanvasLineJoin,
               strokeCap: 'round' as CanvasLineCap
             };
-            vectorStore.set('currentPath', newPath);
-            // Select the first point
-            setSelectedAnchor({shapeId: 'current', pointIndex: 0});
+            
+            try {
+              vectorStore.set('currentPath', newPath);
+              // Select the first point
+              setSelectedAnchor({shapeId: 'current', pointIndex: 0});
+              // Reset debouncing for new path
+              lastPenPointRef.current = { x: snappedPoint.x, y: snappedPoint.y, time: Date.now() };
+              if (process.env.NODE_ENV === 'development') {
+                console.log('🎯 Pen tool - Started new path with first point');
+              }
+            } catch (error) {
+              console.error('🎯 Pen tool - Error creating new path:', error);
+            }
           } else {
-            const cp = { ...st.currentPath, points: [...st.currentPath.points, { x, y, type: 'corner' as const }] };
-            vectorStore.set('currentPath', cp);
-            // Select the new point
-            setSelectedAnchor({shapeId: 'current', pointIndex: cp.points.length - 1});
+            // Add point to existing path with validation and auto-smoothing
+            try {
+              let newPoint: any = { x: snappedPoint.x, y: snappedPoint.y, type: 'corner' as const };
+              
+              // Apply auto-smoothing if enabled
+              if (autoSmooth && st.currentPath.points.length >= 2) {
+                const prevPoint = st.currentPath.points[st.currentPath.points.length - 1];
+                const prevPrevPoint = st.currentPath.points[st.currentPath.points.length - 2];
+                
+                // Calculate smooth control points
+                const { controlIn, controlOut } = calculateAutoControlPoints(
+                  prevPrevPoint,
+                  prevPoint,
+                  newPoint,
+                  smoothTension
+                );
+                
+                // Update the previous point with smooth control
+                const updatedPoints = [...st.currentPath.points];
+                updatedPoints[updatedPoints.length - 1] = {
+                  ...prevPoint,
+                  type: 'smooth' as const,
+                  controlOut
+                };
+                
+                newPoint = {
+                  ...newPoint,
+                  type: 'smooth' as const,
+                  controlIn
+                };
+                
+                const cp = { ...st.currentPath, points: [...updatedPoints, newPoint] };
+                vectorStore.set('currentPath', cp);
+              } else {
+                const cp = { ...st.currentPath, points: [...st.currentPath.points, newPoint] };
+                vectorStore.set('currentPath', cp);
+              }
+              
+              // Select the new point
+              setSelectedAnchor({shapeId: 'current', pointIndex: st.currentPath.points.length});
+              console.log('🎯 Pen tool - Added point to existing path, total points:', st.currentPath.points.length + 1);
+            } catch (error) {
+              console.error('🎯 Pen tool - Error adding point to path:', error);
+            }
           }
         } else {
           // If we're not adding new points, clear any existing selection
@@ -577,9 +718,8 @@ export function Shirt() {
         
         // Only set painting active and render if we're not dragging
         if (!draggingAnchor && !draggingControl) {
-          paintingActiveRef.current = true;
-          renderVectorsToActiveLayer();
-          renderAnchorPoints();
+        paintingActiveRef.current = true;
+          renderVectorsWithAnchors();
         }
         return;
       }
@@ -658,8 +798,7 @@ export function Shirt() {
           setCurvatureSegment({ shapeId: targetShapeId!, segmentIndex, grabPoint });
           
           paintingActiveRef.current = true;
-          renderVectorsToActiveLayer();
-          renderAnchorPoints();
+          renderVectorsWithAnchors();
           return;
         }
         
@@ -712,7 +851,7 @@ export function Shirt() {
               setDraggingAnchor({shapeId: clicked.id, pointIndex: idx});
               paintingActiveRef.current = true;
               return;
-            } else {
+          } else {
               // Regular click: Start dragging anchor point
               setDraggingAnchor({shapeId: clicked.id, pointIndex: idx});
               paintingActiveRef.current = true;
@@ -722,7 +861,7 @@ export function Shirt() {
           
           // Otherwise drag bounds
           vectorDragRef.current = { mode: 'bounds', shapeId: clicked.id, startX: x, startY: y, startBounds: { ...clicked.bounds } };
-          renderVectorsToActiveLayer();
+          renderVectorsWithAnchors();
         } else {
           vectorStore.set('selected', []);
         }
@@ -736,7 +875,7 @@ export function Shirt() {
     if (activeTool === 'fill') { floodAtEvent(e); return; }
     if (activeTool === 'smudge') { startSmudge(e); return; }
     if (activeTool === 'blur') { startBlur(e); return; }
-    if (activeTool === 'embroidery') { startEmbroidery(e); return; }
+    if (activeTool === 'embroidery' && !vectorMode) { startEmbroidery(e); return; }
     // selection system removed
     if ((activeTool === 'transform' || activeTool === 'move') && activeDecalId) { startTransformDecal(e); return; }
     // Text dragging
@@ -818,9 +957,16 @@ export function Shirt() {
     if (st.tool === 'pen' && st.currentPath && st.currentPath.points.length >= 3) {
       const path = { ...st.currentPath, closed: true } as any;
       const b = boundsFromPoints(path.points as any);
-      const shape = { id: `shape_${Date.now()}`, type: 'path' as const, path, bounds: b };
+      const appState = useApp.getState();
+      const shape = { 
+        id: `shape_${Date.now()}`, 
+        type: 'path' as const, 
+        path, 
+        tool: appState.activeTool, // Store the tool used to create this path
+        bounds: b 
+      };
       vectorStore.setAll({ currentPath: null, shapes: [...st.shapes, shape], selected: [shape.id] });
-      renderVectorsToActiveLayer();
+      renderVectorsWithAnchors();
     }
   };
 
@@ -881,14 +1027,71 @@ export function Shirt() {
     (useApp.getState() as any).selectTextElement(null);
   }
   const onPointerMove = (e: any) => {
-    console.log('Shirt: onPointerMove called with activeTool:', activeTool, 'vectorMode:', vectorMode, 'paintingActive:', paintingActiveRef.current, 'buttons:', e.buttons);
+    // Reduced logging for performance
+    if (process.env.NODE_ENV === 'development' && Math.random() < 0.05) {
+      console.log('Shirt: onPointerMove called with activeTool:', activeTool, 'vectorMode:', vectorMode, 'paintingActive:', paintingActiveRef.current, 'buttons:', e.buttons);
+    }
     if (vectorMode) {
-      console.log('🎯 Vector tools onPointerMove - buttons:', e.buttons, 'draggingAnchor:', draggingAnchor, 'draggingControl:', draggingControl);
+      // Reduced logging for performance
+      if (process.env.NODE_ENV === 'development' && Math.random() < 0.1) {
+        console.log('🎯 Vector tools onPointerMove - buttons:', e.buttons, 'draggingAnchor:', draggingAnchor, 'draggingControl:', draggingControl);
+      }
       if (!e.buttons) return;
       const uv = e.uv as THREE.Vector2 | undefined; const layer = getActiveLayer();
       if (!uv || !layer) return;
       const canvas = layer.canvas; const x = Math.floor(uv.x * canvas.width); const y = Math.floor(uv.y * canvas.height);
       const st = vectorStore.getState();
+      
+      // Pen tool continuous drawing with validation and debouncing
+      if (st.tool === 'pen' && paintingActiveRef.current && st.currentPath && e.buttons === 1) {
+        console.log('🎯 Pen tool - Continuous drawing active, paintingActive:', paintingActiveRef.current, 'currentPath points:', st.currentPath.points.length, 'buttons:', e.buttons);
+        // Validate coordinates
+        if (!isFinite(x) || !isFinite(y) || x < 0 || y < 0 || x > canvas.width || y > canvas.height) {
+          if (process.env.NODE_ENV === 'development') {
+            console.warn('🎯 Pen tool - Invalid coordinates:', { x, y, canvasWidth: canvas.width, canvasHeight: canvas.height });
+          }
+          return;
+        }
+        
+        // Debouncing logic
+        const now = Date.now();
+        const lastPoint = lastPenPointRef.current;
+        
+        if (lastPoint) {
+          const distance = Math.sqrt((x - lastPoint.x) ** 2 + (y - lastPoint.y) ** 2);
+          const timeDiff = now - lastPoint.time;
+          
+          // Skip if too close in space or time
+          if (distance < PEN_DEBOUNCE_DISTANCE || timeDiff < PEN_DEBOUNCE_TIME) {
+            return;
+          }
+        }
+        
+        // Update last point reference
+        lastPenPointRef.current = { x, y, time: now };
+        
+        if (process.env.NODE_ENV === 'development') {
+          console.log('🎯 Pen tool - Continuous drawing, adding point at:', x, y);
+        }
+        
+        try {
+          const cp = { ...st.currentPath, points: [...st.currentPath.points, { x, y, type: 'corner' as const }] };
+          vectorStore.set('currentPath', cp);
+          // Select the new point
+          setSelectedAnchor({shapeId: 'current', pointIndex: cp.points.length - 1});
+          
+          // Update preview line to show connection to next point
+          if (cp.points.length > 1) {
+            const lastPoint = cp.points[cp.points.length - 2];
+            setPreviewLine({ start: lastPoint, end: { x, y } });
+          }
+          
+          renderVectorsWithAnchors();
+        } catch (error) {
+          console.error('🎯 Pen tool - Error adding point:', error);
+        }
+        return;
+      }
       
       // Check if we're in curvature drag mode - pulling a line segment to create curve
       if (curvatureDragging && curvatureSegment) {
@@ -954,7 +1157,7 @@ export function Shirt() {
             vectorStore.set('shapes', updatedShapes);
           }
           
-          renderVectorsToActiveLayer();
+          renderVectorsWithAnchors();
         }
         return;
       }
@@ -966,42 +1169,25 @@ export function Shirt() {
         if (draggingAnchor) {
           console.log('🎯 Dragging anchor point:', draggingAnchor, 'Position:', x, y);
           if (draggingAnchor.shapeId === 'current' && st.currentPath) {
-            // Drag current path anchor point - allow free movement
+            // Drag current path anchor point
             const pts = [...st.currentPath.points];
-            const point = pts[draggingAnchor.pointIndex];
-            
-            // Update the anchor point position
-            pts[draggingAnchor.pointIndex] = { 
-              ...point, 
-              x: x, 
-              y: y 
-            };
-            
+            pts[draggingAnchor.pointIndex] = { ...pts[draggingAnchor.pointIndex], x, y };
             const updatedPath = { ...st.currentPath, points: pts };
             vectorStore.set('currentPath', updatedPath);
-            console.log('🎯 Updated current path anchor point to:', x, y);
+            console.log('🎯 Updated current path anchor point');
           } else {
-            // Drag existing shape anchor point - allow free movement
+            // Drag existing shape anchor point
             const shapesUpd = st.shapes.map(s => {
               if (s.id !== draggingAnchor.shapeId) return s;
               const pts = [...s.path.points];
-              const point = pts[draggingAnchor.pointIndex];
-              
-              // Update the anchor point position
-              pts[draggingAnchor.pointIndex] = { 
-                ...point, 
-                x: x, 
-                y: y 
-              };
-              
+              pts[draggingAnchor.pointIndex] = { ...pts[draggingAnchor.pointIndex], x, y };
               const path = { ...s.path, points: pts };
               return { ...s, path, bounds: boundsFromPoints(pts) };
             });
             vectorStore.set('shapes', shapesUpd);
-            console.log('🎯 Updated shape anchor point to:', x, y);
+            console.log('🎯 Updated shape anchor point');
           }
-          renderVectorsToActiveLayer();
-          renderAnchorPoints();
+          renderVectorsWithAnchors();
           return;
         }
         
@@ -1055,9 +1241,8 @@ export function Shirt() {
             });
             vectorStore.set('shapes', shapesUpd);
           }
-          // For control handle dragging, just update the vector data
-          // The visual update will happen through the normal vector rendering
-          renderAnchorPoints();
+          // Update visual representation for control handle dragging
+          renderVectorsWithAnchors();
           return;
         }
       } else {
@@ -1065,30 +1250,30 @@ export function Shirt() {
         const drag = vectorDragRef.current; 
         if (!drag) return;
         
-        if (drag.mode === 'point' && drag.shapeId != null && drag.index != null) {
-          const shapesUpd = st.shapes.map(s => {
-            if (s.id !== drag.shapeId) return s;
-            const pts = [...s.path.points]; pts[drag.index!] = { ...pts[drag.index!], x, y } as any;
-            const path = { ...s.path, points: pts };
-            return { ...s, path, bounds: boundsFromPoints(pts) } as any;
-          });
-          vectorStore.set('shapes', shapesUpd);
-          renderVectorsToActiveLayer();
-        } else if (drag.mode === 'bounds' && drag.shapeId && drag.startBounds) {
-          const dx = x - (drag.startX || x); const dy = y - (drag.startY || y);
-          const sb = drag.startBounds;
-          const scaleX = (sb.width + dx) / Math.max(1, sb.width);
-          const scaleY = (sb.height + dy) / Math.max(1, sb.height);
-          const cx = sb.x; const cy = sb.y;
-          const shapesUpd = st.shapes.map(s => {
-            if (s.id !== drag.shapeId) return s;
-            const pts = s.path.points.map(p => ({ ...p, x: cx + (p.x - cx) * scaleX, y: cy + (p.y - cy) * scaleY }));
-            const path = { ...s.path, points: pts };
-            return { ...s, path, bounds: boundsFromPoints(pts) } as any;
-          });
-          vectorStore.set('shapes', shapesUpd);
-          renderVectorsToActiveLayer();
-        }
+      if (drag.mode === 'point' && drag.shapeId != null && drag.index != null) {
+        const shapesUpd = st.shapes.map(s => {
+          if (s.id !== drag.shapeId) return s;
+          const pts = [...s.path.points]; pts[drag.index!] = { ...pts[drag.index!], x, y } as any;
+          const path = { ...s.path, points: pts };
+          return { ...s, path, bounds: boundsFromPoints(pts) } as any;
+        });
+        vectorStore.set('shapes', shapesUpd);
+          renderVectorsWithAnchors();
+      } else if (drag.mode === 'bounds' && drag.shapeId && drag.startBounds) {
+        const dx = x - (drag.startX || x); const dy = y - (drag.startY || y);
+        const sb = drag.startBounds;
+        const scaleX = (sb.width + dx) / Math.max(1, sb.width);
+        const scaleY = (sb.height + dy) / Math.max(1, sb.height);
+        const cx = sb.x; const cy = sb.y;
+        const shapesUpd = st.shapes.map(s => {
+          if (s.id !== drag.shapeId) return s;
+          const pts = s.path.points.map(p => ({ ...p, x: cx + (p.x - cx) * scaleX, y: cy + (p.y - cy) * scaleY }));
+          const path = { ...s.path, points: pts };
+          return { ...s, path, bounds: boundsFromPoints(pts) } as any;
+        });
+        vectorStore.set('shapes', shapesUpd);
+          renderVectorsWithAnchors();
+      }
       }
       
       return;
@@ -1146,7 +1331,7 @@ export function Shirt() {
     if (!paintingActiveRef.current) return; // do not paint if drag started outside the mesh
     if (activeTool === 'smudge') { moveSmudge(e); return; }
     if (activeTool === 'blur') { moveBlur(e); return; }
-    if (activeTool === 'embroidery') { moveEmbroidery(e); return; }
+    if (activeTool === 'embroidery' && !vectorMode) { moveEmbroidery(e); return; }
     if ((activeTool === 'transform' || activeTool === 'move') && activeDecalId) { moveTransformDecal(e); return; }
     if ((activeTool === 'transform' || activeTool === 'move' || activeTool === 'moveText') && (useApp.getState() as any).activeTextId) { moveTransformText(e); return; }
     if (activeTool !== 'brush' && activeTool !== 'eraser' && activeTool !== 'puffPrint') return;
@@ -1167,6 +1352,32 @@ export function Shirt() {
     }
     if (vectorMode) {
       vectorDragRef.current = null;
+      
+      // Commit current path if we were drawing with pen tool
+      const st = vectorStore.getState();
+      if (st.tool === 'pen' && st.currentPath && st.currentPath.points.length > 1) {
+        console.log('🎯 Pen tool - Committing path with', st.currentPath.points.length, 'points');
+        // Add the current path to shapes with tool information
+        const appState = useApp.getState();
+        const newShape = {
+          id: st.currentPath.id,
+          type: 'path' as const,
+          path: st.currentPath,
+          tool: appState.activeTool, // Store the tool used to create this path
+          bounds: {
+            x: Math.min(...st.currentPath.points.map(p => p.x)),
+            y: Math.min(...st.currentPath.points.map(p => p.y)),
+            width: Math.max(...st.currentPath.points.map(p => p.x)) - Math.min(...st.currentPath.points.map(p => p.x)),
+            height: Math.max(...st.currentPath.points.map(p => p.y)) - Math.min(...st.currentPath.points.map(p => p.y))
+          }
+        };
+        vectorStore.set('shapes', [...st.shapes, newShape]);
+        vectorStore.set('currentPath', null);
+        setSelectedAnchor(null);
+        setPreviewLine(null); // Clear preview line
+        console.log('✅ Path committed to shapes, total shapes:', st.shapes.length + 1);
+      }
+      
       paintingActiveRef.current = false;
       
       // Stop curvature dragging
@@ -1185,7 +1396,7 @@ export function Shirt() {
       // Keep the selected anchor point after dragging
       // (don't clear selectedAnchor here)
       
-      renderVectorsToActiveLayer();
+      renderVectorsWithAnchors();
       setControlsEnabled(true);
       return;
     }
@@ -1223,7 +1434,7 @@ export function Shirt() {
     }
     
     // lasso removed
-    if (activeTool === 'brush' || activeTool === 'eraser' || activeTool === 'puffPrint' || activeTool === 'smudge' || activeTool === 'blur' || activeTool === 'embroidery' || activeTool === 'transform' || activeTool === 'move') commit();
+    if (activeTool === 'brush' || activeTool === 'eraser' || activeTool === 'puffPrint' || activeTool === 'smudge' || activeTool === 'blur' || (activeTool === 'embroidery' && !vectorMode) || activeTool === 'transform' || activeTool === 'move') commit();
     
     // Reset lastX and lastY for straight line drawing
     lastX = -1;
@@ -1236,7 +1447,7 @@ export function Shirt() {
     altEndY = -1;
     
     // Dispatch embroidery end event
-    if (activeTool === 'embroidery') {
+    if (activeTool === 'embroidery' && !vectorMode) {
       const embroideryEndEvent = new CustomEvent('embroideryEnd');
       window.dispatchEvent(embroideryEndEvent);
     }
@@ -1435,7 +1646,7 @@ export function Shirt() {
     
     
     // Handle straight line drawing when Alt is pressed
-    if (isAltPressed && (activeTool === 'brush' || activeTool === 'eraser' || activeTool === 'puffPrint' || activeTool === 'embroidery')) {
+    if (isAltPressed && (activeTool === 'brush' || activeTool === 'eraser' || activeTool === 'puffPrint' || (activeTool === 'embroidery' && !vectorMode))) {
       const canvas = layer.canvas;
       const ctx = canvas.getContext('2d')!;
       const x = Math.floor(uv.x * canvas.width);
@@ -1788,19 +1999,156 @@ export function Shirt() {
       }
     }
   }
+  
+  // Advanced Bezier curve drawing with multiple curve types
+  function drawAdvancedBezier2D(ctx: CanvasRenderingContext2D, points: any[]) {
+    if (points.length < 2) return;
+    
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    
+    for (let i = 1; i < points.length; i++) {
+      const prev = points[i - 1];
+      const curr = points[i];
+      const next = points[i + 1];
+      
+      // Handle different point types
+      switch (curr.type) {
+        case 'smooth':
+          if (curr.controlIn && curr.controlOut) {
+            // Smooth point with both control handles
+            ctx.bezierCurveTo(
+              prev.controlOut?.x || prev.x,
+              prev.controlOut?.y || prev.y,
+              curr.controlIn.x,
+              curr.controlIn.y,
+              curr.x,
+              curr.y
+            );
+          } else {
+            // Auto-calculate smooth control points
+            const { controlIn, controlOut } = calculateAutoControlPoints(
+              i > 1 ? points[i - 2] : null,
+              prev,
+              next,
+              0.5
+            );
+            ctx.bezierCurveTo(
+              controlOut.x,
+              controlOut.y,
+              controlIn.x,
+              controlIn.y,
+              curr.x,
+              curr.y
+            );
+          }
+          break;
+          
+        case 'symmetric':
+          if (curr.controlIn && curr.controlOut) {
+            // Symmetric point
+            ctx.bezierCurveTo(
+              prev.controlOut?.x || prev.x,
+              prev.controlOut?.y || prev.y,
+              curr.controlIn.x,
+              curr.controlIn.y,
+              curr.x,
+              curr.y
+            );
+          }
+          break;
+          
+        case 'corner':
+        default:
+          if (curr.controlOut) {
+            // Quadratic curve
+            ctx.quadraticCurveTo(
+              curr.controlOut.x,
+              curr.controlOut.y,
+              curr.x,
+              curr.y
+            );
+          } else {
+            // Straight line
+            ctx.lineTo(curr.x, curr.y);
+          }
+          break;
+      }
+    }
+  }
 
   function drawSelectionIndicators(ctx: CanvasRenderingContext2D, points: any[], shapeId?: string) {
-    // This function is now deprecated - anchor points are drawn as HTML overlays
-    // Keeping for compatibility but not drawing to canvas
+    ctx.save();
+    ctx.globalAlpha = 1.0;
+    
+    // Draw anchor points
+    points.forEach((point, index) => {
+      const isSelected = selectedAnchor && 
+        selectedAnchor.shapeId === shapeId && 
+        selectedAnchor.pointIndex === index;
+      
+      if (isSelected) {
+        // Selected anchor point - larger, red color
+        ctx.fillStyle = '#FF3B30'; // Red for selected
+        ctx.strokeStyle = '#FFFFFF'; // White border
+        ctx.lineWidth = 2;
+        const size = 12;
+        ctx.fillRect(point.x - size/2, point.y - size/2, size, size);
+        ctx.strokeRect(point.x - size/2, point.y - size/2, size, size);
+      } else {
+        // Regular anchor point - blue square
+        ctx.fillStyle = '#0078FF'; // Blue color like Photoshop
+        ctx.strokeStyle = '#FFFFFF'; // White border
+        ctx.lineWidth = 1;
+        const size = 8;
+        ctx.fillRect(point.x - size/2, point.y - size/2, size, size);
+        ctx.strokeRect(point.x - size/2, point.y - size/2, size, size);
+      }
+      
+      // Draw control handles for smooth/symmetric points
+      if (point.controlIn) {
+        // Control in handle
+        ctx.strokeStyle = '#00FF00'; // Green for control in
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(point.x, point.y);
+        ctx.lineTo(point.x + point.controlIn.x, point.y + point.controlIn.y);
+        ctx.stroke();
+        
+        // Control in handle point
+        ctx.fillStyle = '#00FF00';
+        ctx.beginPath();
+        ctx.arc(point.x + point.controlIn.x, point.y + point.controlIn.y, 4, 0, 2 * Math.PI);
+        ctx.fill();
+      }
+      
+      if (point.controlOut) {
+        // Control out handle
+        ctx.strokeStyle = '#FF0000'; // Red for control out
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(point.x, point.y);
+        ctx.lineTo(point.x + point.controlOut.x, point.y + point.controlOut.y);
+        ctx.stroke();
+        
+        // Control out handle point
+        ctx.fillStyle = '#FF0000';
+        ctx.beginPath();
+        ctx.arc(point.x + point.controlOut.x, point.y + point.controlOut.y, 4, 0, 2 * Math.PI);
+        ctx.fill();
+      }
+    });
+    
+    ctx.restore();
   }
 
   function renderVectorPathWithTool(ctx: CanvasRenderingContext2D, path: any, tool: string, appState: any) {
     ctx.save();
     
-    // When vector mode is active, use the current active tool's effects
-    // Apply the tool's drawing behavior to the vector path
-    if (appState.vectorMode) {
-      const currentTool = appState.activeTool;
+    // Use the tool parameter passed to the function, not the appState.activeTool
+    // This allows vector tools to render with the correct tool effects
+    const currentTool = tool || appState.activeTool;
+    console.log(`🎨 renderVectorPathWithTool: tool=${tool}, currentTool=${currentTool}, activeTool=${appState.activeTool}`);
       
       // Convert vector path points to UV coordinates for tool rendering
       const canvas = ctx.canvas;
@@ -1818,6 +2166,122 @@ export function Shirt() {
       }).filter((p: any) => isFinite(p.u) && isFinite(p.v)); // Filter out invalid points
       
       // Apply the current tool's effects to the path
+      // If the tool is embroidery (either current active tool or stored tool), use embroidery rendering
+      if (currentTool === 'embroidery') {
+        // Embroidery tool - render actual stitch types based on embroideryStitchType
+        const stitchThickness = appState.embroideryThickness || 3;
+        const stitchColor = appState.embroideryColor || '#ff69b4';
+        const stitchOpacity = appState.embroideryOpacity || 1.0;
+        const stitchType = appState.embroideryStitchType || 'satin';
+        
+        // Validate stitch parameters early
+        if (!isFinite(stitchThickness) || stitchThickness <= 0 || 
+            !stitchColor || stitchColor === 'transparent') {
+          console.warn('Invalid embroidery parameters:', { stitchThickness, stitchColor });
+          ctx.restore();
+          return;
+        }
+        
+        console.log(`🧵 VECTOR EMBROIDERY: Rendering ${stitchType} stitch with ${path.points.length} points`);
+        console.log('Path points:', path.points);
+        console.log('Stitch config:', { stitchType, stitchColor, stitchThickness, stitchOpacity });
+        console.log('App state embroidery color:', appState.embroideryColor);
+        console.log('App state embroidery stitch type:', appState.embroideryStitchType);
+        
+        // Create stitch configuration
+        const stitchConfig = {
+          type: stitchType,
+          color: stitchColor,
+          thickness: stitchThickness,
+          opacity: stitchOpacity
+        };
+        
+        // Debug canvas context before stitch rendering
+        if (process.env.NODE_ENV === 'development') {
+          console.log('🎨 Canvas context before stitch rendering:', {
+            strokeStyle: ctx.strokeStyle,
+            fillStyle: ctx.fillStyle,
+            globalCompositeOperation: ctx.globalCompositeOperation,
+            globalAlpha: ctx.globalAlpha,
+            lineWidth: ctx.lineWidth
+          });
+        }
+        
+        // Render the specific stitch type using ultra-realistic renderer
+        try {
+          // Convert to ultra-realistic stitch config
+          const ultraConfig: UltraStitchConfig = {
+            ...stitchConfig,
+            threadType: 'cotton', // Default thread type
+            threadWeight: 0.8, // Thread weight
+            threadTwist: 0.3, // Thread twist
+            threadSheen: 0.2, // Thread sheen
+            stitchDensity: 0.8, // Stitch density
+            stitchTension: 0.5, // Stitch tension
+            stitchAngle: 0, // Stitch angle
+            stitchVariation: 0.1, // Stitch variation
+            lightDirection: { x: 0.5, y: 0.5, z: 1 }, // Light direction
+            ambientLight: 0.3, // Ambient light
+            diffuseLight: 0.7, // Diffuse light
+            specularLight: 0.5, // Specular light
+            shadowIntensity: 0.3, // Shadow intensity
+            resolution: '4x', // 4K resolution
+            antiAliasing: true, // Anti-aliasing
+            textureDetail: 'ultra', // Ultra texture detail
+            threadTexture: true, // Thread texture
+            fabricTexture: true, // Fabric texture
+            threadWear: 0.1, // Thread wear
+            colorBleeding: 0.05, // Color bleeding
+            threadFuzz: 0.2, // Thread fuzz
+            stitchCompression: 0.1 // Stitch compression
+          };
+
+          // Use ultra-realistic stitch renderer based on stitch type
+          switch (stitchType) {
+            case 'cross-stitch':
+              ultraRealisticStitchRenderer.renderUltraCrossStitch(ctx, path.points, ultraConfig);
+              break;
+            case 'satin':
+              ultraRealisticStitchRenderer.renderUltraSatinStitch(ctx, path.points, ultraConfig);
+              break;
+            case 'chain':
+              ultraRealisticStitchRenderer.renderUltraChainStitch(ctx, path.points, ultraConfig);
+              break;
+            case 'fill':
+              ultraRealisticStitchRenderer.renderUltraFillStitch(ctx, path.points, ultraConfig);
+              break;
+            default:
+              // Fallback to enhanced renderer
+              const enhancedConfig: EnhancedStitchConfig = {
+                ...stitchConfig,
+                threadType: 'cotton',
+                tension: 0.5,
+                density: 0.7,
+                direction: 0,
+                pattern: 'regular',
+                quality: 'ultra'
+              };
+              enhancedStitchRenderer.renderEnhancedCrossStitch(ctx, path.points, enhancedConfig);
+          }
+          
+          console.log('✅ Ultra-realistic stitch rendering completed successfully');
+        } catch (error) {
+          console.error('❌ Error in ultra-realistic stitch rendering:', error);
+          // Fallback to basic line rendering
+          ctx.lineWidth = stitchThickness;
+          ctx.strokeStyle = stitchColor;
+          ctx.globalAlpha = stitchOpacity;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          
+          ctx.beginPath();
+          drawAdvancedBezier2D(ctx, path.points);
+          ctx.stroke();
+        }
+        ctx.restore();
+        return;
+      }
+      
       switch (currentTool) {
         case 'brush':
           // Brush tool - apply brush texture and effects
@@ -1833,63 +2297,57 @@ export function Shirt() {
           
           // Draw the path with brush effects
           ctx.beginPath();
-          drawBezier2D(ctx, path.points);
+          drawAdvancedBezier2D(ctx, path.points);
           ctx.stroke();
           break;
           
         case 'puffPrint':
-          // Puff tool - create actual puff effects
-          ctx.lineWidth = appState.puffBrushSize || 20;
-          ctx.strokeStyle = appState.puffColor || '#ff69b4';
-          ctx.globalAlpha = appState.puffBrushOpacity || 1.0;
+          // Puff tool - create actual puff effects with optimized performance
+          const puffSize = appState.puffBrushSize || 20;
+          const puffColor = appState.puffColor || '#ff69b4';
+          const puffOpacity = appState.puffBrushOpacity || 1.0;
+          
+          // Validate parameters early
+          if (!isFinite(puffSize) || puffSize <= 0 || 
+              !puffColor || puffColor === 'transparent') {
+            console.warn('Invalid puff parameters:', { puffSize, puffColor });
+            break;
+          }
+          
+          // Optimize rendering settings
           ctx.lineJoin = 'round';
           ctx.lineCap = 'round';
+          ctx.globalAlpha = puffOpacity;
           
-          // Create puff texture along the path
-          for (let i = 0; i < points.length - 1; i++) {
-            const start = points[i];
-            const end = points[i + 1];
+          // Parse color once for performance
+          const r = parseInt(puffColor.slice(1, 3), 16) || 255;
+          const g = parseInt(puffColor.slice(3, 5), 16) || 0;
+          const b = parseInt(puffColor.slice(5, 7), 16) || 255;
+          
+          // Create puff texture along the path with optimized sampling
+          const stepSize = Math.max(1, Math.floor(puffSize / 4)); // Reduce sampling for performance
+          for (let i = 0; i < points.length; i += stepSize) {
+            const point = points[i];
             
             // Use validated coordinates
-            const startX = start.x;
-            const startY = start.y;
+            const x = point.x;
+            const y = point.y;
             
-            if (!isFinite(startX) || !isFinite(startY)) {
-              console.warn('Invalid coordinates for puff effect:', { startX, startY, start, canvas: { width: canvas.width, height: canvas.height } });
-              continue;
+            if (!isFinite(x) || !isFinite(y)) {
+              continue; // Skip invalid points silently for performance
             }
             
-            // Create puff effect at each point along the path
-            const puffSize = (appState.puffBrushSize || 20) * 2;
-            const puffOpacity = appState.puffBrushOpacity || 1.0;
-            const puffColor = appState.puffColor || '#ff69b4';
-            
-            // Validate puff size
-            if (!isFinite(puffSize) || puffSize <= 0) {
-              console.warn('Invalid puff size:', puffSize);
-              continue;
-            }
-            
-            // Create radial gradient for puff effect
-            const gradient = ctx.createRadialGradient(
-              startX, startY, 0,
-              startX, startY, puffSize / 2
-            );
-            
-            // Parse color safely
-            const r = parseInt(puffColor.slice(1, 3), 16) || 255;
-            const g = parseInt(puffColor.slice(3, 5), 16) || 0;
-            const b = parseInt(puffColor.slice(5, 7), 16) || 255;
+            // Create optimized radial gradient for puff effect
+            const gradient = ctx.createRadialGradient(x, y, 0, x, y, puffSize / 2);
             
             gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${puffOpacity})`);
-            gradient.addColorStop(0.3, `rgba(${r}, ${g}, ${b}, ${puffOpacity * 0.8})`);
-            gradient.addColorStop(0.6, `rgba(${r}, ${g}, ${b}, ${puffOpacity * 0.5})`);
-            gradient.addColorStop(0.8, `rgba(${r}, ${g}, ${b}, ${puffOpacity * 0.3})`);
+            gradient.addColorStop(0.4, `rgba(${r}, ${g}, ${b}, ${puffOpacity * 0.6})`);
+            gradient.addColorStop(0.8, `rgba(${r}, ${g}, ${b}, ${puffOpacity * 0.2})`);
             gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
             
             ctx.fillStyle = gradient;
             ctx.beginPath();
-            ctx.arc(startX, startY, puffSize / 2, 0, Math.PI * 2);
+            ctx.arc(x, y, puffSize / 2, 0, Math.PI * 2);
             ctx.fill();
           }
           break;
@@ -1908,66 +2366,27 @@ export function Shirt() {
           
           // Draw the path with print effects
           ctx.beginPath();
-          drawBezier2D(ctx, path.points);
+          drawAdvancedBezier2D(ctx, path.points);
           ctx.stroke();
           break;
           
-        case 'embroidery':
-          // Embroidery tool - create actual stitch effects
-          const stitchThickness = appState.embroideryThickness || 3;
-          const stitchColor = appState.embroideryColor || '#ff69b4';
-          const stitchOpacity = appState.embroideryOpacity || 1.0;
           
-          // Validate stitch parameters
-          if (!isFinite(stitchThickness) || stitchThickness <= 0) {
-            console.warn('Invalid stitch thickness:', stitchThickness);
-            break;
-          }
+        case 'vector':
+          // Vector mode fallback - render with current active tool effects
+          console.log(`🎨 VECTOR MODE: Rendering with ${appState.activeTool} tool effects`);
           
-          // Create hyperrealistic thread appearance
-          const baseColor = stitchColor;
-          const darkerColor = adjustBrightness(baseColor, -30);
-          const lighterColor = adjustBrightness(baseColor, 30);
+          // Apply the current active tool's effects
+          // Note: Embroidery is handled at the top of the function for vector mode
           
-          // Set up high-quality rendering
-          ctx.imageSmoothingEnabled = true;
-          ctx.imageSmoothingQuality = 'high';
-          ctx.lineCap = 'round';
+          // Default vector rendering
+          ctx.lineWidth = appState.brushSize || 5;
+          ctx.strokeStyle = appState.brushColor || '#000';
+          ctx.globalAlpha = appState.brushOpacity || 1.0;
           ctx.lineJoin = 'round';
+          ctx.lineCap = 'round';
           
-          // Create dynamic gradient based on stitch direction
-          const startPoint = path.points[0];
-          const endPoint = path.points[path.points.length - 1];
-          
-          // Validate gradient coordinates
-          if (!isFinite(startPoint.x) || !isFinite(startPoint.y) || 
-              !isFinite(endPoint.x) || !isFinite(endPoint.y)) {
-            console.warn('Invalid coordinates for embroidery gradient:', { startPoint, endPoint });
-            // Fallback to simple color
-            ctx.strokeStyle = baseColor;
-          } else {
-            const gradient = ctx.createLinearGradient(startPoint.x, startPoint.y, endPoint.x, endPoint.y);
-            
-            gradient.addColorStop(0, lighterColor);
-            gradient.addColorStop(0.3, baseColor);
-            gradient.addColorStop(0.7, baseColor);
-            gradient.addColorStop(1, darkerColor);
-            
-            ctx.strokeStyle = gradient;
-          }
-          
-          ctx.lineWidth = stitchThickness;
-          ctx.globalAlpha = stitchOpacity;
-          
-          // Add realistic shadow
-          ctx.shadowColor = 'rgba(0, 0, 0, 0.4)';
-          ctx.shadowBlur = Math.max(3, stitchThickness * 0.8);
-          ctx.shadowOffsetX = 2;
-          ctx.shadowOffsetY = 2;
-          
-          // Draw the path with embroidery effects
           ctx.beginPath();
-          drawBezier2D(ctx, path.points);
+          drawAdvancedBezier2D(ctx, path.points);
           ctx.stroke();
           break;
           
@@ -1981,78 +2400,207 @@ export function Shirt() {
           
           // Draw the path
           ctx.beginPath();
-          drawBezier2D(ctx, path.points);
+          drawAdvancedBezier2D(ctx, path.points);
           ctx.stroke();
           break;
       }
       
       ctx.restore();
-      return;
-    }
-    
-    // Default vector rendering when not in vector mode
-    // Set basic properties
-    if (path.stroke) {
-      ctx.lineWidth = path.strokeWidth || 1;
-      ctx.strokeStyle = path.strokeColor || '#000';
-      ctx.lineJoin = path.strokeJoin || 'round';
-      ctx.lineCap = path.strokeCap || 'round';
-      ctx.globalAlpha = path.strokeOpacity || 1.0;
-    }
-
-    if (path.fill) {
-      ctx.fillStyle = path.fillColor || '#000';
-      ctx.globalAlpha = path.fillOpacity || 1.0;
-    }
-
-    // Draw the path
-    drawBezier2D(ctx, path.points);
-
-    if (path.fill) ctx.fill();
-    if (path.stroke) ctx.stroke();
-    
-    ctx.restore();
   }
 
   function renderVectorsToActiveLayer() {
     const layer = getActiveLayer();
-    if (!layer) return;
-    const canvas = layer.canvas; const ctx = canvas.getContext('2d')!;
-    const st = vectorStore.getState();
+    if (!errorPrevention.validateLayer(layer)) {
+      return;
+    }
     
+    const canvas = layer!.canvas;
+    const ctx = canvas.getContext('2d');
+    if (!errorPrevention.validateCanvasContext(ctx)) {
+      return;
+    }
+    
+    const st = vectorStore.getState();
+    const appState = useApp.getState();
+    
+    console.log(`🎨 renderVectorsToActiveLayer: Rendering ${st.shapes.length} vector shapes, vectorMode: ${appState.vectorMode}`);
     
     // For now we draw vectors as committed strokes/fills directly to the active layer
     // Future: draw to a dedicated vector layer for non-destructive editing
-    ctx.save();
-    ctx.globalCompositeOperation = layer.lockTransparent ? 'source-atop' : 'source-over';
+    ctx!.save();
+    ctx!.globalCompositeOperation = layer!.lockTransparent ? 'source-atop' : 'source-over';
     
     // Draw existing shapes with tool-specific rendering
+    st.shapes.forEach((shape:any) => {
+      // Validate shape before rendering
+      if (!errorPrevention.validateVectorShape(shape)) {
+        return;
+      }
+      
+      const p = shape.path;
+      const isSelected = st.selected.includes(shape.id);
+      
+      // Use the stored tool information if available, otherwise fall back to current active tool
+      const appState = useApp.getState();
+      const toolToUse = shape.tool || appState.activeTool;
+      
+      // Debug logging
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`🎨 Rendering shape ${shape.id}: storedTool=${shape.tool}, toolToUse=${toolToUse}, activeTool=${appState.activeTool}`);
+      }
+      
+        // Use enhanced vector tool manager for better rendering
+        try {
+          const renderContext = {
+            ctx: ctx!,
+            canvas,
+            appState,
+            layer: layer!
+          };
+          
+          vectorToolManager.renderVectorPath(renderContext, p, toolToUse, {
+            shapeId: shape.id,
+            isSelected: st.selected.includes(shape.id)
+          });
+        } catch (error) {
+          console.error('Error in enhanced vector rendering, falling back:', error);
+          logRenderingError(`Enhanced vector rendering failed for shape ${shape.id}: ${error}`, ['vector-tools', 'shape-rendering']);
+          renderVectorPathWithTool(ctx!, p, toolToUse, appState);
+        }
+    });
+    
+    // Draw current path as preview/commit with tool-specific rendering (only in vector mode)
+    if (st.currentPath && st.currentPath.points.length && appState.vectorMode) {
+      const p = st.currentPath;
+      
+      // Apply tool-specific rendering using the current active tool (for preview)
+      renderVectorPathWithTool(ctx!, p, appState.activeTool, appState);
+    }
+    
+    // IMPORTANT: Also render existing embroidery stitches when in vector mode
+    // This ensures that existing embroidery doesn't disappear when vector mode is enabled
+    if (appState.vectorMode && appState.embroideryStitches && Array.isArray(appState.embroideryStitches)) {
+      console.log(`🧵 VECTOR MODE: Rendering ${appState.embroideryStitches.length} existing embroidery stitches`);
+      
+      appState.embroideryStitches.forEach((stitch: any) => {
+        if (stitch && stitch.points && Array.isArray(stitch.points)) {
+          // Convert stitch to vector path format for rendering
+          const stitchPath = {
+            points: stitch.points.map((p: any) => ({
+              x: p.x || p.u * canvas.width,
+              y: p.y || p.v * canvas.height
+            }))
+          };
+          
+          // Render the stitch using the stitch rendering system
+          const stitchConfig = {
+            type: stitch.type || 'satin',
+            color: stitch.color || '#ff69b4',
+            thickness: stitch.thickness || 3,
+            opacity: stitch.opacity || 1.0
+          };
+          
+          renderStitchType(ctx!, stitchPath.points, stitchConfig);
+        }
+      });
+    }
+    
+    ctx!.restore();
+    composeLayers();
+    if (texture) { texture.needsUpdate = true; invalidate(); }
+    
+    console.log(`✅ renderVectorsToActiveLayer: Completed rendering ${st.shapes.length} shapes`);
+  }
+
+  // Separate function to render anchor points and selection indicators
+  function renderAnchorPointsAndSelection() {
+    // CRITICAL: Only render anchor points when in vector mode
+    const appState = useApp.getState();
+    if (!appState.vectorMode) {
+      return; // Don't render anchor points when not in vector mode
+    }
+    
+    // Use error prevention to validate rendering conditions
+    if (!errorPrevention.checkAnchorPointsRendering()) {
+      return;
+    }
+    
+    const layer = getActiveLayer();
+    if (!errorPrevention.validateLayer(layer)) {
+      return;
+    }
+    
+    const canvas = layer!.canvas;
+    const ctx = canvas.getContext('2d');
+    if (!errorPrevention.validateCanvasContext(ctx)) {
+      return;
+    }
+    
+    const st = vectorStore.getState();
+    
+    ctx!.save();
+    ctx!.globalCompositeOperation = 'source-over'; // Always draw on top
+    ctx!.globalAlpha = 1.0; // Full opacity for UI elements
+    
+    // Draw selection indicators and anchor points for existing shapes
     st.shapes.forEach((shape:any) => {
       if (!shape?.path) return;
       const p = shape.path;
       const isSelected = st.selected.includes(shape.id);
       
-      // Apply tool-specific rendering using the current active tool
-      const appState = useApp.getState();
-      renderVectorPathWithTool(ctx, p, appState.activeTool, appState);
-      
-      // Note: Selection indicators are drawn separately as overlays, not on the canvas
+      if (isSelected) {
+        drawSelectionIndicators(ctx!, p.points, shape.id);
+      }
     });
     
-    // Draw current path as preview/commit with tool-specific rendering
+    // Draw anchor points for current path
     if (st.currentPath && st.currentPath.points.length) {
-      const p = st.currentPath;
-      
-      // Apply tool-specific rendering using the current active tool
-      const appState = useApp.getState();
-      renderVectorPathWithTool(ctx, p, appState.activeTool, appState);
-      
-      // Note: Anchor points are drawn separately as overlays, not on the canvas
+      drawSelectionIndicators(ctx!, st.currentPath.points, 'current');
     }
     
-    ctx.restore();
-    composeLayers();
+    ctx!.restore();
     if (texture) { texture.needsUpdate = true; invalidate(); }
+  }
+
+  // Debounced rendering to prevent excessive re-renders
+  const renderTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Helper function to render both vectors and anchor points
+  function renderVectorsWithAnchors() {
+    // Clear any pending render
+    if (renderTimeoutRef.current) {
+      clearTimeout(renderTimeoutRef.current);
+    }
+    
+    // Debounce rendering to prevent excessive calls
+    renderTimeoutRef.current = setTimeout(() => {
+      renderVectorsToActiveLayer();
+      
+      // Only render anchor points and selection when vector mode is active
+      if (vectorMode) {
+        renderAnchorPointsAndSelection();
+      }
+      
+      // Render preview line for pen tool (only in vector mode)
+      if (previewLine && vectorMode) {
+        const layer = getActiveLayer();
+        if (layer) {
+          const ctx = layer.canvas.getContext('2d');
+          if (ctx) {
+            ctx.save();
+            ctx.strokeStyle = '#00ff00';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 5]);
+            ctx.globalAlpha = 0.7;
+            ctx.beginPath();
+            ctx.moveTo(previewLine.start.x, previewLine.start.y);
+            ctx.lineTo(previewLine.end.x, previewLine.end.y);
+            ctx.stroke();
+            ctx.restore();
+          }
+        }
+      }
+    }, 16); // ~60fps
   }
   function hitPoint(pt: { x: number; y: number }, s: any): number | null {
     for (let i = 0; i < s.path.points.length; i++) {
@@ -2555,7 +3103,7 @@ export function Shirt() {
   // Listen for vector settings changes
   useEffect(() => {
     const handleVectorSettingsChanged = () => {
-      renderVectorsToActiveLayer();
+      renderVectorsWithAnchors();
       composeLayers(); // Redraw the entire composed canvas
     };
     
@@ -2700,50 +3248,6 @@ export function Shirt() {
     });
     window.dispatchEvent(embroideryMoveEvent);
   }
-
-
-  // Update anchor points when vector state changes
-  useEffect(() => {
-    const unsubscribe = vectorStore.subscribe(() => {
-      renderAnchorPoints();
-    });
-    
-    // Initial render
-    renderAnchorPoints();
-    
-    return () => {
-      if (typeof unsubscribe === 'function') {
-        unsubscribe();
-      }
-    };
-  }, [selectedAnchor, renderAnchorPoints]);
-
-  if (!modelScene) {
-    return null;
-  }
-
-  return (
-    <group>
-      <primitive object={modelScene!} ref={meshRef} />
-      <Html>
-        <canvas
-          ref={anchorCanvasRef}
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-            pointerEvents: 'none',
-            zIndex: 1000,
-            imageRendering: 'pixelated'
-          }}
-          width={2048}
-          height={2048}
-        />
-      </Html>
-    </group>
-  );
 }
 
 

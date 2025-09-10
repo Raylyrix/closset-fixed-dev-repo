@@ -3478,8 +3478,8 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
           ctx.lineJoin = 'round';
           ctx.globalAlpha = 0.4;
           ctx.shadowBlur = 0;
-          
-          ctx.beginPath();
+      
+      ctx.beginPath();
           ctx.moveTo(curr.x + perpX, curr.y + perpY);
           ctx.lineTo(next.x + perpX, next.y + perpY);
           ctx.stroke();
@@ -3491,18 +3491,18 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
           
           ctx.beginPath();
           ctx.moveTo(curr.x, curr.y);
-          ctx.lineTo(next.x, next.y);
-          ctx.stroke();
-          
+      ctx.lineTo(next.x, next.y);
+      ctx.stroke();
+      
           // Highlight layer
           ctx.strokeStyle = backstitchHighlightColor;
           ctx.lineWidth = backstitchThreadThickness * 0.5;
           ctx.globalAlpha = 0.7;
           
-          ctx.beginPath();
+        ctx.beginPath();
           ctx.moveTo(curr.x - perpX * 0.3, curr.y - perpY * 0.3);
           ctx.lineTo(next.x - perpX * 0.3, next.y - perpY * 0.3);
-          ctx.stroke();
+        ctx.stroke();
           
           // Add thread texture dots
           const dotSize = backstitchThreadThickness * 0.3;

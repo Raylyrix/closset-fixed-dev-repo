@@ -6,6 +6,7 @@ import { LeftPanel } from './LeftPanel';
 import { EmbroiderySidebar } from './EmbroiderySidebar';
 import { GridOverlay } from './GridOverlay';
 import { VectorOverlay } from './VectorOverlay';
+import VectorToolbar from './VectorToolbar';
 import { useApp } from '../App';
 
 interface MainLayoutProps {
@@ -412,6 +413,9 @@ export function MainLayout({ children }: MainLayoutProps) {
   const setActiveTool = useApp(s => s.setActiveTool);
   const vectorMode = useApp(s => s.vectorMode);
   const setVectorMode = useApp(s => s.setVectorMode);
+  
+  // Vector toolbar state
+  const [showVectorToolbar, setShowVectorToolbar] = useState(false);
 
   // Handle tool changes and sidebar switching
   useEffect(() => {
@@ -466,6 +470,15 @@ export function MainLayout({ children }: MainLayoutProps) {
       overflow: 'hidden',
       background: '#0F172A'
     }}>
+      {/* Vector Toolbar - Shows when vector tools are active */}
+      <VectorToolbar 
+        isVisible={showVectorToolbar} 
+        onClose={() => {
+          setShowVectorToolbar(false);
+          setVectorMode(false);
+        }} 
+      />
+      
       {/* Navigation Sidebar */}
       {showNavigation && (
         <div className="navigation-container" style={{
@@ -481,20 +494,23 @@ export function MainLayout({ children }: MainLayoutProps) {
         flex: 1,
         display: 'flex',
         flexDirection: 'column',
-        minWidth: 0
+        minWidth: 0,
+        marginTop: showVectorToolbar ? '60px' : '0px',
+        transition: 'margin-top 0.3s ease'
       }}>
-        {/* Top Toolbar */}
-        <div className="toolbar-container" style={{
-          height: '60px',
-          background: 'linear-gradient(135deg, #1E293B 0%, #0F172A 100%)',
-          borderBottom: '1px solid #334155',
-          display: 'flex',
-          alignItems: 'center',
-          padding: '0 16px',
-          gap: '16px',
-          zIndex: 1000,
-          position: 'relative'
-        }}>
+        {/* Top Toolbar - Hidden when vector mode is active */}
+        {!vectorMode && (
+          <div className="toolbar-container" style={{
+            height: '60px',
+            background: 'linear-gradient(135deg, #1E293B 0%, #0F172A 100%)',
+            borderBottom: '1px solid #334155',
+            display: 'flex',
+            alignItems: 'center',
+            padding: '0 16px',
+            gap: '16px',
+            zIndex: 1000,
+            position: 'relative'
+          }}>
           {/* Panel Toggle Buttons */}
           <div className="panel-toggles" style={{
             display: 'flex',
@@ -600,28 +616,6 @@ export function MainLayout({ children }: MainLayoutProps) {
             <span>Active: {activeTool}</span>
           </div>
 
-          {/* Vector Path Tool */}
-          <button
-            onClick={() => setVectorMode(!vectorMode)}
-            style={{
-              background: vectorMode ? 'rgb(139, 92, 246)' : 'rgba(139, 92, 246, 0.1)',
-              border: '1px solid rgba(139, 92, 246, 0.3)',
-              borderRadius: '6px',
-              padding: '8px 12px',
-              fontSize: '14px',
-              fontWeight: '500',
-              color: 'white',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              transition: 'all 0.2s ease'
-            }}
-            title="Vector Path Tool - Draw precise vector paths with any tool effect"
-          >
-            <span>✏️</span>
-            <span>Vector</span>
-          </button>
 
           {/* Grid & Scale Controls */}
           <GridToolbarControls />
@@ -711,6 +705,52 @@ export function MainLayout({ children }: MainLayoutProps) {
               <span>Save</span>
             </button>
           </div>
+        </div>
+        )}
+
+        {/* Vector Tools Toggle Button - Always visible */}
+        <div style={{
+          position: 'fixed',
+          top: '10px',
+          right: '10px',
+          zIndex: 1001
+        }}>
+          <button
+            onClick={() => {
+              console.log('🎨 Vector Tools button clicked - toggling vectorMode');
+              setShowVectorToolbar(!showVectorToolbar);
+              setVectorMode(!vectorMode);
+              console.log('🎨 Vector mode set to:', !vectorMode);
+            }}
+            style={{
+              background: vectorMode ? 'rgb(139, 92, 246)' : 'rgba(139, 92, 246, 0.1)',
+              border: '1px solid rgba(139, 92, 246, 0.3)',
+              borderRadius: '8px',
+              padding: '12px 16px',
+              fontSize: '14px',
+              fontWeight: '600',
+              color: 'white',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              transition: 'all 0.3s ease',
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+              backdropFilter: 'blur(10px)'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'translateY(-2px)';
+              e.currentTarget.style.boxShadow = '0 6px 20px rgba(139, 92, 246, 0.4)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)';
+            }}
+            title={vectorMode ? "Exit Vector Mode" : "Enter Vector Mode"}
+          >
+            <span style={{ fontSize: '18px' }}>🎨</span>
+            <span>{vectorMode ? 'Exit Vector' : 'Vector Tools'}</span>
+          </button>
         </div>
 
         {/* Main Workspace */}
