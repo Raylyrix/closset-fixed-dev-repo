@@ -93,9 +93,6 @@ export function Shirt() {
     
     // Clear anchor points and selection when vector mode is disabled
     if (!vectorMode) {
-      // Log the error if anchor points are not being cleared
-      logVectorError('Anchor points not being cleared when exiting vector mode', ['vector-tools', 'anchor-points']);
-      
       setSelectedAnchor(null);
       setDraggingAnchor(null);
       setDraggingControl(null);
@@ -119,7 +116,9 @@ export function Shirt() {
       // This ensures stitches don't disappear when exiting vector mode
       setTimeout(() => {
         try {
-          // Force re-render of all vector shapes to preserve them
+          console.log('🔄 Starting re-render after vector mode exit...');
+          
+          // CRITICAL: Re-render all vector shapes first
           renderVectorsToActiveLayer();
           
           // Also re-render any existing embroidery stitches
@@ -155,18 +154,15 @@ export function Shirt() {
             }
           }
           
-          // Compose all layers
+          // Compose all layers to ensure everything is visible
           composeLayers();
           
           console.log('✅ Successfully re-rendered all content after vector mode exit');
-          
-          // Mark the error as resolved
-          errorLogger.addFix('anchor_points_not_cleared', 'Added immediate canvas clear and proper cleanup sequence');
         } catch (error) {
           console.error('❌ Error re-rendering content after vector mode exit:', error);
           logRenderingError(`Failed to re-render content after vector mode exit: ${error}`, ['vector-tools', 'layer-rendering']);
         }
-      }, 100); // Increased delay to ensure all state is properly updated
+      }, 100); // Increased delay to ensure proper cleanup
     }
   }, [vectorMode]);
   
@@ -653,6 +649,9 @@ export function Shirt() {
               if (process.env.NODE_ENV === 'development') {
                 console.log('🎯 Pen tool - Started new path with first point');
               }
+              
+              // Force immediate rendering
+              renderVectorsWithAnchors();
             } catch (error) {
               console.error('🎯 Pen tool - Error creating new path:', error);
             }
@@ -698,6 +697,9 @@ export function Shirt() {
               // Select the new point
               setSelectedAnchor({shapeId: 'current', pointIndex: st.currentPath.points.length});
               console.log('🎯 Pen tool - Added point to existing path, total points:', st.currentPath.points.length + 1);
+              
+              // Force immediate rendering
+              renderVectorsWithAnchors();
             } catch (error) {
               console.error('🎯 Pen tool - Error adding point to path:', error);
             }
@@ -2207,66 +2209,18 @@ export function Shirt() {
           });
         }
         
-        // Render the specific stitch type using ultra-realistic renderer
+        // Render the specific stitch type using existing stitch renderer
         try {
-          // Convert to ultra-realistic stitch config
-          const ultraConfig: UltraStitchConfig = {
-            ...stitchConfig,
-            threadType: 'cotton', // Default thread type
-            threadWeight: 0.8, // Thread weight
-            threadTwist: 0.3, // Thread twist
-            threadSheen: 0.2, // Thread sheen
-            stitchDensity: 0.8, // Stitch density
-            stitchTension: 0.5, // Stitch tension
-            stitchAngle: 0, // Stitch angle
-            stitchVariation: 0.1, // Stitch variation
-            lightDirection: { x: 0.5, y: 0.5, z: 1 }, // Light direction
-            ambientLight: 0.3, // Ambient light
-            diffuseLight: 0.7, // Diffuse light
-            specularLight: 0.5, // Specular light
-            shadowIntensity: 0.3, // Shadow intensity
-            resolution: '4x', // 4K resolution
-            antiAliasing: true, // Anti-aliasing
-            textureDetail: 'ultra', // Ultra texture detail
-            threadTexture: true, // Thread texture
-            fabricTexture: true, // Fabric texture
-            threadWear: 0.1, // Thread wear
-            colorBleeding: 0.05, // Color bleeding
-            threadFuzz: 0.2, // Thread fuzz
-            stitchCompression: 0.1 // Stitch compression
-          };
-
-          // Use ultra-realistic stitch renderer based on stitch type
-          switch (stitchType) {
-            case 'cross-stitch':
-              ultraRealisticStitchRenderer.renderUltraCrossStitch(ctx, path.points, ultraConfig);
-              break;
-            case 'satin':
-              ultraRealisticStitchRenderer.renderUltraSatinStitch(ctx, path.points, ultraConfig);
-              break;
-            case 'chain':
-              ultraRealisticStitchRenderer.renderUltraChainStitch(ctx, path.points, ultraConfig);
-              break;
-            case 'fill':
-              ultraRealisticStitchRenderer.renderUltraFillStitch(ctx, path.points, ultraConfig);
-              break;
-            default:
-              // Fallback to enhanced renderer
-              const enhancedConfig: EnhancedStitchConfig = {
-                ...stitchConfig,
-                threadType: 'cotton',
-                tension: 0.5,
-                density: 0.7,
-                direction: 0,
-                pattern: 'regular',
-                quality: 'ultra'
-              };
-              enhancedStitchRenderer.renderEnhancedCrossStitch(ctx, path.points, enhancedConfig);
-          }
+          console.log(`🧵 Rendering ${stitchType} stitch with ${path.points.length} points`);
+          console.log('Stitch config:', stitchConfig);
           
-          console.log('✅ Ultra-realistic stitch rendering completed successfully');
+          // Use the existing renderStitchType function
+          renderStitchType(ctx, path.points, stitchConfig);
+          console.log('✅ Stitch rendering completed successfully');
         } catch (error) {
-          console.error('❌ Error in ultra-realistic stitch rendering:', error);
+          console.error('❌ Error in stitch rendering:', error);
+          console.log('Falling back to basic line rendering...');
+          
           // Fallback to basic line rendering
           ctx.lineWidth = stitchThickness;
           ctx.strokeStyle = stitchColor;
@@ -2275,8 +2229,14 @@ export function Shirt() {
           ctx.lineJoin = 'round';
           
           ctx.beginPath();
-          drawAdvancedBezier2D(ctx, path.points);
+          if (path.points.length >= 2) {
+            ctx.moveTo(path.points[0].x, path.points[0].y);
+            for (let i = 1; i < path.points.length; i++) {
+              ctx.lineTo(path.points[i].x, path.points[i].y);
+            }
+          }
           ctx.stroke();
+          console.log('✅ Fallback line rendering completed');
         }
         ctx.restore();
         return;
@@ -2449,23 +2409,12 @@ export function Shirt() {
         console.log(`🎨 Rendering shape ${shape.id}: storedTool=${shape.tool}, toolToUse=${toolToUse}, activeTool=${appState.activeTool}`);
       }
       
-        // Use enhanced vector tool manager for better rendering
+        // Use direct rendering for now (vectorToolManager is placeholder)
         try {
-          const renderContext = {
-            ctx: ctx!,
-            canvas,
-            appState,
-            layer: layer!
-          };
-          
-          vectorToolManager.renderVectorPath(renderContext, p, toolToUse, {
-            shapeId: shape.id,
-            isSelected: st.selected.includes(shape.id)
-          });
-        } catch (error) {
-          console.error('Error in enhanced vector rendering, falling back:', error);
-          logRenderingError(`Enhanced vector rendering failed for shape ${shape.id}: ${error}`, ['vector-tools', 'shape-rendering']);
           renderVectorPathWithTool(ctx!, p, toolToUse, appState);
+        } catch (error) {
+          console.error('Error in vector rendering:', error);
+          logRenderingError(`Vector rendering failed for shape ${shape.id}: ${error}`, ['vector-tools', 'shape-rendering']);
         }
     });
     
@@ -2473,8 +2422,30 @@ export function Shirt() {
     if (st.currentPath && st.currentPath.points.length && appState.vectorMode) {
       const p = st.currentPath;
       
+      console.log(`🎨 Rendering current path with ${p.points.length} points, tool: ${appState.activeTool}`);
+      
       // Apply tool-specific rendering using the current active tool (for preview)
-      renderVectorPathWithTool(ctx!, p, appState.activeTool, appState);
+      try {
+        renderVectorPathWithTool(ctx!, p, appState.activeTool, appState);
+        console.log('✅ Current path rendered successfully');
+      } catch (error) {
+        console.error('❌ Error rendering current path:', error);
+        logRenderingError(`Current path rendering failed: ${error}`, ['vector-tools', 'current-path']);
+        
+        // Fallback: render as simple line
+        ctx!.save();
+        ctx!.strokeStyle = appState.embroideryColor || '#ff69b4';
+        ctx!.lineWidth = appState.embroideryThickness || 3;
+        ctx!.lineCap = 'round';
+        ctx!.lineJoin = 'round';
+        ctx!.beginPath();
+        ctx!.moveTo(p.points[0].x, p.points[0].y);
+        for (let i = 1; i < p.points.length; i++) {
+          ctx!.lineTo(p.points[i].x, p.points[i].y);
+        }
+        ctx!.stroke();
+        ctx!.restore();
+      }
     }
     
     // IMPORTANT: Also render existing embroidery stitches when in vector mode
@@ -2500,7 +2471,12 @@ export function Shirt() {
             opacity: stitch.opacity || 1.0
           };
           
-          renderStitchType(ctx!, stitchPath.points, stitchConfig);
+          try {
+            renderStitchType(ctx!, stitchPath.points, stitchConfig);
+          } catch (error) {
+            console.error('Error rendering embroidery stitch in vector mode:', error);
+            logRenderingError(`Embroidery stitch rendering failed in vector mode: ${error}`, ['embroidery', 'vector-mode']);
+          }
         }
       });
     }
