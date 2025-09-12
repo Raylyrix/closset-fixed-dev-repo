@@ -95,7 +95,7 @@ const VectorSettingsPanel: React.FC<VectorSettingsPanelProps> = ({ isVisible, on
       borderRadius: '12px',
       padding: '20px',
       color: 'white',
-      zIndex: 1002,
+      zIndex: 10002,
       overflowY: 'auto',
       boxShadow: '0 10px 25px rgba(0,0,0,0.3)'
     }}>

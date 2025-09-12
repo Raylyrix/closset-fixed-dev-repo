@@ -100,7 +100,7 @@ export function Shirt() {
       setPreviewLine(null);
       
       // Clear any vector-specific state
-      vectorStore.set('selected', []);
+      vectorStore.setState({ selected: [] });
       
       // CRITICAL: Clear anchor points from canvas immediately
       const layer = getActiveLayer();
@@ -427,7 +427,7 @@ export function Shirt() {
             // Delete from current path
             const newPoints = st.currentPath.points.filter((_, index) => index !== selectedAnchor.pointIndex);
             const updatedPath = { ...st.currentPath, points: newPoints };
-            vectorStore.set('currentPath', updatedPath);
+            vectorStore.setState({ currentPath: updatedPath });
             
             // Clear the active layer and redraw everything to remove the deleted line
             const layer = getActiveLayer();
@@ -474,7 +474,7 @@ export function Shirt() {
               return { ...s, path, bounds: boundsFromPoints(newPoints) };
              }).filter((s): s is any => s !== null);
             
-            vectorStore.set('shapes', shapesUpd);
+            vectorStore.setState({ shapes: shapesUpd });
             
             // Clear the active layer and redraw everything to remove the deleted line
             const layer = getActiveLayer();
@@ -641,7 +641,7 @@ export function Shirt() {
             };
             
             try {
-              vectorStore.set('currentPath', newPath);
+              vectorStore.setState({ currentPath: newPath });
               // Select the first point
               setSelectedAnchor({shapeId: 'current', pointIndex: 0});
               // Reset debouncing for new path
@@ -688,10 +688,10 @@ export function Shirt() {
                 };
                 
                 const cp = { ...st.currentPath, points: [...updatedPoints, newPoint] };
-                vectorStore.set('currentPath', cp);
+                vectorStore.setState({ currentPath: cp });
               } else {
                 const cp = { ...st.currentPath, points: [...st.currentPath.points, newPoint] };
-                vectorStore.set('currentPath', cp);
+                vectorStore.setState({ currentPath: cp });
               }
               
               // Select the new point
@@ -814,7 +814,7 @@ export function Shirt() {
         const isCtrlPressed = e.ctrlKey || e.metaKey;
         const clicked = [...st.shapes].reverse().find(s => x>=s.bounds.x && x<=s.bounds.x+s.bounds.width && y>=s.bounds.y && y<=s.bounds.y+s.bounds.height);
         if (clicked) {
-          vectorStore.set('selected', [clicked.id]);
+          vectorStore.setState({ selected: [clicked.id] });
           // convert anchor toggles point type on click
           if (tool === 'convertAnchor') {
             const idx = hitPoint({x,y}, clicked);
@@ -833,7 +833,7 @@ export function Shirt() {
                 const path = { ...s.path, points: pts };
                 return { ...s, path, bounds: boundsFromPoints(pts) } as any;
               });
-              vectorStore.set('shapes', shapesUpd);
+              vectorStore.setState({ shapes: shapesUpd });
             }
             return;
           }
@@ -865,7 +865,7 @@ export function Shirt() {
           vectorDragRef.current = { mode: 'bounds', shapeId: clicked.id, startX: x, startY: y, startBounds: { ...clicked.bounds } };
           renderVectorsWithAnchors();
         } else {
-          vectorStore.set('selected', []);
+          vectorStore.setState({ selected: [] });
         }
         paintingActiveRef.current = true;
         return;
@@ -1078,7 +1078,7 @@ export function Shirt() {
         
         try {
           const cp = { ...st.currentPath, points: [...st.currentPath.points, { x, y, type: 'corner' as const }] };
-          vectorStore.set('currentPath', cp);
+          vectorStore.setState({ currentPath: cp });
           // Select the new point
           setSelectedAnchor({shapeId: 'current', pointIndex: cp.points.length - 1});
           
@@ -1148,7 +1148,7 @@ export function Shirt() {
           // Update the path in the store
           if (curvatureSegment.shapeId === 'current') {
             const updatedPath = { ...targetPath, points: updatedPoints };
-            vectorStore.set('currentPath', updatedPath);
+            vectorStore.setState({ currentPath: updatedPath });
           } else {
             const updatedPath = { ...targetPath, points: updatedPoints };
             const updatedShapes = st.shapes.map(s => 
@@ -1156,7 +1156,7 @@ export function Shirt() {
                 ? { ...s, path: updatedPath, bounds: boundsFromPoints(updatedPoints) }
                 : s
             );
-            vectorStore.set('shapes', updatedShapes);
+            vectorStore.setState({ shapes: updatedShapes });
           }
           
           renderVectorsWithAnchors();
@@ -1175,7 +1175,7 @@ export function Shirt() {
             const pts = [...st.currentPath.points];
             pts[draggingAnchor.pointIndex] = { ...pts[draggingAnchor.pointIndex], x, y };
             const updatedPath = { ...st.currentPath, points: pts };
-            vectorStore.set('currentPath', updatedPath);
+            vectorStore.setState({ currentPath: updatedPath });
             console.log('🎯 Updated current path anchor point');
           } else {
             // Drag existing shape anchor point
@@ -1186,7 +1186,7 @@ export function Shirt() {
               const path = { ...s.path, points: pts };
               return { ...s, path, bounds: boundsFromPoints(pts) };
             });
-            vectorStore.set('shapes', shapesUpd);
+            vectorStore.setState({ shapes: shapesUpd });
             console.log('🎯 Updated shape anchor point');
           }
           renderVectorsWithAnchors();
@@ -1216,7 +1216,7 @@ export function Shirt() {
             }
             
             const updatedPath = { ...st.currentPath, points: pts };
-            vectorStore.set('currentPath', updatedPath);
+            vectorStore.setState({ currentPath: updatedPath });
           } else {
             // Drag existing shape control handle
             const shapesUpd = st.shapes.map(s => {
@@ -1241,7 +1241,7 @@ export function Shirt() {
               const path = { ...s.path, points: pts };
               return { ...s, path, bounds: boundsFromPoints(pts) };
             });
-            vectorStore.set('shapes', shapesUpd);
+            vectorStore.setState({ shapes: shapesUpd });
           }
           // Update visual representation for control handle dragging
           renderVectorsWithAnchors();
@@ -1259,7 +1259,7 @@ export function Shirt() {
           const path = { ...s.path, points: pts };
           return { ...s, path, bounds: boundsFromPoints(pts) } as any;
         });
-        vectorStore.set('shapes', shapesUpd);
+        vectorStore.setState({ shapes: shapesUpd });
           renderVectorsWithAnchors();
       } else if (drag.mode === 'bounds' && drag.shapeId && drag.startBounds) {
         const dx = x - (drag.startX || x); const dy = y - (drag.startY || y);
@@ -1273,7 +1273,7 @@ export function Shirt() {
           const path = { ...s.path, points: pts };
           return { ...s, path, bounds: boundsFromPoints(pts) } as any;
         });
-        vectorStore.set('shapes', shapesUpd);
+        vectorStore.setState({ shapes: shapesUpd });
           renderVectorsWithAnchors();
       }
       }
@@ -1373,8 +1373,8 @@ export function Shirt() {
             height: Math.max(...st.currentPath.points.map(p => p.y)) - Math.min(...st.currentPath.points.map(p => p.y))
           }
         };
-        vectorStore.set('shapes', [...st.shapes, newShape]);
-        vectorStore.set('currentPath', null);
+        vectorStore.setState({ shapes: [...st.shapes, newShape] });
+        vectorStore.setState({ currentPath: null });
         setSelectedAnchor(null);
         setPreviewLine(null); // Clear preview line
         console.log('✅ Path committed to shapes, total shapes:', st.shapes.length + 1);
@@ -1616,13 +1616,13 @@ export function Shirt() {
           return shape;
         });
         
-        vectorStore.set('shapes', updatedShapes);
+        vectorStore.setState({ shapes: updatedShapes });
         
         // Also update selected shapes if any were removed
         const currentSelected = vectorStore.getState().selected;
         const updatedSelected = currentSelected.filter(id => !shapesToRemove.includes(id));
         if (updatedSelected.length !== currentSelected.length) {
-          vectorStore.set('selected', updatedSelected);
+          vectorStore.setState({ selected: updatedSelected });
         }
         
         console.log('Vector erasing completed:', {

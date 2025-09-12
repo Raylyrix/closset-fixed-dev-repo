@@ -1533,11 +1533,38 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
 
   // Helper function to adjust color brightness
   const adjustBrightness = (color: string, amount: number): string => {
-    const hex = color.replace('#', '');
-    const r = Math.max(0, Math.min(255, parseInt(hex.substr(0, 2), 16) + amount));
-    const g = Math.max(0, Math.min(255, parseInt(hex.substr(2, 2), 16) + amount));
-    const b = Math.max(0, Math.min(255, parseInt(hex.substr(4, 2), 16) + amount));
-    return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+    // Validate input
+    if (!color || typeof color !== 'string') {
+      console.warn('Invalid color input in EmbroideryTool adjustBrightness:', color);
+      return '#ff69b4'; // Default fallback
+    }
+    
+    // Ensure color starts with #
+    const cleanColor = color.startsWith('#') ? color : `#${color}`;
+    
+    // Validate hex format (must be 6 characters after #)
+    if (cleanColor.length !== 7) {
+      console.warn('Invalid hex color format in EmbroideryTool adjustBrightness:', cleanColor);
+      return '#ff69b4'; // Default fallback
+    }
+    
+    // Convert hex to RGB
+    const hex = cleanColor.replace('#', '');
+    const r = parseInt(hex.substr(0, 2), 16);
+    const g = parseInt(hex.substr(2, 2), 16);
+    const b = parseInt(hex.substr(4, 2), 16);
+    
+    // Validate parsed values
+    if (isNaN(r) || isNaN(g) || isNaN(b)) {
+      console.warn('Failed to parse hex color in EmbroideryTool adjustBrightness:', cleanColor);
+      return '#ff69b4'; // Default fallback
+    }
+    
+    // CRITICAL FIX: Round all RGB values to integers before hex conversion
+    const newR = Math.round(Math.max(0, Math.min(255, r + amount)));
+    const newG = Math.round(Math.max(0, Math.min(255, g + amount)));
+    const newB = Math.round(Math.max(0, Math.min(255, b + amount)));
+    return `#${newR.toString(16).padStart(2, '0')}${newG.toString(16).padStart(2, '0')}${newB.toString(16).padStart(2, '0')}`;
   };
 
 

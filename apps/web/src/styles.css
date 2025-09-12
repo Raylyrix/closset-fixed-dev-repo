@@ -33,9 +33,40 @@ button, input, select { font: inherit; }
 .canvas-wrap.drawing { cursor: none; }
 .cursor-overlay { position: absolute; inset: 0; pointer-events: none; z-index: 10000; }
 .cursor-circle { position: absolute; border-radius: 999px; box-shadow: 0 0 0 1px rgba(0,0,0,0.4) inset; }
-.cursor-crosshair { position: absolute; pointer-events: none; }
-.cursor-crosshair .ch.h { position: absolute; left: -16px; width: 32px; height: 1px; background: rgba(255,255,255,0.9); }
-.cursor-crosshair .ch.v { position: absolute; top: -16px; height: 32px; width: 1px; background: rgba(255,255,255,0.9); }
+.cursor-crosshair { 
+  position: absolute; 
+  pointer-events: none; 
+  transform: translate(-50%, -50%); /* Center the crosshair precisely */
+}
+.cursor-crosshair .ch.h { 
+  position: absolute; 
+  left: -25px; 
+  width: 50px; 
+  height: 1px; 
+  background: linear-gradient(to right, transparent, rgba(255,255,255,1), rgba(255,255,255,1), transparent);
+  box-shadow: 0 0 3px rgba(0,0,0,0.9), 0 0 6px rgba(255,255,255,0.3);
+  top: 0;
+}
+.cursor-crosshair .ch.v { 
+  position: absolute; 
+  top: -25px; 
+  height: 50px; 
+  width: 1px; 
+  background: linear-gradient(to bottom, transparent, rgba(255,255,255,1), rgba(255,255,255,1), transparent);
+  box-shadow: 0 0 3px rgba(0,0,0,0.9), 0 0 6px rgba(255,255,255,0.3);
+  left: 0;
+}
+.cursor-crosshair .ch.center {
+  position: absolute;
+  left: -1px;
+  top: -1px;
+  width: 2px;
+  height: 2px;
+  background: rgba(255,255,255,1);
+  border-radius: 50%;
+  box-shadow: 0 0 4px rgba(0,0,0,1), 0 0 8px rgba(255,255,255,0.5);
+  border: 1px solid rgba(0,0,0,0.8);
+}
 .cursor-svg { filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6)); pointer-events: none; }
 .cursor-marquee { border: 1px dashed rgba(103,232,249,0.9); background: rgba(103,232,249,0.15); }
 

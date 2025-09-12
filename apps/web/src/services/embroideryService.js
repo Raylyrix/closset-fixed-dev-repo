@@ -1,6 +1,15 @@
 import { chatOpenRouter } from './openrouterService';
 class EmbroideryAIService {
     async analyzePattern(stitches, canvasSize) {
+        // Validate input parameters
+        if (!stitches || !Array.isArray(stitches)) {
+            console.warn('🧠 EmbroideryAI: Invalid stitches parameter, using fallback analysis');
+            return this.getFallbackAnalysis();
+        }
+        if (stitches.length === 0) {
+            console.warn('🧠 EmbroideryAI: No stitches to analyze, using fallback analysis');
+            return this.getFallbackAnalysis();
+        }
         console.log('🧠 EmbroideryAI: Analyzing pattern with', stitches.length, 'stitches');
         const prompt = `As an embroidery AI expert, analyze this embroidery pattern and provide detailed analysis:
 
@@ -151,6 +160,11 @@ Return only valid JSON without any additional text.`;
         }
     }
     async optimizeStitchPlacement(stitches, canvasSize) {
+        // Validate input parameters
+        if (!stitches || !Array.isArray(stitches) || stitches.length === 0) {
+            console.warn('🧠 EmbroideryAI: Invalid stitches parameter for optimization, returning original stitches');
+            return stitches || [];
+        }
         console.log('🧠 EmbroideryAI: Optimizing stitch placement');
         const prompt = `As an embroidery optimization expert, optimize these stitches for better visual results:
 
@@ -229,6 +243,11 @@ Return only valid JSON without any additional text.`;
         }
     }
     async generateEmbroideryDescription(stitches) {
+        // Validate input parameters
+        if (!stitches || !Array.isArray(stitches) || stitches.length === 0) {
+            console.warn('🧠 EmbroideryAI: Invalid stitches parameter for description, using fallback');
+            return 'This embroidery pattern contains no stitches to describe.';
+        }
         console.log('🧠 EmbroideryAI: Generating description for', stitches.length, 'stitches');
         const prompt = `As an embroidery expert, provide a detailed description of this embroidery pattern:
 

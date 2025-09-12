@@ -90,6 +90,8 @@ interface AppState {
   setTool: (tool: Tool) => void;
   vectorMode: boolean;
   setVectorMode: (enabled: boolean) => void;
+  showAnchorPoints: boolean;
+  setShowAnchorPoints: (enabled: boolean) => void;
   
   // Brush settings
   brushColor: string;
@@ -352,6 +354,8 @@ export const useApp = create<AppState>((set, get) => ({
   setTool: (tool: Tool) => set({ activeTool: tool }),
   vectorMode: false,
   setVectorMode: (enabled: boolean) => set({ vectorMode: enabled }),
+  showAnchorPoints: false,
+  setShowAnchorPoints: (enabled: boolean) => set({ showAnchorPoints: enabled }),
   brushColor: '#ff3366',
   brushSize: 50,
   brushOpacity: 1,
@@ -532,7 +536,15 @@ export const useApp = create<AppState>((set, get) => ({
   setEmbroideryThreadType: (type) => set({ embroideryThreadType: type }),
   setEmbroideryThickness: (thickness) => set({ embroideryThickness: thickness }),
   setEmbroideryOpacity: (opacity) => set({ embroideryOpacity: opacity }),
-  setEmbroideryColor: (color) => set({ embroideryColor: color }),
+  setEmbroideryColor: (color) => {
+    // Validate hex color format
+    if (color && typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color)) {
+      set({ embroideryColor: color });
+    } else {
+      console.warn('Invalid embroidery color provided:', color, 'Using default color');
+      set({ embroideryColor: '#ff69b4' });
+    }
+  },
   setEmbroideryStitchType: (type) => set({ embroideryStitchType: type }),
   setEmbroideryPatternDescription: (description) => set({ embroideryPatternDescription: description }),
   setEmbroideryAIEnabled: (enabled) => set({ embroideryAIEnabled: enabled }),
@@ -1050,7 +1062,7 @@ export const useApp = create<AppState>((set, get) => ({
   }
 }));
 
-export function App() {
+function App() {
   const composedCanvas = useApp(s => s.composedCanvas);
   const activeTool = useApp(s => s.activeTool);
   const drawingActive = ['brush','eraser','fill','picker','smudge','blur','select','transform','move','puffPrint'].includes(activeTool as any);
@@ -1192,3 +1204,5 @@ function CursorManager({ wrapRef, drawingActive }: { wrapRef: React.RefObject<HT
   
   return <CursorOverlay x={pos.x} y={pos.y} visible={visible} tool={tool as any} size={size} shape={shape} angle={angle} />;
 }
+
+export default App;

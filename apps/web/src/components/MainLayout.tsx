@@ -116,7 +116,7 @@ const GridToolbarControls = () => {
       </button>
 
       {/* Scale Controls */}
-      <div ref={scaleRef} style={{ position: 'relative', zIndex: 1 }}>
+      <div ref={scaleRef} style={{ position: 'relative', zIndex: 10003 }}>
         <button
           onClick={() => setShowScaleMenu(!showScaleMenu)}
           style={{
@@ -139,21 +139,65 @@ const GridToolbarControls = () => {
         </button>
         
         {showScaleMenu && (
-          <div className="dropdown-menu" style={{
-            position: 'absolute',
-            top: '100%',
-            left: '0',
-            marginTop: '4px',
-            background: 'linear-gradient(135deg, #1E293B 0%, #0F172A 100%)',
-            border: '1px solid #334155',
-            borderRadius: '8px',
-            padding: '12px',
-            minWidth: '200px',
-            zIndex: 99999999999,
-            boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
-            isolation: 'isolate',
-            willChange: 'transform'
-          }}>
+          <>
+            {/* Modal Backdrop */}
+            <div style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0, 0, 0, 0.7)',
+              zIndex: 99999999998,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }} onClick={() => setShowScaleMenu(false)}>
+              {/* Modal Content */}
+              <div style={{
+                background: 'linear-gradient(135deg, #1E293B 0%, #0F172A 100%)',
+                border: '1px solid #334155',
+                borderRadius: '12px',
+                padding: '24px',
+                minWidth: '350px',
+                maxWidth: '90vw',
+                maxHeight: '90vh',
+                overflowY: 'auto',
+                zIndex: 99999999999,
+                boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+                position: 'relative'
+              }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h4 style={{
+                margin: 0,
+                fontSize: '18px',
+                fontWeight: '600',
+                color: '#10B981'
+              }}>
+                Scale Settings
+              </h4>
+              <button
+                onClick={() => setShowScaleMenu(false)}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  border: 'none',
+                  borderRadius: '6px',
+                  color: '#E2E8F0',
+                  cursor: 'pointer',
+                  padding: '8px 12px',
+                  fontSize: '14px',
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                }}
+              >
+                ✕ Close
+              </button>
+            </div>
             <label style={{
               display: 'block',
               marginBottom: '8px',
@@ -226,12 +270,14 @@ const GridToolbarControls = () => {
                 200%
               </button>
             </div>
-          </div>
+              </div>
+            </div>
+          </>
         )}
       </div>
 
       {/* Grid Settings */}
-      <div ref={gridRef} style={{ position: 'relative', zIndex: 1 }}>
+      <div ref={gridRef} style={{ position: 'relative', zIndex: 10003 }}>
         <button
           onClick={() => setShowGridMenu(!showGridMenu)}
           style={{
@@ -254,29 +300,65 @@ const GridToolbarControls = () => {
         </button>
         
         {showGridMenu && (
-          <div className="dropdown-menu" style={{
-            position: 'absolute',
-            top: '100%',
-            left: '0',
-            marginTop: '4px',
-            background: 'linear-gradient(135deg, #1E293B 0%, #0F172A 100%)',
-            border: '1px solid #334155',
-            borderRadius: '8px',
-            padding: '16px',
-            minWidth: '250px',
-            zIndex: 99999999999,
-            boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
-            isolation: 'isolate',
-            willChange: 'transform'
-          }}>
-            <h4 style={{
-              margin: '0 0 12px 0',
-              fontSize: '14px',
-              fontWeight: '600',
-              color: '#10B981'
-            }}>
-              Grid Settings
-            </h4>
+          <>
+            {/* Modal Backdrop */}
+            <div style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0, 0, 0, 0.7)',
+              zIndex: 99999999998,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }} onClick={() => setShowGridMenu(false)}>
+              {/* Modal Content */}
+              <div style={{
+                background: 'linear-gradient(135deg, #1E293B 0%, #0F172A 100%)',
+                border: '1px solid #334155',
+                borderRadius: '12px',
+                padding: '24px',
+                minWidth: '400px',
+                maxWidth: '90vw',
+                maxHeight: '90vh',
+                overflowY: 'auto',
+                zIndex: 99999999999,
+                boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+                position: 'relative'
+              }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h4 style={{
+                margin: 0,
+                fontSize: '18px',
+                fontWeight: '600',
+                color: '#10B981'
+              }}>
+                Grid Settings
+              </h4>
+              <button
+                onClick={() => setShowGridMenu(false)}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  border: 'none',
+                  borderRadius: '6px',
+                  color: '#E2E8F0',
+                  cursor: 'pointer',
+                  padding: '8px 12px',
+                  fontSize: '14px',
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                }}
+              >
+                ✕ Close
+              </button>
+            </div>
             
             {/* Grid Size */}
             <div style={{ marginBottom: '12px' }}>
@@ -391,7 +473,9 @@ const GridToolbarControls = () => {
                 }}
               />
             </div>
-          </div>
+              </div>
+            </div>
+          </>
         )}
       </div>
     </div>
@@ -413,6 +497,8 @@ export function MainLayout({ children }: MainLayoutProps) {
   const setActiveTool = useApp(s => s.setActiveTool);
   const vectorMode = useApp(s => s.vectorMode);
   const setVectorMode = useApp(s => s.setVectorMode);
+  const showAnchorPoints = useApp(s => s.showAnchorPoints);
+  const setShowAnchorPoints = useApp(s => s.setShowAnchorPoints);
   
   // Vector toolbar state
   const [showVectorToolbar, setShowVectorToolbar] = useState(false);
@@ -508,7 +594,7 @@ export function MainLayout({ children }: MainLayoutProps) {
             alignItems: 'center',
             padding: '0 16px',
             gap: '16px',
-            zIndex: 1000,
+            zIndex: 10000,
             position: 'relative'
           }}>
           {/* Panel Toggle Buttons */}
@@ -708,13 +794,17 @@ export function MainLayout({ children }: MainLayoutProps) {
         </div>
         )}
 
-        {/* Vector Tools Toggle Button - Always visible */}
+        {/* Vector Tools and Anchor Points Toggle Buttons - Always visible */}
         <div style={{
           position: 'fixed',
           top: '10px',
           right: '10px',
-          zIndex: 1001
+          zIndex: 10001,
+          display: 'flex',
+          gap: '10px',
+          flexDirection: 'column'
         }}>
+          {/* Vector Tools Button */}
           <button
             onClick={() => {
               console.log('🎨 Vector Tools button clicked - toggling vectorMode');
@@ -750,6 +840,43 @@ export function MainLayout({ children }: MainLayoutProps) {
           >
             <span style={{ fontSize: '18px' }}>🎨</span>
             <span>{vectorMode ? 'Exit Vector' : 'Vector Tools'}</span>
+          </button>
+
+          {/* Anchor Points Toggle Button */}
+          <button
+            onClick={() => {
+              console.log('🎯 Anchor Points toggle clicked - toggling showAnchorPoints');
+              setShowAnchorPoints(!showAnchorPoints);
+              console.log('🎯 Show anchor points set to:', !showAnchorPoints);
+            }}
+            style={{
+              background: showAnchorPoints ? 'rgb(34, 197, 94)' : 'rgba(34, 197, 94, 0.1)',
+              border: '1px solid rgba(34, 197, 94, 0.3)',
+              borderRadius: '8px',
+              padding: '12px 16px',
+              fontSize: '14px',
+              fontWeight: '600',
+              color: 'white',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              transition: 'all 0.3s ease',
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+              backdropFilter: 'blur(10px)'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'translateY(-2px)';
+              e.currentTarget.style.boxShadow = '0 6px 20px rgba(34, 197, 94, 0.4)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)';
+            }}
+            title={showAnchorPoints ? "Hide Anchor Points" : "Show Anchor Points"}
+          >
+            <span style={{ fontSize: '18px' }}>🎯</span>
+            <span>{showAnchorPoints ? 'Hide Anchors' : 'Show Anchors'}</span>
           </button>
         </div>
 

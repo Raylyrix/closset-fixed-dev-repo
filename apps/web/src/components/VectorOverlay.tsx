@@ -190,10 +190,10 @@ export function VectorOverlay() {
       const st = vectorStore.getState();
       if (!st.currentPath){
         const path = { id: `path_${Date.now()}`, points:[{ x: pos.x, y: pos.y, type:'corner' as const }], closed:false, fill:true, stroke:true, fillColor:'#ffffff', strokeColor:'#000000', strokeWidth:2 };
-        vectorStore.set('currentPath', path);
+        vectorStore.setState({ currentPath: path });
       } else {
         const cp = { ...st.currentPath, points: [...st.currentPath.points, { x: pos.x, y: pos.y, type:'corner' as const }] };
-        vectorStore.set('currentPath', cp);
+        vectorStore.setState({ currentPath: cp });
       }
       return;
     }
@@ -201,7 +201,7 @@ export function VectorOverlay() {
     const st = vectorStore.getState();
     const clicked = [...st.shapes].reverse().find(s => pos.x>=s.bounds.x && pos.x<=s.bounds.x+s.bounds.width && pos.y>=s.bounds.y && pos.y<=s.bounds.y+s.bounds.height);
     if (clicked){
-      vectorStore.set('selected', [clicked.id]);
+      vectorStore.setState({ selected: [clicked.id] });
       const idx = hitPoint(pos, clicked);
       if (idx !== null) {
         draggingPointRef.current = { shapeId: clicked.id, index: idx };
@@ -209,7 +209,7 @@ export function VectorOverlay() {
         draggingBoundsRef.current = { shapeId: clicked.id, startX: pos.x, startY: pos.y, startBounds: { ...clicked.bounds } };
       }
     } else {
-      vectorStore.set('selected', []);
+      vectorStore.setState({ selected: [] });
     }
   };
 
@@ -229,7 +229,7 @@ export function VectorOverlay() {
         const b = boundsFromPoints(pts);
         return { ...s, path, bounds: b };
       });
-      vectorStore.set('shapes', shapesUpd);
+      vectorStore.setState({ shapes: shapesUpd });
     } else if (draggingBoundsRef.current){
       const { shapeId, startX, startY, startBounds } = draggingBoundsRef.current;
       const dx = pos.x - startX; const dy = pos.y - startY;
@@ -242,7 +242,7 @@ export function VectorOverlay() {
         const path = { ...s.path, points: pts };
         return { ...s, path, bounds: boundsFromPoints(pts) };
       });
-      vectorStore.set('shapes', shapesUpd);
+      vectorStore.setState({ shapes: shapesUpd });
     }
   };
 

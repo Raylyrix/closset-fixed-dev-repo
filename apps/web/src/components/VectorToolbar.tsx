@@ -74,7 +74,7 @@ const VectorToolbar: React.FC<VectorToolbarProps> = ({ isVisible, onClose }) => 
   const handleVectorToolSelect = (toolId: string) => {
     setSelectedVectorTool(toolId);
     // Update the vector store with the selected tool
-    vectorStore.set('tool', toolId as any);
+    vectorStore.setState({ tool: toolId as any });
     console.log(`🎨 Vector tool selected: ${toolId}`);
   };
 

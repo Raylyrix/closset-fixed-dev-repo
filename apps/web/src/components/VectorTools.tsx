@@ -173,7 +173,7 @@ export function VectorTools({ active }: VectorToolsProps) {
     };
 
     // Update vector store
-    vectorStore.set('currentPath', newPath);
+    vectorStore.setState({ currentPath: newPath });
     console.log('VectorTools: Created new path:', newPath.id);
     return newPath;
   }, [defaultFillColor, defaultFillType, defaultGradient, defaultStrokeColor, defaultStrokeWidth, defaultStrokeEnabled, defaultFillOpacity, defaultStrokeOpacity, defaultStrokeJoin, defaultStrokeCap, imageFillState]);
@@ -192,7 +192,7 @@ export function VectorTools({ active }: VectorToolsProps) {
       points: [...currentPath.points, point]
     };
 
-    vectorStore.set('currentPath', updatedPath);
+    vectorStore.setState({ currentPath: updatedPath });
   }, [currentPath]);
 
   // Close current path
@@ -256,7 +256,7 @@ export function VectorTools({ active }: VectorToolsProps) {
         return shape;
       });
       
-      vectorStore.set('shapes', updatedShapes);
+      vectorStore.setState({ shapes: updatedShapes });
       console.log('Applied settings to selected shapes:', selectedShapes.length);
     }
     
@@ -276,7 +276,7 @@ export function VectorTools({ active }: VectorToolsProps) {
         strokeJoin: defaultStrokeJoin,
         strokeCap: defaultStrokeCap
       };
-      vectorStore.set('currentPath', updatedCurrentPath);
+      vectorStore.setState({ currentPath: updatedCurrentPath });
       console.log('Updated current path with new settings');
     }
   }, [selectedShapes, defaultFillColor, defaultStrokeColor, defaultStrokeWidth, defaultFillType, defaultStrokeEnabled, defaultFillOpacity, defaultStrokeOpacity, defaultGradient, defaultStrokeJoin, defaultStrokeCap]);
@@ -703,7 +703,7 @@ export function VectorTools({ active }: VectorToolsProps) {
         strokeJoin: defaultStrokeJoin,
         strokeCap: defaultStrokeCap
       };
-      vectorStore.set('currentPath', updatedCurrentPath);
+      vectorStore.setState({ currentPath: updatedCurrentPath });
       
       // Trigger re-render by calling the 3D canvas render function
       // This will update the vector rendering on the 3D model
@@ -752,7 +752,7 @@ export function VectorTools({ active }: VectorToolsProps) {
               key={tool}
               className={`btn ${vectorTool === tool ? 'active' : ''}`}
               onClick={() => {
-                vectorStore.set('tool', tool);
+                vectorStore.setState({ tool: tool });
               }}
               style={{
                 padding: '6px 12px',
