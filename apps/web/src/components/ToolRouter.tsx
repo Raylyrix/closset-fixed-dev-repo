@@ -17,6 +17,7 @@ import { MeshDeformationTool } from './MeshDeformationTool';
 import { ProceduralGenerator } from './ProceduralGenerator';
 import { ThreeDPaintingTool } from './3DPaintingTool';
 import { SmartFillTool } from './SmartFillTool';
+import AdvancedEmbroideryTool from './AdvancedEmbroideryTool';
 
 interface ToolRouterProps {
   active: boolean;
@@ -60,7 +61,7 @@ export function ToolRouter({ active }: ToolRouterProps) {
     // Textile Design
     'puffPrint': null, // Handled by existing PuffPrintTool
     'patternMaker': PatternMaker,
-    'embroidery': null, // Handled by RightPanel sidebar
+    'embroidery': AdvancedEmbroideryTool, // Advanced 4K HD embroidery tool
 
     // AI & Automation
     'aiAssistant': AIDesignAssistant,
