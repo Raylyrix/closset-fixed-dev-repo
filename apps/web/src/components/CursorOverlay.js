@@ -7,8 +7,7 @@ export const CursorOverlay = memo(function CursorOverlay({ x, y, visible, tool, 
     if (!drawing)
         return null;
     const diameter = Math.max(6, Math.min(256, size));
-    // Use crosshair for vector tools and embroidery for better precision
-    const isCircle = (tool === 'brush' || tool === 'eraser' || tool === 'smudge' || tool === 'blur' || tool === 'puffPrint' || tool === 'line' || tool === 'rect' || tool === 'ellipse' || tool === 'gradient') && shape !== 'square' && tool !== 'embroidery';
+    const isCircle = (tool === 'brush' || tool === 'eraser' || tool === 'smudge' || tool === 'blur' || tool === 'puffPrint' || tool === 'line' || tool === 'rect' || tool === 'ellipse' || tool === 'gradient' || tool === 'embroidery') && shape !== 'square';
     const border = (tool === 'eraser' ? '1px dashed rgba(255,255,255,0.95)'
         : tool === 'smudge' ? '2px double rgba(147,197,253,0.9)'
             : tool === 'blur' ? '1px dotted rgba(250,204,21,0.9)'
@@ -49,5 +48,5 @@ export const CursorOverlay = memo(function CursorOverlay({ x, y, visible, tool, 
                     height: diameter,
                     transform: `translate(${x - diameter / 2}px, ${y - diameter / 2}px) rotate(${angle}rad)`,
                     border
-                } })) : (_jsxs("div", { className: "cursor-crosshair", style: { transform: `translate(${x}px, ${y}px)` }, children: [_jsx("div", { className: "ch h" }), _jsx("div", { className: "ch v" }), _jsx("div", { className: "ch center" })] }))), icon] }));
+                } })) : (_jsxs("div", { className: "cursor-crosshair", style: { transform: `translate(${x}px, ${y}px)` }, children: [_jsx("div", { className: "ch h" }), _jsx("div", { className: "ch v" })] }))), icon] }));
 });

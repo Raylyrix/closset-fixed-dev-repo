@@ -13,8 +13,17 @@ export function LeftPanel() {
   const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
-    useApp.getState().composeLayers();
-  }, [layers.length]);
+    // Only compose layers if we have layers and a composed canvas
+    if (layers.length > 0) {
+      if (composedCanvas) {
+        useApp.getState().composeLayers();
+      } else {
+        // Initialize composed canvas if missing
+        console.log('LeftPanel: Initializing composed canvas');
+        useApp.getState().initCanvases(2048, 2048);
+      }
+    }
+  }, [layers.length, composedCanvas]);
 
   const onDownload = async () => {
     if (!composedCanvas) return;

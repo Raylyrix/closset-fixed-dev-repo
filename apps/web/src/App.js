@@ -12,6 +12,7 @@ import { BackgroundScene } from './components/BackgroundScene';
 import { CursorOverlay } from './components/CursorOverlay';
 import { MainLayout } from './components/MainLayout';
 import { ToolRouter } from './components/ToolRouter';
+import { handleRenderingError, handleCanvasError } from './utils/CentralizedErrorHandler';
 export const useApp = create((set, get) => ({
     // Default state
     activeTool: 'brush',
@@ -332,10 +333,16 @@ export const useApp = create((set, get) => ({
     },
     composeLayers: () => {
         try {
-            const { layers, composedCanvas, decals, textElements, activeLayerId, baseTexture, activeTool } = get();
+            let { layers, composedCanvas, decals, textElements, activeLayerId, baseTexture, activeTool } = get();
             if (!composedCanvas) {
-                console.warn('No composed canvas available for layer composition');
-                return;
+                console.warn('No composed canvas available for layer composition - creating one');
+                // Initialize composed canvas if it doesn't exist
+                const newComposedCanvas = document.createElement('canvas');
+                newComposedCanvas.width = 4096;
+                newComposedCanvas.height = 4096;
+                useApp.setState({ composedCanvas: newComposedCanvas });
+                // Update the local variable to use the new canvas
+                composedCanvas = newComposedCanvas;
             }
             console.log('🎨 Composing layers', {
                 layersCount: layers.length,
@@ -494,7 +501,7 @@ export const useApp = create((set, get) => ({
             console.log('🎨 Layer composition complete', { version: get().composedVersion });
         }
         catch (error) {
-            console.error('🎨 Error in composeLayers:', error);
+            handleCanvasError(error, { component: 'App', function: 'composeLayers' });
         }
     },
     commit: () => {
@@ -516,7 +523,7 @@ export const useApp = create((set, get) => ({
             }
         }
         catch (error) {
-            console.error('Error in forceRerender:', error);
+            handleRenderingError(error, { component: 'App', function: 'forceRerender' });
         }
     },
     setBaseTexture: (texture) => set({ baseTexture: texture }),

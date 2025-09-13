@@ -161,20 +161,38 @@ class CrossStitchRenderer {
         const totalLength = this.calculatePathLength(points);
         const stitchSpacing = Math.max(4, config.thickness * 1.2);
         const totalStitches = Math.max(1, Math.ceil(totalLength / stitchSpacing));
-        // Distribute stitches along path
-        let currentDistance = 0;
-        let stitchIndex = 0;
-        for (let i = 0; i < points.length - 1; i++) {
-            const point = points[i];
-            const nextPoint = points[i + 1];
-            const segmentLength = this.calculateDistance(point, nextPoint);
-            const segmentStitches = Math.ceil((segmentLength / totalLength) * totalStitches);
-            for (let j = 0; j < segmentStitches; j++) {
-                const t = j / segmentStitches;
-                const stitchX = point.x + (nextPoint.x - point.x) * t;
-                const stitchY = point.y + (nextPoint.y - point.y) * t;
-                this.drawCrossStitch(ctx, stitchX, stitchY, config, stitchIndex);
-                stitchIndex++;
+        // IMPROVED: Ensure all points are connected when connectAllPoints is true
+        if (options.connectAllPoints) {
+            // Render stitches between every pair of consecutive points
+            for (let i = 0; i < points.length - 1; i++) {
+                const point = points[i];
+                const nextPoint = points[i + 1];
+                const segmentLength = this.calculateDistance(point, nextPoint);
+                const segmentStitches = Math.max(1, Math.ceil(segmentLength / stitchSpacing));
+                for (let j = 0; j < segmentStitches; j++) {
+                    const t = j / segmentStitches;
+                    const stitchX = point.x + (nextPoint.x - point.x) * t;
+                    const stitchY = point.y + (nextPoint.y - point.y) * t;
+                    this.drawCrossStitch(ctx, stitchX, stitchY, config, i * 100 + j);
+                }
+            }
+        }
+        else {
+            // Original distribution logic
+            let currentDistance = 0;
+            let stitchIndex = 0;
+            for (let i = 0; i < points.length - 1; i++) {
+                const point = points[i];
+                const nextPoint = points[i + 1];
+                const segmentLength = this.calculateDistance(point, nextPoint);
+                const segmentStitches = Math.ceil((segmentLength / totalLength) * totalStitches);
+                for (let j = 0; j < segmentStitches; j++) {
+                    const t = j / segmentStitches;
+                    const stitchX = point.x + (nextPoint.x - point.x) * t;
+                    const stitchY = point.y + (nextPoint.y - point.y) * t;
+                    this.drawCrossStitch(ctx, stitchX, stitchY, config, stitchIndex);
+                    stitchIndex++;
+                }
             }
         }
         ctx.restore();
@@ -336,21 +354,49 @@ class ChainStitchRenderer {
         ctx.lineWidth = config.thickness;
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
-        // Draw chain loops
-        for (let i = 0; i < points.length - 1; i++) {
-            const current = points[i];
-            const next = points[i + 1];
-            // Calculate chain loop
-            const dx = next.x - current.x;
-            const dy = next.y - current.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-            const loopSize = Math.min(distance * 0.3, config.thickness * 2);
-            const midX = (current.x + next.x) / 2;
-            const midY = (current.y + next.y) / 2;
-            // Draw chain loop
-            ctx.beginPath();
-            ctx.arc(midX, midY, loopSize / 2, 0, Math.PI * 2);
-            ctx.stroke();
+        // IMPROVED: Ensure all points are connected when connectAllPoints is true
+        if (options.connectAllPoints) {
+            // Draw chain loops between every pair of consecutive points
+            for (let i = 0; i < points.length - 1; i++) {
+                const current = points[i];
+                const next = points[i + 1];
+                // Calculate chain loop
+                const dx = next.x - current.x;
+                const dy = next.y - current.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                const loopSize = Math.min(distance * 0.3, config.thickness * 2);
+                const midX = (current.x + next.x) / 2;
+                const midY = (current.y + next.y) / 2;
+                // Draw chain loop
+                ctx.beginPath();
+                ctx.arc(midX, midY, loopSize / 2, 0, Math.PI * 2);
+                ctx.stroke();
+                // Draw connecting line if distance is significant
+                if (distance > config.thickness) {
+                    ctx.beginPath();
+                    ctx.moveTo(current.x, current.y);
+                    ctx.lineTo(next.x, next.y);
+                    ctx.stroke();
+                }
+            }
+        }
+        else {
+            // Original chain loop logic
+            for (let i = 0; i < points.length - 1; i++) {
+                const current = points[i];
+                const next = points[i + 1];
+                // Calculate chain loop
+                const dx = next.x - current.x;
+                const dy = next.y - current.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                const loopSize = Math.min(distance * 0.3, config.thickness * 2);
+                const midX = (current.x + next.x) / 2;
+                const midY = (current.y + next.y) / 2;
+                // Draw chain loop
+                ctx.beginPath();
+                ctx.arc(midX, midY, loopSize / 2, 0, Math.PI * 2);
+                ctx.stroke();
+            }
         }
         ctx.restore();
     }

@@ -102,7 +102,6 @@ const VectorToolbar = ({ isVisible, onClose }) => {
                                         .filter(tool => tool.category === category)
                                         .map((tool) => (_jsxs("button", { onClick: () => handleVectorToolSelect(tool.id), style: {
                                             padding: '6px 12px',
-                                            border: 'none',
                                             borderRadius: '6px',
                                             background: selectedVectorTool === tool.id ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.1)',
                                             color: 'white',

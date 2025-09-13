@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../App';
+import { handleNetworkError, ErrorCategory, ErrorSeverity } from '../utils/CentralizedErrorHandler';
 
 interface BackgroundScene {
   id: string;
@@ -60,13 +61,21 @@ export const BackgroundManager: React.FC = () => {
 
   const fetchCustomScenes = async () => {
     try {
-      const response = await fetch('/api/backgrounds');
+      const response = await fetch('http://localhost:4000/api/backgrounds');
       if (response.ok) {
         const customScenes = await response.json();
         setScenes([...defaultScenes, ...customScenes]);
+      } else {
+        handleNetworkError(
+          new Error(`Failed to fetch backgrounds: ${response.status}`),
+          { component: 'BackgroundManager', function: 'fetchCustomScenes' }
+        );
       }
     } catch (err) {
-      // Console log removed
+      handleNetworkError(
+        err as Error,
+        { component: 'BackgroundManager', function: 'fetchCustomScenes' }
+      );
     }
   };
 
@@ -87,7 +96,7 @@ export const BackgroundManager: React.FC = () => {
       const formData = new FormData();
       formData.append('background', file);
 
-      const response = await fetch('/api/backgrounds/upload', {
+      const response = await fetch('http://localhost:4000/api/backgrounds/upload', {
         method: 'POST',
         body: formData
       });

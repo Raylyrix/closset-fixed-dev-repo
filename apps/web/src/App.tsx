@@ -18,6 +18,7 @@ import { CursorOverlay } from './components/CursorOverlay';
 import { MainLayout } from './components/MainLayout';
 import { ToolRouter } from './components/ToolRouter';
 import { EmbroideryStitch, EmbroideryPattern } from './services/embroideryService';
+import { handleRenderingError, handleCanvasError, ErrorCategory, ErrorSeverity } from './utils/CentralizedErrorHandler';
 
 type Tool =
   | 'brush' | 'eraser' | 'fill' | 'picker' | 'smudge' | 'blur' | 'select' | 'transform' | 'move' | 'text'
@@ -685,10 +686,16 @@ export const useApp = create<AppState>((set, get) => ({
 
   composeLayers: () => {
     try {
-      const { layers, composedCanvas, decals, textElements, activeLayerId, baseTexture, activeTool } = get();
+      let { layers, composedCanvas, decals, textElements, activeLayerId, baseTexture, activeTool } = get();
       if (!composedCanvas) {
-        console.warn('No composed canvas available for layer composition');
-        return;
+        console.warn('No composed canvas available for layer composition - creating one');
+        // Initialize composed canvas if it doesn't exist
+        const newComposedCanvas = document.createElement('canvas');
+        newComposedCanvas.width = 4096;
+        newComposedCanvas.height = 4096;
+        useApp.setState({ composedCanvas: newComposedCanvas });
+        // Update the local variable to use the new canvas
+        composedCanvas = newComposedCanvas;
       }
       
       console.log('🎨 Composing layers', {
@@ -861,7 +868,10 @@ export const useApp = create<AppState>((set, get) => ({
     set(state => ({ composedVersion: state.composedVersion + 1 }));
     console.log('🎨 Layer composition complete', { version: get().composedVersion });
     } catch (error) {
-      console.error('🎨 Error in composeLayers:', error);
+      handleCanvasError(
+        error as Error,
+        { component: 'App', function: 'composeLayers' }
+      );
     }
   },
 
@@ -882,7 +892,10 @@ export const useApp = create<AppState>((set, get) => ({
         get().composeLayers();
       }
     } catch (error) {
-      console.error('Error in forceRerender:', error);
+      handleRenderingError(
+        error as Error,
+        { component: 'App', function: 'forceRerender' }
+      );
     }
   },
 

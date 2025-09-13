@@ -1,157 +1,197 @@
 /**
- * 🎯 Performance Monitor
- * 
- * Tracks rendering, memory, and user interactions
+ * Performance Monitoring System
+ * Tracks and analyzes application performance metrics
  */
 
-export interface PerformanceMetrics {
-  renderTime: number;
-  frameRate: number;
-  memoryUsage: number;
-  interactionLatency: number;
-  toolResponseTime: number;
+export interface PerformanceMetric {
+  id: string;
+  name: string;
+  value: number;
+  unit: string;
   timestamp: number;
+  category: string;
+  component?: string;
 }
 
-export class PerformanceMonitor {
-  private static instance: PerformanceMonitor;
-  private metrics: PerformanceMetrics;
-  private isMonitoring: boolean = false;
-  private frameCount: number = 0;
-  private lastFrameTime: number = 0;
-  private frameTimes: number[] = [];
-  
-  private constructor() {
-    this.metrics = {
-      renderTime: 0,
-      frameRate: 0,
-      memoryUsage: 0,
-      interactionLatency: 0,
-      toolResponseTime: 0,
-      timestamp: Date.now()
-    };
-  }
-  
-  static getInstance(): PerformanceMonitor {
-    if (!PerformanceMonitor.instance) {
-      PerformanceMonitor.instance = new PerformanceMonitor();
-    }
-    return PerformanceMonitor.instance;
-  }
-  
+export interface PerformanceStats {
+  average: number;
+  min: number;
+  max: number;
+  count: number;
+}
+
+class PerformanceMonitor {
+  private metrics: PerformanceMetric[] = [];
+  private maxMetrics = 1000;
+  private isMonitoring = false;
+
+  /**
+   * Start performance monitoring
+   */
   startMonitoring(): void {
     if (this.isMonitoring) return;
-    
     this.isMonitoring = true;
-    this.lastFrameTime = performance.now();
-    this.trackFrameRate();
+    console.log('🚀 Performance monitoring started');
   }
-  
+
+  /**
+   * Stop performance monitoring
+   */
   stopMonitoring(): void {
     this.isMonitoring = false;
+    console.log('⏹️ Performance monitoring stopped');
   }
-  
-  private trackFrameRate(): void {
-    const trackFrame = (currentTime: number) => {
-      if (this.isMonitoring) {
-        const deltaTime = currentTime - this.lastFrameTime;
-        this.lastFrameTime = currentTime;
-        
-        this.frameTimes.push(deltaTime);
-        if (this.frameTimes.length > 60) {
-          this.frameTimes.shift();
-        }
-        
-        this.frameCount++;
-        
-        if (this.frameTimes.length > 0) {
-          const averageFrameTime = this.frameTimes.reduce((a, b) => a + b, 0) / this.frameTimes.length;
-          this.metrics.frameRate = 1000 / averageFrameTime;
-        }
-        
-        this.updateMemoryUsage();
-        this.metrics.timestamp = currentTime;
-        
-        requestAnimationFrame(trackFrame);
-      }
+
+  /**
+   * Track a custom metric
+   */
+  trackMetric(
+    name: string,
+    value: number,
+    unit: string = 'ms',
+    category: string = 'custom',
+    component?: string
+  ): void {
+    const metric: PerformanceMetric = {
+      id: this.generateMetricId(),
+      name,
+      value,
+      unit,
+      timestamp: Date.now(),
+      category,
+      component
     };
-    
-    requestAnimationFrame(trackFrame);
+
+    this.metrics.push(metric);
+    this.cleanupOldMetrics();
   }
-  
-  private updateMemoryUsage(): void {
+
+  /**
+   * Track render time for a component
+   */
+  trackRenderTime(component: string, renderTime: number): void {
+    this.trackMetric('render_time', renderTime, 'ms', 'rendering', component);
+  }
+
+  /**
+   * Track memory usage
+   */
+  trackMemoryUsage(component?: string): void {
     if ('memory' in performance) {
       const memory = (performance as any).memory;
-      this.metrics.memoryUsage = memory.usedJSHeapSize;
-    }
-  }
-  
-  trackRenderTime(component: string, renderFn: () => void): void {
-    const startTime = performance.now();
-    
-    try {
-      renderFn();
-    } finally {
-      const endTime = performance.now();
-      this.metrics.renderTime = endTime - startTime;
-      
-      if (process.env.NODE_ENV === 'development' && this.metrics.renderTime > 16) {
-        console.warn(`Slow render in ${component}: ${this.metrics.renderTime.toFixed(2)}ms`);
+      if (memory) {
+        this.trackMetric('memory_used', memory.usedJSHeapSize, 'bytes', 'memory', component);
       }
     }
   }
-  
-  trackUserInteraction(interaction: string, startTime: number): void {
-    const endTime = performance.now();
-    this.metrics.interactionLatency = endTime - startTime;
+
+  /**
+   * Get performance statistics for a specific metric
+   */
+  getMetricStats(metricName: string, component?: string): PerformanceStats | null {
+    let filteredMetrics = this.metrics.filter(m => m.name === metricName);
     
-    if (process.env.NODE_ENV === 'development' && this.metrics.interactionLatency > 100) {
-      console.warn(`Slow interaction ${interaction}: ${this.metrics.interactionLatency.toFixed(2)}ms`);
+    if (component) {
+      filteredMetrics = filteredMetrics.filter(m => m.component === component);
+    }
+    
+    if (filteredMetrics.length === 0) return null;
+    
+    const values = filteredMetrics.map(m => m.value).sort((a, b) => a - b);
+    
+    return {
+      average: values.reduce((sum, val) => sum + val, 0) / values.length,
+      min: values[0],
+      max: values[values.length - 1],
+      count: values.length
+    };
+  }
+
+  /**
+   * Get all metrics
+   */
+  getAllMetrics(): PerformanceMetric[] {
+    return [...this.metrics];
+  }
+
+  /**
+   * Clear all metrics
+   */
+  clearMetrics(): void {
+    this.metrics = [];
+  }
+
+  /**
+   * Configure the performance monitor
+   */
+  configure(options: { maxMetrics?: number; enableMonitoring?: boolean }): void {
+    if (options.maxMetrics !== undefined) {
+      this.maxMetrics = options.maxMetrics;
+    }
+    if (options.enableMonitoring !== undefined) {
+      this.isMonitoring = options.enableMonitoring;
     }
   }
-  
-  trackToolResponse(tool: string, startTime: number): void {
-    const endTime = performance.now();
-    this.metrics.toolResponseTime = endTime - startTime;
-    
-    if (process.env.NODE_ENV === 'development' && this.metrics.toolResponseTime > 200) {
-      console.warn(`Slow tool response ${tool}: ${this.metrics.toolResponseTime.toFixed(2)}ms`);
+
+  /**
+   * Track a custom event
+   */
+  trackCustomEvent(eventName: string, data?: any): void {
+    this.trackMetric(`event_${eventName}`, 1, 'count', 'event', undefined);
+    if (data) {
+      console.log(`📊 Custom event: ${eventName}`, data);
     }
   }
-  
-  trackError(error: Error, context: string): void {
-    console.error(`Performance error in ${context}:`, error);
+
+  /**
+   * Track an error
+   */
+  trackError(error: Error, component: string, severity: string, context?: any): void {
+    this.trackMetric('error', 1, 'count', 'error', component);
+    console.error(`❌ Error in ${component} (${severity}):`, error.message, context);
   }
-  
-  getMetrics(): PerformanceMetrics {
-    return { ...this.metrics };
+
+  /**
+   * Subscribe to performance metrics
+   */
+  subscribe(callback: (metrics: any) => void): () => void {
+    // Simple implementation - in production, this would use a proper event system
+    const interval = setInterval(() => {
+      if (this.isMonitoring) {
+        callback({
+          fps: 60, // Placeholder
+          memoryUsage: (performance as any).memory?.usedJSHeapSize || 0,
+          renderTime: 0, // Placeholder
+          updateTime: 0 // Placeholder
+        });
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
   }
-  
-  getHealthScore(): number {
-    let score = 100;
-    
-    if (this.metrics.frameRate < 30) score -= 20;
-    if (this.metrics.renderTime > 16) score -= 15;
-    if (this.metrics.memoryUsage > 200 * 1024 * 1024) score -= 15;
-    if (this.metrics.interactionLatency > 100) score -= 10;
-    if (this.metrics.toolResponseTime > 200) score -= 10;
-    
-    return Math.max(0, Math.min(100, score));
+
+  private generateMetricId(): string {
+    return `metric_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  private cleanupOldMetrics(): void {
+    if (this.metrics.length > this.maxMetrics) {
+      this.metrics = this.metrics.slice(-this.maxMetrics);
+    }
   }
 }
 
-export const performanceMonitor = PerformanceMonitor.getInstance();
+// Export singleton instance
+export const performanceMonitor = new PerformanceMonitor();
 
-export const trackRenderTime = (component: string, renderFn: () => void) => 
-  performanceMonitor.trackRenderTime(component, renderFn);
+// Export convenience functions
+export const trackMetric = (name: string, value: number, unit?: string, category?: string, component?: string) =>
+  performanceMonitor.trackMetric(name, value, unit, category, component);
 
-export const trackUserInteraction = (interaction: string, startTime: number) => 
-  performanceMonitor.trackUserInteraction(interaction, startTime);
+export const trackRenderTime = (component: string, renderTime: number) =>
+  performanceMonitor.trackRenderTime(component, renderTime);
 
-export const trackToolResponse = (tool: string, startTime: number) => 
-  performanceMonitor.trackToolResponse(tool, startTime);
+export const trackMemoryUsage = (component?: string) =>
+  performanceMonitor.trackMemoryUsage(component);
 
-export const trackError = (error: Error, context: string) => 
-  performanceMonitor.trackError(error, context);
-
-export default PerformanceMonitor;
+export default performanceMonitor;

@@ -36,18 +36,6 @@ export class AdvancedHitDetector {
     detectHit(point, shapes, options) {
         const startTime = performance.now();
         try {
-            // Validate shapes parameter
-            if (!shapes || !Array.isArray(shapes)) {
-                console.warn('🎯 AdvancedHitDetector: Invalid shapes parameter in detectHit:', shapes);
-                return {
-                    type: 'none',
-                    distance: Infinity,
-                    point: point,
-                    data: null,
-                    visualFeedback: null
-                };
-            }
-            
             // Update tolerance based on zoom
             const effectiveTolerance = this.calculateEffectiveTolerance(options.tolerance, options.zoom);
             // Check cache first
@@ -91,10 +79,6 @@ export class AdvancedHitDetector {
      */
     generateHitAreas(shapes, tolerance) {
         const hitAreas = [];
-        if (!shapes || !Array.isArray(shapes)) {
-            console.warn('🎯 AdvancedHitDetector: Invalid shapes parameter:', shapes);
-            return hitAreas;
-        }
         shapes.forEach(shape => {
             // Generate anchor point hit areas
             shape.points.forEach((point, index) => {

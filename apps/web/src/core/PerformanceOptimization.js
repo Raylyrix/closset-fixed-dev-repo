@@ -71,7 +71,9 @@ export class PerformanceOptimizationManager {
             interactionLatency: this.measureInteractionLatency(),
             toolResponseTime: this.measureToolResponseTime(),
             previewQuality: this.measurePreviewQuality(),
-            userSatisfaction: this.measureUserSatisfaction()
+            userSatisfaction: this.measureUserSatisfaction(),
+            // Timestamp
+            timestamp: Date.now()
         };
         this.metrics = newMetrics;
         this.addToHistory(newMetrics);

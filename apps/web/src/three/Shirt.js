@@ -11,9 +11,6 @@ import { useApp } from '../App';
 import { Html } from '@react-three/drei';
 import { vectorStore } from '../vector/vectorState';
 import { renderStitchType } from '../utils/stitchRendering';
-import { performanceMonitor } from '../utils/PerformanceMonitor';
-import { enhancedVectorTools } from '../vector/EnhancedVectorTools';
-import { universalVectorRenderer } from '../core/UniversalVectorRenderer';
 import { logRenderingError } from '../utils/errorLogger';
 import { errorPrevention } from '../utils/errorPrevention';
 import { calculateAutoControlPoints, snapToGrid, snapToPoint } from '../utils/vectorMath';
@@ -65,8 +62,6 @@ export function Shirt() {
             setPreviewLine(null);
             // Clear any vector-specific state
             vectorStore.setState({ selected: [] });
-            // CRITICAL: Convert vector paths to embroidery stitches before clearing
-            convertVectorPathsToEmbroideryStitches();
             // CRITICAL: Clear anchor points from canvas immediately
             const layer = getActiveLayer();
             if (layer) {
@@ -249,12 +244,6 @@ export function Shirt() {
         let appliedCount = 0;
         modelScene.traverse((child) => {
             if (child.isMesh && child.material) {
-                // Skip test objects and anchor points - they shouldn't have textures applied
-                if (child.userData?.type === 'testAnchor' ||
-                    child.userData?.type === 'anchorPoint' ||
-                    child.name?.startsWith('testAnchor')) {
-                    return;
-                }
                 console.log('Found mesh:', child.name || 'unnamed', 'with material:', child.material);
                 if (Array.isArray(child.material)) {
                     // Handle multiple materials
@@ -354,13 +343,13 @@ export function Shirt() {
             if (!useApp.getState().vectorMode)
                 return;
             if (ev.key.toLowerCase() === 'p')
-                vectorStore.setState({ tool: 'pen' });
+                vectorStore.set('tool', 'pen');
             if (ev.key.toLowerCase() === 'v')
-                vectorStore.setState({ tool: 'pathSelection' });
+                vectorStore.set('tool', 'pathSelection');
             if (ev.key.toLowerCase() === 'c')
-                vectorStore.setState({ tool: 'convertAnchor' });
+                vectorStore.set('tool', 'convertAnchor');
             if (ev.key.toLowerCase() === 'u')
-                vectorStore.setState({ tool: 'curvature' });
+                vectorStore.set('tool', 'curvature');
             // Handle Delete key for selected anchor points
             if (ev.key === 'Delete' || ev.key === 'Backspace') {
                 console.log('🗑️ Delete key pressed, selectedAnchor:', selectedAnchor);
@@ -459,15 +448,7 @@ export function Shirt() {
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
     }, [selectedAnchor, composeLayers]);
-    const onPointerDown = async (e) => {
-        // Start performance tracking
-        performanceMonitor.startRenderTracking('Shirt.onPointerDown');
-        // Track user interaction
-        performanceMonitor.trackUserInteraction('pointer_down', 'shirt', {
-            activeTool,
-            vectorMode,
-            button: e.button
-        });
+    const onPointerDown = (e) => {
         // Reduced logging for performance
         if (process.env.NODE_ENV === 'development' && Math.random() < 0.1) {
             console.log('Shirt: onPointerDown called with activeTool:', activeTool, 'vectorMode:', vectorMode);
@@ -483,58 +464,10 @@ export function Shirt() {
             if (!uv || !layer)
                 return;
             const canvas = layer.canvas;
-            // Use precise coordinate conversion with validation for consistent accuracy
-            const validatedUV = validateAndCorrectCoordinates(uv, canvas);
-            const coords = uvToCanvasCoordinates(validatedUV, canvas);
-            const x = coords.x;
-            const y = coords.y;
+            const x = Math.floor(uv.x * canvas.width);
+            const y = Math.floor(uv.y * canvas.height);
             const st = vectorStore.getState();
             const tool = st.tool;
-            // Use enhanced vector tools
-            const result = enhancedVectorTools.handleMouseDown(e, { x, y }, st.shapes, st.currentPath);
-            if (result.success) {
-                console.log('🎯 Vector tool result:', result.message);
-                // Handle tool-specific actions
-                if (result.data) {
-                    switch (result.data.action) {
-                        case 'startPath':
-                            vectorStore.setState({ currentPath: result.data.path });
-                            break;
-                        case 'addPoint':
-                            vectorStore.setState({ currentPath: result.data.path });
-                            break;
-                        case 'selectShape':
-                            vectorStore.setState({ selected: [result.data.shapeId] });
-                            break;
-                        case 'addAnchor':
-                        case 'removeAnchor':
-                        case 'convertAnchor':
-                            // Update the shape in the store
-                            const updatedShapes = st.shapes.map(s => s.id === result.data.shapeId ? result.data.path : s);
-                            vectorStore.setState({ shapes: updatedShapes });
-                            break;
-                        case 'startCurvature':
-                            setCurvatureDragging(true);
-                            setCurvatureSegment({
-                                shapeId: result.data.shapeId,
-                                segmentIndex: result.data.segmentIndex,
-                                grabPoint: result.data.startPoint
-                            });
-                            break;
-                        case 'showPathOperations':
-                            // Show path operations menu
-                            console.log('Path operations for shape:', result.data.shapeId);
-                            break;
-                        case 'startShapeBuilder':
-                            // Start shape builder
-                            console.log('Starting shape builder at:', result.data.startPoint);
-                            break;
-                    }
-                }
-            }
-            else {
-                console.warn('🎯 Vector tool error:', result.error);
-            }
             // prevent camera controls and other handlers
             e.stopPropagation();
             try {
@@ -562,7 +495,7 @@ export function Shirt() {
                 }
                 // Check if clicking on existing anchor points of current path
                 if (st.currentPath && st.currentPath.points.length > 0) {
-                    const anchorIndex = await hitPoint({ x, y }, { path: { points: st.currentPath.points } });
+                    const anchorIndex = hitPoint({ x, y }, { path: { points: st.currentPath.points } });
                     console.log('🎯 Pen tool - Hit anchor point:', anchorIndex, 'at position:', x, y);
                     console.log('🎯 Pen tool - Current path points:', st.currentPath.points.map((p, i) => `[${i}]: (${p.x}, ${p.y})`));
                     if (anchorIndex !== null) {
@@ -605,14 +538,6 @@ export function Shirt() {
                         console.warn('🎯 Pen tool - Invalid coordinates for path creation:', { x, y, canvasWidth: canvas.width, canvasHeight: canvas.height });
                         return;
                     }
-                    // Check if this is a single click (not part of continuous drawing)
-                    const isSingleClick = !paintingActiveRef.current;
-                    if (isSingleClick) {
-                        console.log('🎯 Pen tool - Single click detected, creating anchor point');
-                        // Create a single anchor point for this click
-                        createSingleAnchorPoint({ x, y });
-                        return;
-                    }
                     // Apply snapping
                     let snappedPoint = { x, y };
                     if (snapToGridEnabled) {
@@ -647,22 +572,8 @@ export function Shirt() {
                             if (process.env.NODE_ENV === 'development') {
                                 console.log('🎯 Pen tool - Started new path with first point');
                             }
-                            // Force immediate rendering with throttling
-                            throttledRender(() => {
-                                renderVectorsWithAnchors();
-                                // CRITICAL FIX: Real-time stitch rendering for embroidery tools
-                                const appState = useApp.getState();
-                                if (isEmbroideryTool(appState.activeTool)) {
-                                    const layer = getActiveLayer();
-                                    if (layer) {
-                                        const ctx = layer.canvas.getContext('2d');
-                                        if (ctx) {
-                                            const stitchType = appState.embroideryStitchType || appState.activeTool;
-                                            renderRealTimeEmbroideryStitches(ctx, newPath, appState, stitchType);
-                                        }
-                                    }
-                                }
-                            }, 8); // 8ms for 120fps
+                            // Force immediate rendering
+                            renderVectorsWithAnchors();
                         }
                         catch (error) {
                             console.error('🎯 Pen tool - Error creating new path:', error);
@@ -700,23 +611,8 @@ export function Shirt() {
                             // Select the new point
                             setSelectedAnchor({ shapeId: 'current', pointIndex: st.currentPath.points.length });
                             console.log('🎯 Pen tool - Added point to existing path, total points:', st.currentPath.points.length + 1);
-                            // Force immediate rendering with throttling
-                            throttledRender(() => {
-                                renderVectorsWithAnchors();
-                                // CRITICAL FIX: Real-time stitch rendering for embroidery tools
-                                const appState = useApp.getState();
-                                if (isEmbroideryTool(appState.activeTool)) {
-                                    const layer = getActiveLayer();
-                                    if (layer) {
-                                        const ctx = layer.canvas.getContext('2d');
-                                        if (ctx) {
-                                            const stitchType = appState.embroideryStitchType || appState.activeTool;
-                                            const updatedPath = { ...st.currentPath, points: [...st.currentPath.points, newPoint] };
-                                            renderRealTimeEmbroideryStitches(ctx, updatedPath, appState, stitchType);
-                                        }
-                                    }
-                                }
-                            }, 8); // 8ms for 120fps
+                            // Force immediate rendering
+                            renderVectorsWithAnchors();
                         }
                         catch (error) {
                             console.error('🎯 Pen tool - Error adding point to path:', error);
@@ -729,7 +625,7 @@ export function Shirt() {
                 }
                 // Clear selection when clicking on empty space (not on anchor points)
                 if (st.currentPath && st.currentPath.points.length > 0) {
-                    const anchorIndex = await hitPoint({ x, y }, { path: { points: st.currentPath.points } });
+                    const anchorIndex = hitPoint({ x, y }, { path: { points: st.currentPath.points } });
                     if (anchorIndex === null) {
                         // Clicked on empty space, clear selection
                         setSelectedAnchor(null);
@@ -821,7 +717,7 @@ export function Shirt() {
                     vectorStore.setState({ selected: [clicked.id] });
                     // convert anchor toggles point type on click
                     if (tool === 'convertAnchor') {
-                        const idx = await hitPoint({ x, y }, clicked);
+                        const idx = hitPoint({ x, y }, clicked);
                         if (idx !== null) {
                             const shapesUpd = st.shapes.map(s => {
                                 if (s.id !== clicked.id)
@@ -855,7 +751,7 @@ export function Shirt() {
                         return;
                     }
                     // Check if clicking on anchor points
-                    const idx = await hitPoint({ x, y }, clicked);
+                    const idx = hitPoint({ x, y }, clicked);
                     if (idx !== null) {
                         if (isCtrlPressed) {
                             // Ctrl+click: Start dragging anchor point immediately
@@ -982,8 +878,6 @@ export function Shirt() {
         setControlsEnabled(false);
         paintingActiveRef.current = true;
         console.log('Shirt: Set paintingActiveRef to true for tool:', activeTool);
-        // End performance tracking
-        performanceMonitor.endRenderTracking('Shirt.onPointerDown');
     };
     const onDoubleClick = (e) => {
         if (activeTool !== 'vectorTools')
@@ -1075,7 +969,7 @@ export function Shirt() {
         selectDecal && selectDecal(null);
         useApp.getState().selectTextElement(null);
     }
-    const onPointerMove = async (e) => {
+    const onPointerMove = (e) => {
         // Reduced logging for performance
         if (process.env.NODE_ENV === 'development' && Math.random() < 0.05) {
             console.log('Shirt: onPointerMove called with activeTool:', activeTool, 'vectorMode:', vectorMode, 'paintingActive:', paintingActiveRef.current, 'buttons:', e.buttons);
@@ -1092,55 +986,9 @@ export function Shirt() {
             if (!uv || !layer)
                 return;
             const canvas = layer.canvas;
-            // Use precise coordinate conversion with validation for consistent accuracy
-            const validatedUV = validateAndCorrectCoordinates(uv, canvas);
-            const coords = uvToCanvasCoordinates(validatedUV, canvas);
-            const x = coords.x;
-            const y = coords.y;
+            const x = Math.floor(uv.x * canvas.width);
+            const y = Math.floor(uv.y * canvas.height);
             const st = vectorStore.getState();
-            // Use enhanced vector tools for mouse move
-            const result = enhancedVectorTools.handleMouseMove(e, { x, y }, st.shapes, st.currentPath);
-            if (result.success && result.data) {
-                switch (result.data.action) {
-                    case 'continuePath':
-                        // Handle continuous path drawing
-                        if (st.currentPath && e.buttons === 1) {
-                            const newPoint = {
-                                x: result.data.point.x,
-                                y: result.data.point.y,
-                                type: 'corner',
-                                selected: false
-                            };
-                            const updatedPath = {
-                                ...st.currentPath,
-                                points: [...st.currentPath.points, newPoint],
-                                bounds: {
-                                    x: Math.min(st.currentPath.bounds.x, newPoint.x),
-                                    y: Math.min(st.currentPath.bounds.y, newPoint.y),
-                                    width: Math.max(st.currentPath.bounds.width, newPoint.x - st.currentPath.bounds.x),
-                                    height: Math.max(st.currentPath.bounds.height, newPoint.y - st.currentPath.bounds.y)
-                                }
-                            };
-                            vectorStore.setState({ currentPath: updatedPath });
-                        }
-                        break;
-                    case 'updateSelection':
-                        // Handle selection box updates
-                        console.log('Updating selection box:', result.data.selectionBox);
-                        break;
-                    case 'adjustCurvature':
-                        // Handle curvature adjustments
-                        if (curvatureDragging && curvatureSegment) {
-                            // Update curvature based on mouse position
-                            console.log('Adjusting curvature:', result.data.point);
-                        }
-                        break;
-                    case 'buildShape':
-                        // Handle shape building
-                        console.log('Building shape:', result.data.point);
-                        break;
-                }
-            }
             // Pen tool continuous drawing with validation and debouncing
             if (st.tool === 'pen' && paintingActiveRef.current && st.currentPath && e.buttons === 1) {
                 console.log('🎯 Pen tool - Continuous drawing active, paintingActive:', paintingActiveRef.current, 'currentPath points:', st.currentPath.points.length, 'buttons:', e.buttons);
@@ -1209,43 +1057,23 @@ export function Shirt() {
                     const updatedPoints = [...targetPath.points];
                     const p1 = updatedPoints[curvatureSegment.segmentIndex];
                     const p2 = updatedPoints[curvatureSegment.segmentIndex + 1];
-                    // Use the new Bezier curve engine for proper control point calculation
-                    const BezierCurveEngine = (await import('../vector/BezierCurveEngine')).default;
-                    // Calculate control points with proper validation
-                    const controlPoints = BezierCurveEngine.calculateControlPoints(updatedPoints[curvatureSegment.segmentIndex - 1] || null, p1, p2, {
-                        maxControlLength: 50,
-                        minControlLength: 5,
-                        smoothness: 0.8,
-                        tension: Math.min(pullDistance / 50, 1.0) // Scale tension based on pull distance
-                    });
-                    if (controlPoints.isValid) {
-                        // Convert both points to smooth type if they aren't already
-                        p1.type = 'smooth';
-                        p2.type = 'smooth';
-                        // Apply validated control points
-                        p1.controlOut = {
-                            x: controlPoints.controlOut.x - p1.x,
-                            y: controlPoints.controlOut.y - p1.y
-                        };
-                        p2.controlIn = {
-                            x: controlPoints.controlIn.x - p2.x,
-                            y: controlPoints.controlIn.y - p2.y
-                        };
-                    }
-                    else {
-                        console.warn('Invalid control points calculated:', controlPoints.warnings);
-                        // Fallback to simple calculation
-                        const controlMagnitude = Math.min(pullDistance * 0.5, 25);
-                        const controlAngle = Math.atan2(pullY, pullX);
-                        p1.controlOut = {
-                            x: Math.cos(controlAngle) * controlMagnitude,
-                            y: Math.sin(controlAngle) * controlMagnitude
-                        };
-                        p2.controlIn = {
-                            x: -Math.cos(controlAngle) * controlMagnitude,
-                            y: -Math.sin(controlAngle) * controlMagnitude
-                        };
-                    }
+                    // Calculate control points based on the drag vector (from grabPoint to current mouse)
+                    const controlMagnitude = Math.min(pullDistance * 0.8, 30); // Adjust control handle length - reduced for tighter curves
+                    const controlAngle = Math.atan2(pullY, pullX); // Angle of the drag
+                    // Convert both points to smooth type if they aren't already
+                    p1.type = 'smooth';
+                    p2.type = 'smooth';
+                    // Calculate control handles for both points based on the drag direction
+                    // p1's controlOut should point in the drag direction
+                    p1.controlOut = {
+                        x: Math.cos(controlAngle) * controlMagnitude,
+                        y: Math.sin(controlAngle) * controlMagnitude
+                    };
+                    // p2's controlIn should point in the opposite direction
+                    p2.controlIn = {
+                        x: -Math.cos(controlAngle) * controlMagnitude,
+                        y: -Math.sin(controlAngle) * controlMagnitude
+                    };
                     // Update the path in the store
                     if (curvatureSegment.shapeId === 'current') {
                         const updatedPath = { ...targetPath, points: updatedPoints };
@@ -1516,7 +1344,6 @@ export function Shirt() {
                     type: 'path',
                     path: st.currentPath,
                     tool: appState.activeTool, // Store the tool used to create this path
-                    stitchType: appState.embroideryStitchType, // Store the stitch type used
                     bounds: {
                         x: Math.min(...st.currentPath.points.map(p => p.x)),
                         y: Math.min(...st.currentPath.points.map(p => p.y)),
@@ -1524,54 +1351,10 @@ export function Shirt() {
                         height: Math.max(...st.currentPath.points.map(p => p.y)) - Math.min(...st.currentPath.points.map(p => p.y))
                     }
                 };
-                // Save the current path before clearing it
-                const committedPath = st.currentPath;
                 vectorStore.setState({ shapes: [...st.shapes, newShape] });
                 vectorStore.setState({ currentPath: null });
                 setSelectedAnchor(null);
                 setPreviewLine(null); // Clear preview line
-                // CRITICAL: If this was an embroidery tool, immediately render the stitch
-                if (appState && (appState.activeTool === 'embroidery' || appState.activeTool === 'cross-stitch' ||
-                    appState.activeTool === 'satin' || appState.activeTool === 'chain' || appState.activeTool === 'fill')) {
-                    console.log(`🧵 Immediately rendering ${appState.activeTool} stitch for committed path`);
-                    // Check if committedPath exists before accessing it
-                    if (!committedPath || !committedPath.points) {
-                        console.warn('⚠️ committedPath is null or has no points, cannot render stitch');
-                        return;
-                    }
-                    // Convert the path to stitch points
-                    const stitchPoints = committedPath.points.map((point) => ({
-                        x: point.x,
-                        y: point.y,
-                        u: point.x / (appState.composedCanvas?.width || 2048),
-                        v: point.y / (appState.composedCanvas?.height || 2048)
-                    }));
-                    // Create stitch configuration
-                    const stitchType = (appState.activeTool === 'cross-stitch' || appState.activeTool === 'satin' ||
-                        appState.activeTool === 'chain' || appState.activeTool === 'fill')
-                        ? appState.activeTool
-                        : (appState.embroideryStitchType || 'satin');
-                    const stitchConfig = {
-                        type: stitchType,
-                        color: appState.embroideryColor || '#ff69b4',
-                        thickness: appState.embroideryThickness || 3,
-                        opacity: appState.embroideryOpacity || 1.0
-                    };
-                    // Render the stitch immediately
-                    const layer = getActiveLayer();
-                    if (layer) {
-                        const ctx = layer.canvas.getContext('2d');
-                        if (ctx) {
-                            try {
-                                renderStitchType(ctx, stitchPoints, stitchConfig);
-                                console.log(`✅ Successfully rendered ${stitchType} stitch`);
-                            }
-                            catch (error) {
-                                console.error('Error rendering immediate stitch:', error);
-                            }
-                        }
-                    }
-                }
                 console.log('✅ Path committed to shapes, total shapes:', st.shapes.length + 1);
             }
             paintingActiveRef.current = false;
@@ -2124,20 +1907,8 @@ export function Shirt() {
         const x = Math.floor(uv.x * canvas.width);
         const y = Math.floor(uv.y * canvas.height);
         const data = ctx.getImageData(x, y, 1, 1).data;
-        // Ensure valid RGB values and create proper hex color
-        const r = Math.max(0, Math.min(255, Math.round(data[0])));
-        const g = Math.max(0, Math.min(255, Math.round(data[1])));
-        const b = Math.max(0, Math.min(255, Math.round(data[2])));
-        // Create hex color with proper padding
-        const hex = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
-        // Validate the hex color before setting it
-        if (hex.length === 7 && /^#[0-9a-f]{6}$/i.test(hex)) {
-            setState({ brushColor: hex, activeTool: 'brush' });
-        }
-        else {
-            console.warn('Invalid color sampled from canvas:', hex);
-            setState({ brushColor: '#ff69b4', activeTool: 'brush' });
-        }
+        const hex = `#${[data[0], data[1], data[2]].map(v => v.toString(16).padStart(2, '0')).join('')}`;
+        setState({ brushColor: hex, activeTool: 'brush' });
     };
     const floodAtEvent = (e) => {
         const uv = e.uv;
@@ -2196,32 +1967,13 @@ export function Shirt() {
     }
     // ===== Vector helper functions (3D editing) =====
     function adjustBrightness(color, amount) {
-        // Validate input
-        if (!color || typeof color !== 'string') {
-            console.warn('Invalid color input in Shirt.tsx adjustBrightness:', color);
-            return '#ff69b4'; // Default fallback
-        }
-        // Ensure color starts with #
-        const cleanColor = color.startsWith('#') ? color : `#${color}`;
-        // Validate hex format (must be 6 characters after #)
-        if (cleanColor.length !== 7) {
-            console.warn('Invalid hex color format in Shirt.tsx adjustBrightness:', cleanColor);
-            return '#ff69b4'; // Default fallback
-        }
-        // Convert hex to RGB
-        const hex = cleanColor.replace('#', '');
+        const hex = color.replace('#', '');
         const r = parseInt(hex.substr(0, 2), 16);
         const g = parseInt(hex.substr(2, 2), 16);
         const b = parseInt(hex.substr(4, 2), 16);
-        // Validate parsed values
-        if (isNaN(r) || isNaN(g) || isNaN(b)) {
-            console.warn('Failed to parse hex color in Shirt.tsx adjustBrightness:', cleanColor);
-            return '#ff69b4'; // Default fallback
-        }
-        // CRITICAL FIX: Round all RGB values to integers before hex conversion
-        const newR = Math.round(Math.max(0, Math.min(255, r + amount)));
-        const newG = Math.round(Math.max(0, Math.min(255, g + amount)));
-        const newB = Math.round(Math.max(0, Math.min(255, b + amount)));
+        const newR = Math.max(0, Math.min(255, r + amount));
+        const newG = Math.max(0, Math.min(255, g + amount));
+        const newB = Math.max(0, Math.min(255, b + amount));
         return `#${newR.toString(16).padStart(2, '0')}${newG.toString(16).padStart(2, '0')}${newB.toString(16).padStart(2, '0')}`;
     }
     function drawBezier2D(ctx, points) {
@@ -2288,7 +2040,6 @@ export function Shirt() {
         }
     }
     function drawSelectionIndicators(ctx, points, shapeId) {
-        console.log(`🎯 drawSelectionIndicators called with ${points.length} points for shape ${shapeId}`);
         ctx.save();
         ctx.globalAlpha = 1.0;
         // Draw anchor points
@@ -2297,41 +2048,22 @@ export function Shirt() {
                 selectedAnchor.shapeId === shapeId &&
                 selectedAnchor.pointIndex === index;
             if (isSelected) {
-                // Selected anchor point - larger, red color with precise center
+                // Selected anchor point - larger, red color
                 ctx.fillStyle = '#FF3B30'; // Red for selected
                 ctx.strokeStyle = '#FFFFFF'; // White border
                 ctx.lineWidth = 2;
-                const size = 14;
-                // Draw main square
+                const size = 12;
                 ctx.fillRect(point.x - size / 2, point.y - size / 2, size, size);
                 ctx.strokeRect(point.x - size / 2, point.y - size / 2, size, size);
-                // Draw precise center cross
-                ctx.strokeStyle = '#FFFFFF';
-                ctx.lineWidth = 1;
-                ctx.beginPath();
-                ctx.moveTo(point.x - 3, point.y);
-                ctx.lineTo(point.x + 3, point.y);
-                ctx.moveTo(point.x, point.y - 3);
-                ctx.lineTo(point.x, point.y + 3);
-                ctx.stroke();
             }
             else {
-                // Regular anchor point - blue square with better visibility
+                // Regular anchor point - blue square
                 ctx.fillStyle = '#0078FF'; // Blue color like Photoshop
                 ctx.strokeStyle = '#FFFFFF'; // White border
-                ctx.lineWidth = 2; // Thicker border for better visibility
-                const size = 10; // Slightly larger for better visibility
+                ctx.lineWidth = 1;
+                const size = 8;
                 ctx.fillRect(point.x - size / 2, point.y - size / 2, size, size);
                 ctx.strokeRect(point.x - size / 2, point.y - size / 2, size, size);
-                // Add precise center dot for better accuracy
-                ctx.fillStyle = '#FFFFFF';
-                ctx.beginPath();
-                ctx.arc(point.x, point.y, 1.5, 0, 2 * Math.PI);
-                ctx.fill();
-                ctx.shadowColor = 'transparent';
-                ctx.shadowBlur = 0;
-                ctx.shadowOffsetX = 0;
-                ctx.shadowOffsetY = 0;
             }
             // Draw control handles for smooth/symmetric points
             if (point.controlIn) {
@@ -2386,15 +2118,12 @@ export function Shirt() {
         }).filter((p) => isFinite(p.u) && isFinite(p.v)); // Filter out invalid points
         // Apply the current tool's effects to the path
         // If the tool is embroidery (either current active tool or stored tool), use embroidery rendering
-        if (currentTool === 'embroidery' || currentTool === 'cross-stitch' || currentTool === 'satin' || currentTool === 'chain' || currentTool === 'fill') {
+        if (currentTool === 'embroidery') {
             // Embroidery tool - render actual stitch types based on embroideryStitchType
             const stitchThickness = appState.embroideryThickness || 3;
             const stitchColor = appState.embroideryColor || '#ff69b4';
             const stitchOpacity = appState.embroideryOpacity || 1.0;
-            // Use the specific tool type if it's a stitch type, otherwise use embroideryStitchType
-            const stitchType = (currentTool === 'cross-stitch' || currentTool === 'satin' || currentTool === 'chain' || currentTool === 'fill')
-                ? currentTool
-                : (appState.embroideryStitchType || 'satin');
+            const stitchType = appState.embroideryStitchType || 'satin';
             // Validate stitch parameters early
             if (!isFinite(stitchThickness) || stitchThickness <= 0 ||
                 !stitchColor || stitchColor === 'transparent') {
@@ -2558,290 +2287,6 @@ export function Shirt() {
         }
         ctx.restore();
     }
-    // CRITICAL: Convert vector paths to embroidery stitches
-    function convertVectorPathsToEmbroideryStitches() {
-        const st = vectorStore.getState();
-        const appState = useApp.getState();
-        console.log(`🔄 Converting ${st.shapes.length} vector shapes to embroidery stitches`);
-        if (st.shapes.length === 0) {
-            console.log('No vector shapes to convert');
-            return;
-        }
-        const newStitches = [];
-        st.shapes.forEach((shape) => {
-            if (!shape || !shape.path || !shape.path.points || shape.path.points.length < 2) {
-                console.warn('Invalid shape for conversion:', shape);
-                return;
-            }
-            // Get the tool used to create this shape (stored when shape was created)
-            const toolUsed = shape.tool || appState.activeTool;
-            // Only convert if it was created with an embroidery tool
-            if (isEmbroideryTool(toolUsed)) {
-                console.log(`Converting shape ${shape.id} created with tool: ${toolUsed}`);
-                // Convert vector points to stitch points
-                const stitchPoints = shape.path.points.map((point) => ({
-                    x: point.x,
-                    y: point.y,
-                    u: point.x / (appState.composedCanvas?.width || 2048),
-                    v: point.y / (appState.composedCanvas?.height || 2048)
-                }));
-                // Determine the correct stitch type
-                // Use the tool that was actually used to create the shape
-                let stitchType = 'satin'; // default
-                if (toolUsed === 'embroidery') {
-                    // For generic embroidery tool, check if we have stitch type info stored
-                    stitchType = shape.stitchType || appState.embroideryStitchType || 'satin';
-                }
-                else if (isEmbroideryTool(toolUsed)) {
-                    // If the tool itself is a stitch type, use it
-                    stitchType = toolUsed;
-                }
-                console.log(`🔧 Converting shape ${shape.id}: toolUsed=${toolUsed}, stitchType=${stitchType}`);
-                // Create embroidery stitch
-                const newStitch = {
-                    id: `stitch_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                    type: stitchType,
-                    points: stitchPoints,
-                    color: appState.embroideryColor || '#ff69b4',
-                    threadType: appState.embroideryThreadType || 'cotton',
-                    thickness: appState.embroideryThickness || 3,
-                    opacity: appState.embroideryOpacity || 1.0,
-                    pattern: shape.path.closed ? 'closed' : 'open',
-                    createdFromVector: true,
-                    originalShapeId: shape.id
-                };
-                newStitches.push(newStitch);
-                console.log(`Created stitch ${newStitch.id} with ${stitchPoints.length} points`);
-            }
-        });
-        if (newStitches.length > 0) {
-            // Add new stitches to the embroidery stitches array
-            const currentStitches = appState.embroideryStitches || [];
-            const updatedStitches = [...currentStitches, ...newStitches];
-            // Update the app state
-            useApp.setState({ embroideryStitches: updatedStitches });
-            console.log(`✅ Successfully converted ${newStitches.length} vector shapes to embroidery stitches`);
-            // Clear the vector shapes after conversion
-            vectorStore.setState({ shapes: [] });
-            vectorStore.setState({ currentPath: null });
-            // Trigger re-render
-            composeLayers();
-        }
-        else {
-            console.log('No embroidery-compatible vector shapes found for conversion');
-        }
-    }
-    // Performance optimization: Throttle rendering
-    let renderThrottleTimeout = null;
-    function throttledRender(callback, delay = 16) {
-        if (renderThrottleTimeout) {
-            clearTimeout(renderThrottleTimeout);
-        }
-        renderThrottleTimeout = setTimeout(() => {
-            callback();
-            renderThrottleTimeout = null;
-        }, delay);
-    }
-    // Helper functions for real-time rendering
-    function isEmbroideryTool(tool) {
-        return [
-            'embroidery',
-            'cross-stitch',
-            'crossstitch',
-            'satin',
-            'chain',
-            'fill',
-            'back-stitch',
-            'backstitch',
-            'french-knot',
-            'running-stitch',
-            'runningstitch',
-            'blanket-stitch',
-            'blanketstitch',
-            'feather-stitch',
-            'herringbone-stitch',
-            'herringbonestitch',
-            'bullion',
-            'feather',
-            'lazy-daisy',
-            'couching',
-            'appliqué',
-            'seed',
-            'stem',
-            'split',
-            'brick',
-            'long-short',
-            'fishbone',
-            'satin-ribbon',
-            'metallic',
-            'glow-thread',
-            'variegated',
-            'gradient'
-        ].includes(tool);
-    }
-    function renderRealTimeEmbroideryStitches(ctx, path, appState, stitchType) {
-        if (!ctx || !path.points || path.points.length < 2)
-            return;
-        try {
-            // Use the provided stitch type or get it from config
-            const stitchConfig = stitchType ? {
-                type: stitchType,
-                color: appState.embroideryColor || '#ff69b4',
-                thickness: appState.embroideryThickness || 3,
-                opacity: appState.embroideryOpacity || 1.0
-            } : getStitchConfig(appState.activeTool, appState);
-            
-            const stitchPoints = path.points.map((p) => ({ x: p.x, y: p.y }));
-            
-            // Reduced logging for performance
-            if (process.env.NODE_ENV === 'development' && Math.random() < 0.05) {
-                console.log(`🧵 REAL-TIME STITCHES: ${stitchConfig.type} with ${stitchPoints.length} points`);
-            }
-            
-            // IMPROVED: Ensure all points are connected with proper stitch rendering
-            // Don't limit points for better accuracy in vector mode
-            const maxPoints = appState.vectorMode ? 500 : 100; // Allow more points in vector mode
-            const optimizedPoints = stitchPoints.length > maxPoints
-                ? stitchPoints.filter((_, index) => index % Math.ceil(stitchPoints.length / maxPoints) === 0)
-                : stitchPoints;
-            
-            // Ensure we have at least 2 points for rendering
-            if (optimizedPoints.length < 2) {
-                console.warn('🧵 Not enough points for stitch rendering');
-                return;
-            }
-            
-            // Use universal renderer for better stitch type detection
-            const success = universalVectorRenderer.render(ctx, optimizedPoints, stitchType || appState.activeTool, stitchConfig, { 
-                realTime: true, 
-                quality: appState.vectorMode ? 'high' : 'medium',
-                connectAllPoints: true // Ensure all points are connected
-            });
-            
-            // Fallback to old renderer if universal renderer fails
-            if (!success) {
-                console.log(`🔄 Falling back to legacy renderer for ${stitchConfig.type}`);
-                renderStitchType(ctx, optimizedPoints, stitchConfig);
-            }
-            
-            // ADDITIONAL: Render connecting lines between all anchor points for better visibility
-            if (appState.vectorMode && optimizedPoints.length > 2) {
-                ctx.save();
-                ctx.strokeStyle = stitchConfig.color;
-                ctx.lineWidth = Math.max(1, stitchConfig.thickness * 0.3);
-                ctx.globalAlpha = stitchConfig.opacity * 0.5;
-                ctx.setLineDash([2, 2]);
-                ctx.lineCap = 'round';
-                ctx.lineJoin = 'round';
-                
-                ctx.beginPath();
-                ctx.moveTo(optimizedPoints[0].x, optimizedPoints[0].y);
-                for (let i = 1; i < optimizedPoints.length; i++) {
-                    ctx.lineTo(optimizedPoints[i].x, optimizedPoints[i].y);
-                }
-                ctx.stroke();
-                ctx.restore();
-            }
-        }
-        catch (error) {
-            console.error('Error rendering real-time embroidery stitches:', error);
-            renderFallbackLine(ctx, path.points);
-        }
-    }
-    function renderEmbroideryStitches(ctx, path, tool, appState, storedStitchType) {
-        if (!ctx || !path.points || path.points.length < 2)
-            return;
-        try {
-            const stitchConfig = getStitchConfig(tool, appState, storedStitchType);
-            console.log(`🧵 renderEmbroideryStitches: tool="${tool}", storedStitchType="${storedStitchType}", stitchConfig.type="${stitchConfig.type}", stitchConfig.color="${stitchConfig.color}"`);
-            const stitchPoints = path.points.map((p) => ({ x: p.x, y: p.y }));
-            // Use universal renderer for better stitch type detection
-            const success = universalVectorRenderer.render(ctx, stitchPoints, tool, stitchConfig, { realTime: false, quality: 'high' });
-            // Fallback to old renderer if universal renderer fails
-            if (!success) {
-                console.log(`🔄 Falling back to legacy renderer for ${stitchConfig.type}`);
-                renderStitchType(ctx, stitchPoints, stitchConfig);
-            }
-        }
-        catch (error) {
-            console.error('Error rendering embroidery stitches:', error);
-            renderFallbackLine(ctx, path.points);
-        }
-    }
-    function renderStandardVectorPath(ctx, path, appState) {
-        if (!ctx || !path.points || path.points.length < 2)
-            return;
-        ctx.save();
-        ctx.strokeStyle = appState.brushColor || '#000000';
-        ctx.lineWidth = appState.brushSize || 5;
-        ctx.globalAlpha = appState.brushOpacity || 1.0;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        ctx.beginPath();
-        ctx.moveTo(path.points[0].x, path.points[0].y);
-        for (let i = 1; i < path.points.length; i++) {
-            ctx.lineTo(path.points[i].x, path.points[i].y);
-        }
-        ctx.stroke();
-        ctx.restore();
-    }
-    function getStitchConfig(tool, appState, storedStitchType) {
-        // CRITICAL FIX: For existing shapes, prioritize stored stitch type
-        let stitchType = 'satin'; // default
-        // If we have a stored stitch type (for existing shapes), use it first
-        if (storedStitchType && isEmbroideryTool(storedStitchType)) {
-            stitchType = storedStitchType;
-            console.log(`🔧 getStitchConfig: Using stored stitch type: ${storedStitchType}`);
-        }
-        // For new shapes, check app state first
-        else if (appState.embroideryStitchType && isEmbroideryTool(appState.embroideryStitchType)) {
-            stitchType = appState.embroideryStitchType;
-            console.log(`🔧 getStitchConfig: Using app state stitch type: ${appState.embroideryStitchType}`);
-        }
-        // Then check if the tool itself is a stitch type
-        else if (isEmbroideryTool(tool)) {
-            stitchType = tool;
-            console.log(`🔧 getStitchConfig: Using tool as stitch type: ${tool}`);
-        }
-        // Finally check if active tool is a stitch type
-        else if (appState.activeTool && isEmbroideryTool(appState.activeTool)) {
-            stitchType = appState.activeTool;
-            console.log(`🔧 getStitchConfig: Using active tool as stitch type: ${appState.activeTool}`);
-        }
-        console.log(`🔧 getStitchConfig: tool=${tool}, storedStitchType=${storedStitchType}, appState.embroideryStitchType=${appState.embroideryStitchType}, appState.activeTool=${appState.activeTool}, finalStitchType=${stitchType}`);
-        const finalColor = appState.embroideryColor || '#ff69b4';
-        console.log(`🎨 getStitchConfig color debug: appState.embroideryColor="${appState.embroideryColor}", finalColor="${finalColor}"`);
-        // Validate the color before returning
-        if (finalColor && typeof finalColor === 'string' && /^#[0-9a-f]{6}$/i.test(finalColor)) {
-            console.log(`✅ getStitchConfig color is valid: ${finalColor}`);
-        }
-        else {
-            console.error(`❌ getStitchConfig color is INVALID: ${finalColor}`);
-        }
-        return {
-            type: stitchType,
-            color: finalColor,
-            thickness: appState.embroideryThickness || 3,
-            opacity: appState.embroideryOpacity || 1.0
-        };
-    }
-    function renderFallbackLine(ctx, points) {
-        if (!ctx || points.length < 2)
-            return;
-        ctx.save();
-        ctx.strokeStyle = '#ff69b4';
-        ctx.lineWidth = 3;
-        ctx.globalAlpha = 1.0;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        ctx.beginPath();
-        ctx.moveTo(points[0].x, points[0].y);
-        for (let i = 1; i < points.length; i++) {
-            ctx.lineTo(points[i].x, points[i].y);
-        }
-        ctx.stroke();
-        ctx.restore();
-    }
     function renderVectorsToActiveLayer() {
         const layer = getActiveLayer();
         if (!errorPrevention.validateLayer(layer)) {
@@ -2854,99 +2299,61 @@ export function Shirt() {
         }
         const st = vectorStore.getState();
         const appState = useApp.getState();
-        // Always clear canvas to ensure fresh rendering
-        // This prevents fading and ensures all stitches are properly rendered
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        console.log('🧹 Canvas cleared for fresh rendering');
+        console.log(`🎨 renderVectorsToActiveLayer: Rendering ${st.shapes.length} vector shapes, vectorMode: ${appState.vectorMode}`);
+        // For now we draw vectors as committed strokes/fills directly to the active layer
+        // Future: draw to a dedicated vector layer for non-destructive editing
         ctx.save();
         ctx.globalCompositeOperation = layer.lockTransparent ? 'source-atop' : 'source-over';
-        // CRITICAL FIX: Re-render all existing embroidery stitches when in vector mode
-        // This ensures existing designs are visible when vector mode is enabled
-        if (appState.vectorMode && (appState.embroideryStitches || []).length > 0) {
-            console.log('🔄 Re-rendering existing embroidery stitches in vector mode');
-            const existingStitches = appState.embroideryStitches || [];
-            existingStitches.forEach((stitch, index) => {
-                if (stitch && stitch.points && stitch.points.length > 0) {
-                    console.log(`🔄 Re-rendering existing stitch ${index + 1}/${existingStitches.length}: ${stitch.type}`);
-                    // Convert stitch points back to canvas coordinates
-                    const canvasPoints = stitch.points.map((point) => ({
-                        x: point.x || (point.u * (appState.composedCanvas?.width || 2048)),
-                        y: point.y || (point.v * (appState.composedCanvas?.height || 2048))
-                    }));
-                    // Render the existing stitch
-                    const stitchConfig = {
-                        type: stitch.type,
-                        color: stitch.color || '#ff69b4',
-                        thickness: stitch.thickness || 3,
-                        opacity: stitch.opacity || 1.0
-                    };
-                    // Use the universal renderer to render the existing stitch
-                    universalVectorRenderer.render(ctx, canvasPoints, stitchConfig.type, stitchConfig);
-                }
-            });
-        }
-        // CRITICAL FIX: Real-time rendering for current path (only in vector mode)
-        if (st.currentPath && st.currentPath.points.length >= 2 && appState.vectorMode) {
-            // Reduced logging for performance
-            if (process.env.NODE_ENV === 'development' && Math.random() < 0.1) {
-                console.log(`🎨 REAL-TIME RENDERING: ${st.currentPath.points.length} points, tool: ${appState.activeTool}`);
-            }
-            
-            // Check if this is an embroidery tool
-            if (isEmbroideryTool(appState.activeTool)) {
-                // Pass the specific stitch type instead of generic "embroidery"
-                const stitchType = appState.embroideryStitchType || appState.activeTool;
-                renderRealTimeEmbroideryStitches(ctx, st.currentPath, appState, stitchType);
-            }
-            else {
-                renderStandardVectorPath(ctx, st.currentPath, appState);
-            }
-        }
-        
-        // CRITICAL FIX: Render stitches between all anchor points in vector mode
-        if (appState.vectorMode && st.shapes.length > 0) {
-            st.shapes.forEach((shape) => {
-                if (shape.path && shape.path.points && shape.path.points.length >= 2) {
-                    // Check if this shape should have stitches rendered between points
-                    if (isEmbroideryTool(shape.tool) || isEmbroideryTool(appState.activeTool)) {
-                        const stitchType = shape.stitchType || appState.embroideryStitchType || appState.activeTool;
-                        console.log(`🧵 RENDERING STITCHES BETWEEN ANCHOR POINTS: shape=${shape.id}, stitchType=${stitchType}, points=${shape.path.points.length}`);
-                        renderRealTimeEmbroideryStitches(ctx, shape.path, appState, stitchType);
-                    }
-                }
-            });
-        }
         // Draw existing shapes with tool-specific rendering
         st.shapes.forEach((shape) => {
+            // Validate shape before rendering
             if (!errorPrevention.validateVectorShape(shape)) {
                 return;
             }
             const p = shape.path;
-            // Use the tool stored with the shape, not the current active tool
-            const toolToUse = shape.tool || 'brush'; // Default to brush if no tool stored
-            const storedStitchType = shape.stitchType || shape.tool;
-            console.log(`🔧 Rendering existing shape: id=${shape.id}, tool="${shape.tool}", stitchType="${shape.stitchType}", toolToUse="${toolToUse}"`);
-            if (isEmbroideryTool(toolToUse)) {
-                // Pass the stored stitch type to preserve the original stitch type
-                renderEmbroideryStitches(ctx, p, toolToUse, appState, storedStitchType);
+            const isSelected = st.selected.includes(shape.id);
+            // Use the stored tool information if available, otherwise fall back to current active tool
+            const appState = useApp.getState();
+            const toolToUse = shape.tool || appState.activeTool;
+            // Debug logging
+            if (process.env.NODE_ENV === 'development') {
+                console.log(`🎨 Rendering shape ${shape.id}: storedTool=${shape.tool}, toolToUse=${toolToUse}, activeTool=${appState.activeTool}`);
             }
-            else {
-                renderStandardVectorPath(ctx, p, appState);
+            // Use direct rendering for now (vectorToolManager is placeholder)
+            try {
+                renderVectorPathWithTool(ctx, p, toolToUse, appState);
+            }
+            catch (error) {
+                console.error('Error in vector rendering:', error);
+                logRenderingError(`Vector rendering failed for shape ${shape.id}: ${error}`, ['vector-tools', 'shape-rendering']);
             }
         });
-        // Render existing embroidery stitches
-        if (appState.embroideryStitches && Array.isArray(appState.embroideryStitches)) {
-            appState.embroideryStitches.forEach((stitch) => {
-                if (stitch && stitch.points && Array.isArray(stitch.points)) {
-                    const stitchConfig = {
-                        type: stitch.stitchType || 'satin',
-                        color: stitch.color || appState.embroideryColor || '#ff69b4',
-                        thickness: stitch.thickness || appState.embroideryThickness || 3,
-                        opacity: stitch.opacity || appState.embroideryOpacity || 1.0
-                    };
-                    renderStitchType(ctx, stitch.points, stitchConfig);
+        // Draw current path as preview/commit with tool-specific rendering (only in vector mode)
+        if (st.currentPath && st.currentPath.points.length && appState.vectorMode) {
+            const p = st.currentPath;
+            console.log(`🎨 Rendering current path with ${p.points.length} points, tool: ${appState.activeTool}`);
+            // Apply tool-specific rendering using the current active tool (for preview)
+            try {
+                renderVectorPathWithTool(ctx, p, appState.activeTool, appState);
+                console.log('✅ Current path rendered successfully');
+            }
+            catch (error) {
+                console.error('❌ Error rendering current path:', error);
+                logRenderingError(`Current path rendering failed: ${error}`, ['vector-tools', 'current-path']);
+                // Fallback: render as simple line
+                ctx.save();
+                ctx.strokeStyle = appState.embroideryColor || '#ff69b4';
+                ctx.lineWidth = appState.embroideryThickness || 3;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.beginPath();
+                ctx.moveTo(p.points[0].x, p.points[0].y);
+                for (let i = 1; i < p.points.length; i++) {
+                    ctx.lineTo(p.points[i].x, p.points[i].y);
                 }
-            });
+                ctx.stroke();
+                ctx.restore();
+            }
         }
         // IMPORTANT: Also render existing embroidery stitches when in vector mode
         // This ensures that existing embroidery doesn't disappear when vector mode is enabled
@@ -2980,769 +2387,58 @@ export function Shirt() {
         }
         ctx.restore();
         composeLayers();
-        console.log(`✅ renderVectorsToActiveLayer: Completed rendering ${st.shapes.length} shapes`);
-        // Only call invalidate after all rendering is complete
         if (texture) {
             texture.needsUpdate = true;
             invalidate();
         }
-        // Render anchor points as 3D objects (debounced)
-        debouncedRenderAnchorPoints();
+        console.log(`✅ renderVectorsToActiveLayer: Completed rendering ${st.shapes.length} shapes`);
     }
     // Separate function to render anchor points and selection indicators
     function renderAnchorPointsAndSelection() {
-        // CRITICAL: Only render anchor points when showAnchorPoints is true
+        // CRITICAL: Only render anchor points when in vector mode
         const appState = useApp.getState();
-        if (!appState.showAnchorPoints) {
-            console.log('🎯 Anchor points NOT rendered: showAnchorPoints is false');
-            return; // Don't render anchor points when not enabled
+        if (!appState.vectorMode) {
+            return; // Don't render anchor points when not in vector mode
         }
-        console.log('🎯 Anchor points should render: showAnchorPoints is true');
-        const st = vectorStore.getState();
-        console.log(`🎯 Rendering anchor points: shapes=${st.shapes.length}, currentPath=${st.currentPath ? st.currentPath.points.length : 'none'}`);
-        // Only clear and recreate if we actually need to
-        const needsUpdate = shouldUpdateAnchorPoints(st);
-        if (!needsUpdate) {
-            console.log('🎯 Anchor points are up to date, skipping recreation');
+        // Use error prevention to validate rendering conditions
+        if (!errorPrevention.checkAnchorPointsRendering()) {
             return;
         }
-        // Clear existing anchor points
-        clearAnchorPointObjects();
-        // Draw anchor points for ALL existing shapes when showAnchorPoints is enabled
+        const layer = getActiveLayer();
+        if (!errorPrevention.validateLayer(layer)) {
+            return;
+        }
+        const canvas = layer.canvas;
+        const ctx = canvas.getContext('2d');
+        if (!errorPrevention.validateCanvasContext(ctx)) {
+            return;
+        }
+        const st = vectorStore.getState();
+        ctx.save();
+        ctx.globalCompositeOperation = 'source-over'; // Always draw on top
+        ctx.globalAlpha = 1.0; // Full opacity for UI elements
+        // Draw selection indicators and anchor points for existing shapes
         st.shapes.forEach((shape) => {
             if (!shape?.path)
                 return;
             const p = shape.path;
-            console.log(`🎯 Shape ${shape.id}: points=${p.points.length}`);
-            createAnchorPointObjects(p.points, shape.id);
-        });
-        // ALWAYS draw anchor points for current path when in vector mode
-        if (st.currentPath && st.currentPath.points.length > 0) {
-            console.log(`🎯 Drawing anchor points for current path: ${st.currentPath.points.length} points`);
-            createAnchorPointObjects(st.currentPath.points, 'current');
-        }
-        else {
-            console.log(`🎯 No current path to draw anchor points for`);
-        }
-    }
-    // Helper function to determine if anchor points need updating
-    function shouldUpdateAnchorPoints(st) {
-        // Check if we have any anchor points currently
-        if (anchorPointObjects.current.length === 0) {
-            console.log('🎯 No existing anchor points, need to create');
-            return true;
-        }
-        // Check if current path has changed
-        const currentPathPoints = st.currentPath ? st.currentPath.points.length : 0;
-        const existingCurrentPathPoints = anchorPointObjects.current.filter(obj => obj.userData?.shapeId === 'current').length;
-        if (currentPathPoints !== existingCurrentPathPoints) {
-            console.log(`🎯 Current path points changed: ${existingCurrentPathPoints} -> ${currentPathPoints}`);
-            return true;
-        }
-        // Check if total shapes have changed (since we now show all shapes)
-        const totalShapes = st.shapes.length;
-        const existingShapePoints = anchorPointObjects.current.filter(obj => obj.userData?.shapeId !== 'current').length;
-        if (totalShapes !== existingShapePoints) {
-            console.log(`🎯 Total shapes changed: ${existingShapePoints} -> ${totalShapes}`);
-            return true;
-        }
-        console.log('🎯 Anchor points are up to date');
-        return false;
-    }
-    // Store for anchor point objects
-    const anchorPointObjects = useRef([]);
-    // Function to clear existing anchor point objects
-    function clearAnchorPointObjects() {
-        console.log(`🎯 Clearing ${anchorPointObjects.current.length} anchor point objects`);
-        // Clear all anchor point objects
-        anchorPointObjects.current.forEach(obj => {
-            if (obj.parent) {
-                obj.parent.remove(obj);
-                console.log(`🎯 Removed anchor point object: ${obj.userData?.type || 'unknown'}`);
+            const isSelected = st.selected.includes(shape.id);
+            if (isSelected) {
+                drawSelectionIndicators(ctx, p.points, shape.id);
             }
         });
-        anchorPointObjects.current = [];
-        // Also clear any test objects that might be lingering
-        if (modelScene) {
-            const objectsToRemove = [];
-            modelScene.traverse((child) => {
-                if (child.userData?.type === 'anchorPoint' || child.userData?.type === 'testAnchor' || child.name?.startsWith('testAnchor')) {
-                    objectsToRemove.push(child);
-                }
-            });
-            objectsToRemove.forEach(obj => {
-                if (obj.parent) {
-                    obj.parent.remove(obj);
-                    console.log(`🎯 Removed lingering object: ${obj.name || obj.userData?.type || 'unknown'}`);
-                }
-            });
+        // Draw anchor points for current path
+        if (st.currentPath && st.currentPath.points.length) {
+            drawSelectionIndicators(ctx, st.currentPath.points, 'current');
         }
-    }
-    // Function to create a single anchor point from a click
-    function createSingleAnchorPoint(point) {
-        if (!modelScene)
-            return;
-        // Convert 2D canvas coordinates to 3D world coordinates
-        const uv = new THREE.Vector2(point.x / 2048, point.y / 2048);
-        console.log(`🎯 Creating single anchor point: canvas(${point.x}, ${point.y}) -> UV(${uv.x.toFixed(3)}, ${uv.y.toFixed(3)})`);
-        const worldPos = uvToWorldPosition(uv);
-        if (!worldPos) {
-            console.log(`🎯 Failed to convert UV to world position for single anchor point`);
-            return;
+        ctx.restore();
+        if (texture) {
+            texture.needsUpdate = true;
+            invalidate();
         }
-        // Create anchor point geometry
-        const geometry = new THREE.SphereGeometry(0.15, 16, 16);
-        const material = new THREE.MeshBasicMaterial({
-            color: '#FF0000',
-            transparent: true,
-            opacity: 0.9
-        });
-        const anchorPoint = new THREE.Mesh(geometry, material);
-        // Add a glow effect
-        const glowGeometry = new THREE.SphereGeometry(0.25, 16, 16);
-        const glowMaterial = new THREE.MeshBasicMaterial({
-            color: '#FF0000',
-            transparent: true,
-            opacity: 0.3
-        });
-        const glowSphere = new THREE.Mesh(glowGeometry, glowMaterial);
-        anchorPoint.add(glowSphere);
-        // Position the anchor point using the same inverse transform logic
-        const modelPosition = useApp.getState().modelPosition;
-        const modelRotation = useApp.getState().modelRotation;
-        const modelScale = useApp.getState().modelScale;
-        // Create the inverse transformation matrix
-        const inverseMatrix = new THREE.Matrix4();
-        // Apply inverse scale
-        const inverseScale = 1 / modelScale;
-        inverseMatrix.scale(new THREE.Vector3(inverseScale, inverseScale, inverseScale));
-        // Apply inverse rotation
-        const inverseRotation = new THREE.Euler(-modelRotation[0], -modelRotation[1], -modelRotation[2]);
-        const rotationMatrix = new THREE.Matrix4().makeRotationFromEuler(inverseRotation);
-        inverseMatrix.premultiply(rotationMatrix);
-        // Apply inverse translation
-        const inverseTranslation = new THREE.Vector3(-modelPosition[0], -modelPosition[1], -modelPosition[2]);
-        const translationMatrix = new THREE.Matrix4().makeTranslation(inverseTranslation.x, inverseTranslation.y, inverseTranslation.z);
-        inverseMatrix.premultiply(translationMatrix);
-        // Apply the inverse transformation to get local position
-        const localPos = worldPos.clone();
-        localPos.applyMatrix4(inverseMatrix);
-        anchorPoint.position.copy(localPos);
-        anchorPoint.userData = {
-            type: 'anchorPoint',
-            shapeId: 'single',
-            pointIndex: anchorPointObjects.current.length,
-            originalPoint: point
-        };
-        // Add to the model scene
-        modelScene.add(anchorPoint);
-        anchorPointObjects.current.push(anchorPoint);
-        console.log(`🎯 Created single anchor point at position:`, worldPos);
-        console.log(`🎯 Total anchor points: ${anchorPointObjects.current.length}`);
-    }
-    // Function to create anchor point objects in 3D space
-    function createAnchorPointObjects(points, shapeId) {
-        if (!modelScene)
-            return;
-        points.forEach((point, index) => {
-            // Convert 2D canvas coordinates to 3D world coordinates using precise conversion
-            const layer = getActiveLayer();
-            if (!layer) return;
-            
-            const uv = canvasToUVCoordinates(point.x, point.y, layer.canvas);
-            console.log(`🎯 Converting point ${index}: canvas(${point.x}, ${point.y}) -> UV(${uv.x.toFixed(3)}, ${uv.y.toFixed(3)})`);
-            const worldPos = uvToWorldPosition(uv);
-            if (!worldPos) {
-                console.log(`🎯 Failed to convert UV to world position for point ${index}`);
-                return;
-            }
-            // Create anchor point geometry - make it larger and more visible
-            const geometry = new THREE.SphereGeometry(0.15, 16, 16);
-            const material = new THREE.MeshBasicMaterial({
-                color: '#FF0000', // Bright red for visibility
-                transparent: true,
-                opacity: 0.9
-            });
-            const anchorPoint = new THREE.Mesh(geometry, material);
-            // Add a glow effect by creating a larger, semi-transparent sphere
-            const glowGeometry = new THREE.SphereGeometry(0.25, 16, 16);
-            const glowMaterial = new THREE.MeshBasicMaterial({
-                color: '#FF0000',
-                transparent: true,
-                opacity: 0.3
-            });
-            const glowSphere = new THREE.Mesh(glowGeometry, glowMaterial);
-            anchorPoint.add(glowSphere);
-            // Since the Shirt component is wrapped in a transformed group in App.tsx,
-            // we need to position the anchor point in the local space of that group
-            // The worldPos is already transformed by the mesh's matrixWorld, so we need
-            // to convert it back to the local space of the parent group
-            const modelPosition = useApp.getState().modelPosition;
-            const modelRotation = useApp.getState().modelRotation;
-            const modelScale = useApp.getState().modelScale;
-            // Create the inverse transformation matrix
-            const inverseMatrix = new THREE.Matrix4();
-            // Apply inverse scale
-            const inverseScale = 1 / modelScale;
-            inverseMatrix.scale(new THREE.Vector3(inverseScale, inverseScale, inverseScale));
-            // Apply inverse rotation
-            const inverseRotation = new THREE.Euler(-modelRotation[0], -modelRotation[1], -modelRotation[2]);
-            const rotationMatrix = new THREE.Matrix4().makeRotationFromEuler(inverseRotation);
-            inverseMatrix.premultiply(rotationMatrix);
-            // Apply inverse translation
-            const inverseTranslation = new THREE.Vector3(-modelPosition[0], -modelPosition[1], -modelPosition[2]);
-            const translationMatrix = new THREE.Matrix4().makeTranslation(inverseTranslation.x, inverseTranslation.y, inverseTranslation.z);
-            inverseMatrix.premultiply(translationMatrix);
-            // Apply the inverse transformation to get local position
-            const localPos = worldPos.clone();
-            localPos.applyMatrix4(inverseMatrix);
-            anchorPoint.position.copy(localPos);
-            console.log(`🎯 Original world position: (${worldPos.x.toFixed(3)}, ${worldPos.y.toFixed(3)}, ${worldPos.z.toFixed(3)})`);
-            console.log(`🎯 Model transforms - Position: [${modelPosition.join(', ')}], Rotation: [${modelRotation.join(', ')}], Scale: ${modelScale}`);
-            console.log(`🎯 Local position after inverse transforms: (${localPos.x.toFixed(3)}, ${localPos.y.toFixed(3)}, ${localPos.z.toFixed(3)})`);
-            anchorPoint.userData = {
-                type: 'anchorPoint',
-                shapeId,
-                pointIndex: index,
-                originalPoint: point
-            };
-            // Add to the model scene (which will be transformed by the parent group)
-            modelScene.add(anchorPoint);
-            anchorPointObjects.current.push(anchorPoint);
-            console.log(`🎯 Created anchor point ${index} for shape ${shapeId} at position:`, worldPos);
-            console.log(`🎯 Anchor point added to scene. Total anchor points: ${anchorPointObjects.current.length}`);
-            console.log(`🎯 Model scene children count: ${modelScene.children.length}`);
-        });
-    }
-    // Precise coordinate conversion functions
-    function uvToCanvasCoordinates(uv, canvas) {
-        // Ensure UV coordinates are in [0,1] range
-        const clampedUV = new THREE.Vector2(
-            Math.max(0, Math.min(1, uv.x)),
-            Math.max(0, Math.min(1, uv.y))
-        );
-        
-        // Convert to canvas coordinates with sub-pixel precision
-        const x = clampedUV.x * canvas.width;
-        const y = clampedUV.y * canvas.height;
-        
-        // Round to nearest pixel for consistency
-        return {
-            x: Math.round(x),
-            y: Math.round(y),
-            preciseX: x,
-            preciseY: y
-        };
-    }
-    
-    function canvasToUVCoordinates(x, y, canvas) {
-        // Convert canvas coordinates back to UV coordinates
-        const u = x / canvas.width;
-        const v = y / canvas.height;
-        
-        // Clamp to [0,1] range
-        return new THREE.Vector2(
-            Math.max(0, Math.min(1, u)),
-            Math.max(0, Math.min(1, v))
-        );
-    }
-    
-    // UV coordinate correction cache for performance
-    const uvCorrectionCache = new Map();
-    const MAX_CACHE_SIZE = 1000;
-    
-    // UV coordinate correction system for ray intersection accuracy
-    function correctUVCoordinates(uv, canvas) {
-        // Create cache key
-        const cacheKey = `${uv.x.toFixed(4)}_${uv.y.toFixed(4)}_${canvas.width}_${canvas.height}`;
-        
-        // Check cache first
-        if (uvCorrectionCache.has(cacheKey)) {
-            return uvCorrectionCache.get(cacheKey);
-        }
-        if (!uv || !isFinite(uv.x) || !isFinite(uv.y)) {
-            console.warn('🎯 Invalid UV coordinates:', uv);
-            return new THREE.Vector2(0.5, 0.5);
-        }
-        
-        // Get the actual mesh to validate UV coordinates
-        const shirtMesh = modelScene?.getObjectByName('AM_102_035_003_AM_102_035_002_0');
-        if (!shirtMesh || !shirtMesh.geometry) {
-            console.warn('🎯 No mesh available for UV correction');
-            return new THREE.Vector2(
-                Math.max(0, Math.min(1, uv.x)),
-                Math.max(0, Math.min(1, uv.y))
-            );
-        }
-        
-        const geometry = shirtMesh.geometry;
-        const uvAttribute = geometry.getAttribute('uv');
-        if (!uvAttribute) {
-            console.warn('🎯 No UV attribute available for correction');
-            return new THREE.Vector2(
-                Math.max(0, Math.min(1, uv.x)),
-                Math.max(0, Math.min(1, uv.y))
-            );
-        }
-        
-        // Find the closest actual UV coordinate in the mesh using a more sophisticated approach
-        let closestUV = new THREE.Vector2(uv.x, uv.y);
-        let minDistance = Infinity;
-        let bestVertices = [];
-        
-        // Search through all UV coordinates to find the closest matches
-        for (let i = 0; i < uvAttribute.count; i++) {
-            const meshU = uvAttribute.getX(i);
-            const meshV = uvAttribute.getY(i);
-            const distance = Math.sqrt((meshU - uv.x) ** 2 + (meshV - uv.y) ** 2);
-            
-            if (distance < minDistance) {
-                minDistance = distance;
-                closestUV = new THREE.Vector2(meshU, meshV);
-            }
-            
-            // Collect nearby vertices for interpolation
-            if (distance < 0.05) { // Within 5% of UV space
-                bestVertices.push({
-                    index: i,
-                    distance: distance,
-                    u: meshU,
-                    v: meshV
-                });
-            }
-        }
-        
-        // Enhanced interpolation for sub-pixel accuracy
-        if (bestVertices.length > 0) {
-            bestVertices.sort((a, b) => a.distance - b.distance);
-            
-            if (bestVertices.length === 1) {
-                closestUV = new THREE.Vector2(bestVertices[0].u, bestVertices[0].v);
-            } else if (bestVertices.length >= 2) {
-                // Use inverse distance weighting for better accuracy
-                let totalWeight = 0;
-                let weightedU = 0;
-                let weightedV = 0;
-                
-                // Use more vertices for better interpolation (up to 5)
-                bestVertices.slice(0, 5).forEach(vertex => {
-                    // Use squared inverse distance for better weighting
-                    const weight = 1 / (vertex.distance * vertex.distance + 0.0001);
-                    weightedU += vertex.u * weight;
-                    weightedV += vertex.v * weight;
-                    totalWeight += weight;
-                });
-                
-                if (totalWeight > 0) {
-                    closestUV = new THREE.Vector2(weightedU / totalWeight, weightedV / totalWeight);
-                }
-            }
-        }
-        
-        // Additional sub-pixel correction based on canvas dimensions
-        if (canvas && canvas.width && canvas.height) {
-            // Convert to canvas coordinates for sub-pixel precision
-            const canvasX = closestUV.x * canvas.width;
-            const canvasY = closestUV.y * canvas.height;
-            
-            // Apply sub-pixel correction
-            const correctedCanvasX = Math.round(canvasX);
-            const correctedCanvasY = Math.round(canvasY);
-            
-            // Convert back to UV with sub-pixel precision
-            const correctedUV = new THREE.Vector2(
-                correctedCanvasX / canvas.width,
-                correctedCanvasY / canvas.height
-            );
-            
-            // Use the corrected UV if it's closer to the original
-            const originalDistance = Math.sqrt((uv.x - closestUV.x) ** 2 + (uv.y - closestUV.y) ** 2);
-            const correctedDistance = Math.sqrt((uv.x - correctedUV.x) ** 2 + (uv.y - correctedUV.y) ** 2);
-            
-            if (correctedDistance < originalDistance) {
-                closestUV = correctedUV;
-            }
-        }
-        
-        // If the distance is too large, the UV might be from a different part of the mesh
-        if (minDistance > 0.1) {
-            console.warn('🎯 UV coordinates seem to be from wrong mesh area:', {
-                original: uv,
-                closest: closestUV,
-                distance: minDistance
-            });
-            
-            // Try to find a better match by searching in a different way
-            let fallbackUV = new THREE.Vector2(uv.x, uv.y);
-            let fallbackDistance = Infinity;
-            
-            // Search for UV coordinates that are close in at least one dimension
-            for (let i = 0; i < uvAttribute.count; i++) {
-                const meshU = uvAttribute.getX(i);
-                const meshV = uvAttribute.getY(i);
-                const uDistance = Math.abs(meshU - uv.x);
-                const vDistance = Math.abs(meshV - uv.y);
-                
-                // If either U or V is close, consider this vertex
-                if (uDistance < 0.05 || vDistance < 0.05) {
-                    const distance = Math.sqrt(uDistance ** 2 + vDistance ** 2);
-                    if (distance < fallbackDistance) {
-                        fallbackDistance = distance;
-                        fallbackUV = new THREE.Vector2(meshU, meshV);
-                    }
-                }
-            }
-            
-            if (fallbackDistance < 0.2) {
-                closestUV = fallbackUV;
-                console.log('🎯 Using fallback UV correction:', fallbackUV);
-            } else {
-                // Last resort: use the original UV but clamp it
-                closestUV = new THREE.Vector2(
-                    Math.max(0, Math.min(1, uv.x)),
-                    Math.max(0, Math.min(1, uv.y))
-                );
-                console.log('🎯 Using clamped original UV as last resort');
-            }
-        }
-        
-        // Apply additional correction based on canvas dimensions
-        const correctedUV = new THREE.Vector2(
-            Math.max(0, Math.min(1, closestUV.x)),
-            Math.max(0, Math.min(1, closestUV.y))
-        );
-        
-        // Debug logging
-        if (process.env.NODE_ENV === 'development') {
-            console.log('🎯 UV Correction:', {
-                original: uv,
-                closest: closestUV,
-                corrected: correctedUV,
-                distance: minDistance,
-                canvas: { width: canvas.width, height: canvas.height }
-            });
-        }
-        
-        // Cache the result
-        if (uvCorrectionCache.size >= MAX_CACHE_SIZE) {
-            // Clear oldest entries (simple FIFO)
-            const firstKey = uvCorrectionCache.keys().next().value;
-            uvCorrectionCache.delete(firstKey);
-        }
-        uvCorrectionCache.set(cacheKey, correctedUV);
-        
-        return correctedUV;
-    }
-
-    // Coordinate validation and correction system
-    function validateAndCorrectCoordinates(uv, canvas) {
-        // First apply UV correction
-        const correctedUV = correctUVCoordinates(uv, canvas);
-        
-        // Then validate the corrected coordinates
-        const clampedUV = new THREE.Vector2(
-            Math.max(0, Math.min(1, correctedUV.x)),
-            Math.max(0, Math.min(1, correctedUV.y))
-        );
-        
-        // Convert to canvas coordinates and back to check consistency
-        const canvasCoords = uvToCanvasCoordinates(clampedUV, canvas);
-        const backToUV = canvasToUVCoordinates(canvasCoords.x, canvasCoords.y, canvas);
-        
-        // Check if the round-trip conversion is consistent
-        const tolerance = 0.001;
-        const isConsistent = Math.abs(clampedUV.x - backToUV.x) < tolerance && 
-                           Math.abs(clampedUV.y - backToUV.y) < tolerance;
-        
-        if (!isConsistent) {
-            console.warn('🎯 Coordinate conversion inconsistency detected:', {
-                original: uv,
-                corrected: clampedUV,
-                roundTrip: backToUV,
-                canvas: { width: canvas.width, height: canvas.height }
-            });
-        }
-        
-        return clampedUV;
-    }
-
-    // Function to convert UV coordinates to world position with improved accuracy
-    function uvToWorldPosition(uv) {
-        if (!modelScene)
-            return null;
-        // Get the shirt mesh
-        const shirtMesh = modelScene.getObjectByName('AM_102_035_003_AM_102_035_002_0');
-        if (!shirtMesh || !shirtMesh.geometry)
-            return null;
-        const geometry = shirtMesh.geometry;
-        const positionAttribute = geometry.getAttribute('position');
-        const uvAttribute = geometry.getAttribute('uv');
-        const normalAttribute = geometry.getAttribute('normal');
-        if (!positionAttribute || !uvAttribute) {
-            console.log('🎯 ERROR: Missing position or UV attributes');
-            return null;
-        }
-        
-        // Get active layer for canvas-based correction
-        const layer = getActiveLayer();
-        const canvas = layer?.canvas;
-        
-        // Apply UV correction for maximum accuracy
-        const correctedUV = canvas ? correctUVCoordinates(uv, canvas) : new THREE.Vector2(
-            Math.max(0, Math.min(1, uv.x)),
-            Math.max(0, Math.min(1, uv.y))
-        );
-        
-        console.log(`🎯 UV Input: (${uv.x.toFixed(4)}, ${uv.y.toFixed(4)}) -> Corrected: (${correctedUV.x.toFixed(4)}, ${correctedUV.y.toFixed(4)})`);
-        console.log(`🎯 Geometry has ${positionAttribute.count} vertices and ${uvAttribute.count} UV coordinates`);
-        
-        // Debug coordinate accuracy
-        if (process.env.NODE_ENV === 'development' && canvas) {
-            const canvasCoords = uvToCanvasCoordinates(correctedUV, canvas);
-            const backToUV = canvasToUVCoordinates(canvasCoords.x, canvasCoords.y, canvas);
-            console.log(`🎯 Coordinate accuracy check: UV(${correctedUV.x.toFixed(4)}, ${correctedUV.y.toFixed(4)}) -> Canvas(${canvasCoords.x}, ${canvasCoords.y}) -> UV(${backToUV.x.toFixed(4)}, ${backToUV.y.toFixed(4)})`);
-        }
-        
-        // IMPROVED: Use barycentric interpolation for more accurate positioning
-        let bestVertices = [];
-        let minDistance = Infinity;
-        const searchRadius = 0.01; // Further reduced search radius for maximum accuracy
-        
-        // Find multiple nearby vertices for interpolation using corrected UV
-        for (let i = 0; i < uvAttribute.count; i++) {
-            const u = uvAttribute.getX(i);
-            const v = uvAttribute.getY(i);
-            const distance = Math.sqrt((u - correctedUV.x) ** 2 + (v - correctedUV.y) ** 2);
-            
-            if (distance < searchRadius) {
-                bestVertices.push({
-                    index: i,
-                    distance: distance,
-                    u: u,
-                    v: v,
-                    position: new THREE.Vector3(positionAttribute.getX(i), positionAttribute.getY(i), positionAttribute.getZ(i)),
-                    normal: normalAttribute ? new THREE.Vector3(normalAttribute.getX(i), normalAttribute.getY(i), normalAttribute.getZ(i)) : null
-                });
-            }
-        }
-        
-        // Sort by distance and take the closest ones
-        bestVertices.sort((a, b) => a.distance - b.distance);
-        bestVertices = bestVertices.slice(0, 3); // Take top 3 for interpolation
-        
-        if (bestVertices.length === 0) {
-            console.log('🎯 No nearby vertices found, using closest vertex fallback');
-            // Fallback to closest vertex using normalized UV
-            for (let i = 0; i < uvAttribute.count; i++) {
-                const u = uvAttribute.getX(i);
-                const v = uvAttribute.getY(i);
-                const distance = Math.sqrt((u - normalizedUV.x) ** 2 + (v - normalizedUV.y) ** 2);
-                if (distance < minDistance) {
-                    minDistance = distance;
-                    bestVertices = [{
-                        index: i,
-                        distance: distance,
-                        u: u,
-                        v: v,
-                        position: new THREE.Vector3(positionAttribute.getX(i), positionAttribute.getY(i), positionAttribute.getZ(i)),
-                        normal: normalAttribute ? new THREE.Vector3(normalAttribute.getX(i), normalAttribute.getY(i), normalAttribute.getZ(i)) : null
-                    }];
-                }
-            }
-        }
-        
-        if (bestVertices.length === 0) {
-            console.log('🎯 ERROR: No vertices found');
-            return null;
-        }
-        
-        // Interpolate position using barycentric coordinates
-        let interpolatedPosition = new THREE.Vector3();
-        let interpolatedNormal = new THREE.Vector3();
-        let totalWeight = 0;
-        
-        if (bestVertices.length === 1) {
-            // Single vertex
-            interpolatedPosition.copy(bestVertices[0].position);
-            if (bestVertices[0].normal) {
-                interpolatedNormal.copy(bestVertices[0].normal);
-            }
-        } else if (bestVertices.length === 2) {
-            // Linear interpolation between two vertices
-            const v1 = bestVertices[0];
-            const v2 = bestVertices[1];
-            const t = v1.distance / (v1.distance + v2.distance);
-            interpolatedPosition.lerpVectors(v1.position, v2.position, t);
-            if (v1.normal && v2.normal) {
-                interpolatedNormal.lerpVectors(v1.normal, v2.normal, t).normalize();
-            }
-        } else {
-            // Barycentric interpolation with three vertices
-            const v1 = bestVertices[0];
-            const v2 = bestVertices[1];
-            const v3 = bestVertices[2];
-            
-            // Calculate barycentric coordinates using corrected UV
-            const denom = (v2.v - v3.v) * (v1.u - v3.u) + (v3.u - v2.u) * (v1.v - v3.v);
-            if (Math.abs(denom) > 1e-10) {
-                const a = ((v2.v - v3.v) * (correctedUV.x - v3.u) + (v3.u - v2.u) * (correctedUV.y - v3.v)) / denom;
-                const b = ((v3.v - v1.v) * (correctedUV.x - v3.u) + (v1.u - v3.u) * (correctedUV.y - v3.v)) / denom;
-                const c = 1 - a - b;
-                
-                // Clamp to valid range
-                const clampedA = Math.max(0, Math.min(1, a));
-                const clampedB = Math.max(0, Math.min(1, b));
-                const clampedC = Math.max(0, Math.min(1, c));
-                
-                // Normalize weights
-                const sum = clampedA + clampedB + clampedC;
-                const weightA = clampedA / sum;
-                const weightB = clampedB / sum;
-                const weightC = clampedC / sum;
-                
-                interpolatedPosition
-                    .copy(v1.position).multiplyScalar(weightA)
-                    .add(v2.position.clone().multiplyScalar(weightB))
-                    .add(v3.position.clone().multiplyScalar(weightC));
-                    
-                if (v1.normal && v2.normal && v3.normal) {
-                    interpolatedNormal
-                        .copy(v1.normal).multiplyScalar(weightA)
-                        .add(v2.normal.clone().multiplyScalar(weightB))
-                        .add(v3.normal.clone().multiplyScalar(weightC))
-                        .normalize();
-                }
-            } else {
-                // Fallback to distance-weighted average
-                bestVertices.forEach(vertex => {
-                    const weight = 1 / (vertex.distance + 1e-6);
-                    interpolatedPosition.add(vertex.position.clone().multiplyScalar(weight));
-                    if (vertex.normal) {
-                        interpolatedNormal.add(vertex.normal.clone().multiplyScalar(weight));
-                    }
-                    totalWeight += weight;
-                });
-                interpolatedPosition.divideScalar(totalWeight);
-                if (totalWeight > 0) {
-                    interpolatedNormal.divideScalar(totalWeight).normalize();
-                }
-            }
-        }
-        
-        console.log(`🎯 Interpolated local position: (${interpolatedPosition.x.toFixed(3)}, ${interpolatedPosition.y.toFixed(3)}, ${interpolatedPosition.z.toFixed(3)})`);
-        
-        // Transform to world space
-        const worldPos = interpolatedPosition.clone();
-        worldPos.applyMatrix4(shirtMesh.matrixWorld);
-        
-        // Add small offset along normal for better visibility
-        if (interpolatedNormal.length() > 0) {
-            worldPos.add(interpolatedNormal.multiplyScalar(0.001));
-        }
-        console.log(`🎯 World position after matrixWorld: (${worldPos.x.toFixed(3)}, ${worldPos.y.toFixed(3)}, ${worldPos.z.toFixed(3)})`);
-        
-        // Use interpolated normal or calculate fallback
-        let normal = interpolatedNormal;
-        if (normal.length() < 0.1) {
-            // Fallback: calculate normal from nearby vertices
-            const nearbyVertices = [];
-            const maxSearchDistance = 0.1;
-            for (let i = 0; i < Math.min(uvAttribute.count, 1000); i++) {
-                const u = uvAttribute.getX(i);
-                const v = uvAttribute.getY(i);
-                const distance = Math.sqrt((u - uv.x) ** 2 + (v - uv.y) ** 2);
-                if (distance < maxSearchDistance) {
-                    const vertex = new THREE.Vector3(positionAttribute.getX(i), positionAttribute.getY(i), positionAttribute.getZ(i));
-                    vertex.applyMatrix4(shirtMesh.matrixWorld);
-                    nearbyVertices.push(vertex);
-                    if (nearbyVertices.length >= 6) break;
-                }
-            }
-            
-            if (nearbyVertices.length >= 3) {
-                const normals = [];
-                for (let i = 0; i < nearbyVertices.length - 2; i++) {
-                    const v1 = nearbyVertices[i];
-                    const v2 = nearbyVertices[i + 1];
-                    const v3 = nearbyVertices[i + 2];
-                    const edge1 = v2.clone().sub(v1);
-                    const edge2 = v3.clone().sub(v1);
-                    const triangleNormal = new THREE.Vector3();
-                    triangleNormal.crossVectors(edge1, edge2);
-                    if (triangleNormal.length() > 0.001) {
-                        triangleNormal.normalize();
-                        normals.push(triangleNormal);
-                    }
-                }
-                if (normals.length > 0) {
-                    normals.forEach(n => normal.add(n));
-                    normal.divideScalar(normals.length).normalize();
-                }
-            }
-            
-            if (normal.length() < 0.1) {
-                // Final fallback
-                if (camera) {
-                    const cameraDirection = new THREE.Vector3();
-                    camera.getWorldDirection(cameraDirection);
-                    normal.copy(cameraDirection);
-                } else {
-                    normal.set(0, 0, 1);
-                }
-            }
-        } else {
-            // Transform the interpolated normal to world space
-            normal.transformDirection(shirtMesh.matrixWorld);
-            normal.normalize();
-        }
-        
-        // Offset along the surface normal for better visibility
-        const offsetDistance = 0.05; // Reduced offset for better accuracy
-        worldPos.add(normal.multiplyScalar(offsetDistance));
-        console.log(`🎯 Final world position: (${worldPos.x.toFixed(3)}, ${worldPos.y.toFixed(3)}, ${worldPos.z.toFixed(3)})`);
-        return worldPos;
     }
     // Debounced rendering to prevent excessive re-renders
     const renderTimeoutRef = useRef(null);
-    const anchorPointRenderTimeoutRef = useRef(null);
-    // Debounced anchor point rendering to prevent excessive calls
-    function debouncedRenderAnchorPoints() {
-        if (anchorPointRenderTimeoutRef.current) {
-            clearTimeout(anchorPointRenderTimeoutRef.current);
-        }
-        anchorPointRenderTimeoutRef.current = setTimeout(() => {
-            renderAnchorPointsAndSelection();
-        }, 100); // 100ms debounce
-    }
-    // Effect to handle anchor points visibility changes
-    useEffect(() => {
-        const appState = useApp.getState();
-        if (appState.showAnchorPoints) {
-            console.log('🎯 Show anchor points enabled - rendering anchor points');
-            // Use debounced rendering to prevent excessive calls
-            debouncedRenderAnchorPoints();
-        }
-        else {
-            console.log('🎯 Show anchor points disabled - clearing anchor points');
-            clearAnchorPointObjects();
-            // Also clear the test cube
-            if (modelScene) {
-                const testCube = modelScene.getObjectByName('testAnchor');
-                if (testCube) {
-                    modelScene.remove(testCube);
-                    console.log('🎯 TEST: Removed test anchor point');
-                }
-            }
-        }
-    }, [useApp(s => s.showAnchorPoints)]);
-    // Cleanup timeout on unmount
-    useEffect(() => {
-        return () => {
-            if (anchorPointRenderTimeoutRef.current) {
-                clearTimeout(anchorPointRenderTimeoutRef.current);
-            }
-        };
-    }, []);
     // Helper function to render both vectors and anchor points
     function renderVectorsWithAnchors() {
         // Clear any pending render
@@ -3751,8 +2447,11 @@ export function Shirt() {
         }
         // Debounce rendering to prevent excessive calls
         renderTimeoutRef.current = setTimeout(() => {
-            // First render vectors
             renderVectorsToActiveLayer();
+            // Only render anchor points and selection when vector mode is active
+            if (vectorMode) {
+                renderAnchorPointsAndSelection();
+            }
             // Render preview line for pen tool (only in vector mode)
             if (previewLine && vectorMode) {
                 const layer = getActiveLayer();
@@ -3772,21 +2471,15 @@ export function Shirt() {
                     }
                 }
             }
-        }, 8); // Faster rendering for better responsiveness
+        }, 16); // ~60fps
     }
-    async function hitPoint(pt, s) {
-        // Use the new advanced hit detector for better accuracy
-        const AdvancedHitDetector = (await import('../vector/AdvancedHitDetector')).default;
-        const hitDetector = AdvancedHitDetector.getInstance();
-        const hitResult = hitDetector.detectHit(pt, [s], {
-            tolerance: 10,
-            zoom: 1,
-            showHitAreas: false,
-            multiSelect: false,
-            priority: 'anchor'
-        });
-        if (hitResult.type === 'anchor' && hitResult.target.pointIndex !== undefined) {
-            return hitResult.target.pointIndex;
+    function hitPoint(pt, s) {
+        for (let i = 0; i < s.path.points.length; i++) {
+            const p = s.path.points[i];
+            const dx = pt.x - p.x;
+            const dy = pt.y - p.y;
+            if (dx * dx + dy * dy < 8 * 8)
+                return i;
         }
         return null;
     }
