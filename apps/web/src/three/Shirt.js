@@ -48,6 +48,18 @@ export function Shirt() {
     const symmetryZ = useApp(s => s.symmetryZ);
     const activeTool = useApp(s => s.activeTool);
     const vectorMode = useApp(s => s.vectorMode);
+    // Disable camera controls when using drawing tools
+    useEffect(() => {
+        const drawingTools = ['brush', 'eraser', 'puffPrint', 'fill', 'smudge', 'blur', 'embroidery'];
+        if (drawingTools.includes(activeTool)) {
+            console.log('🎨 Tool changed to drawing tool, disabling camera controls:', activeTool);
+            setControlsEnabled(false);
+        } else {
+            console.log('🎨 Tool changed to non-drawing tool, enabling camera controls:', activeTool);
+            setControlsEnabled(true);
+        }
+    }, [activeTool, setControlsEnabled]);
+
     // Debug vector mode changes and cleanup
     useEffect(() => {
         if (import.meta.env.DEV) {
@@ -464,8 +476,10 @@ export function Shirt() {
             return;
         }
         
-        // Disable camera controls when interacting with tools
-        if (activeTool !== 'select' && activeTool !== 'move') {
+        // Disable camera controls for ALL drawing tools immediately
+        const drawingTools = ['brush', 'eraser', 'puffPrint', 'fill', 'smudge', 'blur', 'embroidery'];
+        if (drawingTools.includes(activeTool)) {
+            console.log('🎨 Disabling camera controls for drawing tool:', activeTool);
             setControlsEnabled(false);
         }
         
@@ -1003,6 +1017,12 @@ export function Shirt() {
         if (import.meta.env.DEV && Math.random() < 0.05) {
             console.log('Shirt: onPointerMove called with activeTool:', activeTool, 'vectorMode:', vectorMode, 'paintingActive:', paintingActiveRef.current, 'buttons:', e.buttons);
         }
+        
+        // Stop propagation for drawing tools to prevent camera controls
+        const drawingTools = ['brush', 'eraser', 'puffPrint', 'fill', 'smudge', 'blur', 'embroidery'];
+        if (drawingTools.includes(activeTool)) {
+            e.stopPropagation();
+        }
         if (vectorMode) {
             // Reduced logging for performance
             if (import.meta.env.DEV && Math.random() < 0.1) {
@@ -1363,12 +1383,17 @@ export function Shirt() {
             shapeBeforeRef.current = null;
         }
         
-        // Re-enable camera controls when tool interaction ends
-        setControlsEnabled(true);
+        // Only re-enable camera controls if we're not using a drawing tool
+        const drawingTools = ['brush', 'eraser', 'puffPrint', 'fill', 'smudge', 'blur', 'embroidery'];
+        if (!drawingTools.includes(activeTool)) {
+            setControlsEnabled(true);
+        }
         
         // Also set a timeout to ensure controls are re-enabled even if onPointerUp doesn't fire
         setTimeout(() => {
-            setControlsEnabled(true);
+            if (!drawingTools.includes(activeTool)) {
+                setControlsEnabled(true);
+            }
         }, 100);
         if (vectorMode) {
             vectorDragRef.current = null;
@@ -2714,6 +2739,17 @@ export function Shirt() {
                     // Store the complete GLTF scene for proper rendering
                     // This preserves all materials, textures, normal maps, etc.
                     console.log('Shirt: Setting modelScene in store:', !!gltf.scene);
+                    
+                    // Add event listeners to all meshes in the model for proper interaction
+                    gltf.scene.traverse((child) => {
+                        if (child.isMesh) {
+                            // Enable raycasting for this mesh
+                            child.raycast = THREE.Mesh.prototype.raycast;
+                            // Make sure the mesh can receive events
+                            child.userData = { ...child.userData, interactive: true };
+                        }
+                    });
+                    
                     useApp.setState({
                         modelScene: gltf.scene
                     });
@@ -3032,7 +3068,37 @@ export function Shirt() {
         console.log('Shirt render - modelScene:', !!modelScene, 'geometry:', !!geometry, 'material:', !!material);
     }
     
-    return (_jsxs(_Fragment, { children: [modelScene ? (_jsx("group", { onPointerDown: onPointerDown, onPointerMove: onPointerMove, onPointerOver: onPointerOver, onPointerUp: onPointerUp, onPointerLeave: onPointerLeave, children: _jsx("primitive", { object: modelScene, castShadow: true, receiveShadow: true }) })) : (
+    // Create individual mesh components for better event handling
+    const ModelMeshes = () => {
+        if (!modelScene) return null;
+        
+        const meshes = [];
+        let meshIndex = 0;
+        modelScene.traverse((child) => {
+            if (child.isMesh) {
+                meshes.push(_jsx("mesh", { 
+                    key: `mesh-${meshIndex}-${child.name || 'unnamed'}`,
+                    geometry: child.geometry, 
+                    material: child.material, 
+                    position: child.position, 
+                    rotation: child.rotation, 
+                    scale: child.scale,
+                    castShadow: true, 
+                    receiveShadow: true, 
+                    onPointerDown: onPointerDown, 
+                    onPointerMove: onPointerMove, 
+                    onPointerOver: onPointerOver, 
+                    onPointerUp: onPointerUp, 
+                    onPointerLeave: onPointerLeave 
+                }));
+                meshIndex++;
+            }
+        });
+        
+        return _jsx("group", { children: meshes });
+    };
+    
+    return (_jsxs(_Fragment, { children: [modelScene ? (_jsx(ModelMeshes, {})) : (
             /* Fallback to geometry-based rendering for basic shapes */
             _jsx("mesh", { ref: meshRef, geometry: geometry, material: material, castShadow: true, receiveShadow: true, onPointerDown: onPointerDown, onPointerMove: onPointerMove, onPointerOver: onPointerOver, onPointerUp: onPointerUp, onPointerLeave: onPointerLeave })), loadingError && (_jsx(Html, { position: [0, 0, 0], center: true, children: _jsxs("div", { style: {
                         background: 'rgba(0,0,0,0.8)',
