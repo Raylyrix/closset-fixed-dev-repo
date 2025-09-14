@@ -50,7 +50,7 @@ export function Shirt() {
     const vectorMode = useApp(s => s.vectorMode);
     // Debug vector mode changes and cleanup
     useEffect(() => {
-        if (process.env.NODE_ENV === 'development') {
+        if (import.meta.env.DEV) {
             console.log('🎨 Vector mode changed to:', vectorMode);
         }
         // Clear anchor points and selection when vector mode is disabled
@@ -449,15 +449,32 @@ export function Shirt() {
         return () => window.removeEventListener('keydown', onKey);
     }, [selectedAnchor, composeLayers]);
     const onPointerDown = (e) => {
-        // Reduced logging for performance
-        if (process.env.NODE_ENV === 'development' && Math.random() < 0.1) {
-            console.log('Shirt: onPointerDown called with activeTool:', activeTool, 'vectorMode:', vectorMode);
-        }
+        // Always log for debugging
+        console.log('🎯 onPointerDown called with activeTool:', activeTool, 'vectorMode:', vectorMode, 'uv:', e.uv, 'event:', e);
+        
+        // Simple test - just log that we received a click
+        console.log('✅ Model clicked! This means events are working.');
+        
+        // Always stop propagation to prevent camera controls from interfering
+        e.stopPropagation();
+        
         // If we're already dragging something, don't process new pointer down events
         if (draggingAnchor || draggingControl) {
             console.log('🎯 onPointerDown - Already dragging, ignoring new pointer down');
             return;
         }
+        
+        // Disable camera controls when interacting with tools
+        if (activeTool !== 'select' && activeTool !== 'move') {
+            setControlsEnabled(false);
+        }
+        
+        // Ensure we have UV coordinates for drawing
+        if (!e.uv) {
+            console.log('⚠️ No UV coordinates available for drawing');
+            return;
+        }
+        
         if (vectorMode) {
             const uv = e.uv;
             let layer = getOrSelectActiveLayer();
@@ -468,13 +485,11 @@ export function Shirt() {
             const y = Math.floor(uv.y * canvas.height);
             const st = vectorStore.getState();
             const tool = st.tool;
-            // prevent camera controls and other handlers
-            e.stopPropagation();
+            
             try {
                 e.target?.setPointerCapture?.(e.pointerId);
             }
             catch { }
-            setControlsEnabled(false);
             // Pen tool
             if (tool === 'pen') {
                 console.log('🎯 Pen tool - Current path points:', st.currentPath?.points?.length || 0, 'buttons:', e.buttons);
@@ -569,7 +584,7 @@ export function Shirt() {
                             setSelectedAnchor({ shapeId: 'current', pointIndex: 0 });
                             // Reset debouncing for new path
                             lastPenPointRef.current = { x: snappedPoint.x, y: snappedPoint.y, time: Date.now() };
-                            if (process.env.NODE_ENV === 'development') {
+                            if (import.meta.env.DEV) {
                                 console.log('🎯 Pen tool - Started new path with first point');
                             }
                             // Force immediate rendering
@@ -869,15 +884,29 @@ export function Shirt() {
             paintingActiveRef.current = true;
             return;
         }
-        if (activeTool !== 'brush' && activeTool !== 'eraser' && activeTool !== 'puffPrint')
+        // Handle brush, eraser, and puff print tools
+        if (activeTool === 'brush' || activeTool === 'eraser' || activeTool === 'puffPrint') {
+            console.log('🎨 Brush tool - Starting painting with tool:', activeTool, 'UV:', e.uv);
+            
+            // Ensure we have a valid layer
+            const layer = getActiveLayer();
+            if (!layer) {
+                console.log('⚠️ No active layer available for painting');
+                return;
+            }
+            
+            snapshot();
+            paintAtEvent(e);
+            try {
+                e.target.setPointerCapture(e.pointerId);
+            } catch (err) {
+                console.log('Pointer capture failed:', err);
+            }
+            setControlsEnabled(false);
+            paintingActiveRef.current = true;
+            console.log('Shirt: Set paintingActiveRef to true for tool:', activeTool);
             return;
-        e.stopPropagation();
-        snapshot();
-        paintAtEvent(e);
-        e.target.setPointerCapture(e.pointerId);
-        setControlsEnabled(false);
-        paintingActiveRef.current = true;
-        console.log('Shirt: Set paintingActiveRef to true for tool:', activeTool);
+        }
     };
     const onDoubleClick = (e) => {
         if (activeTool !== 'vectorTools')
@@ -971,12 +1000,12 @@ export function Shirt() {
     }
     const onPointerMove = (e) => {
         // Reduced logging for performance
-        if (process.env.NODE_ENV === 'development' && Math.random() < 0.05) {
+        if (import.meta.env.DEV && Math.random() < 0.05) {
             console.log('Shirt: onPointerMove called with activeTool:', activeTool, 'vectorMode:', vectorMode, 'paintingActive:', paintingActiveRef.current, 'buttons:', e.buttons);
         }
         if (vectorMode) {
             // Reduced logging for performance
-            if (process.env.NODE_ENV === 'development' && Math.random() < 0.1) {
+            if (import.meta.env.DEV && Math.random() < 0.1) {
                 console.log('🎯 Vector tools onPointerMove - buttons:', e.buttons, 'draggingAnchor:', draggingAnchor, 'draggingControl:', draggingControl);
             }
             if (!e.buttons)
@@ -994,7 +1023,7 @@ export function Shirt() {
                 console.log('🎯 Pen tool - Continuous drawing active, paintingActive:', paintingActiveRef.current, 'currentPath points:', st.currentPath.points.length, 'buttons:', e.buttons);
                 // Validate coordinates
                 if (!isFinite(x) || !isFinite(y) || x < 0 || y < 0 || x > canvas.width || y > canvas.height) {
-                    if (process.env.NODE_ENV === 'development') {
+                    if (import.meta.env.DEV) {
                         console.warn('🎯 Pen tool - Invalid coordinates:', { x, y, canvasWidth: canvas.width, canvasHeight: canvas.height });
                     }
                     return;
@@ -1012,7 +1041,7 @@ export function Shirt() {
                 }
                 // Update last point reference
                 lastPenPointRef.current = { x, y, time: now };
-                if (process.env.NODE_ENV === 'development') {
+                if (import.meta.env.DEV) {
                     console.log('🎯 Pen tool - Continuous drawing, adding point at:', x, y);
                 }
                 try {
@@ -1312,10 +1341,12 @@ export function Shirt() {
             moveTransformText(e);
             return;
         }
-        if (activeTool !== 'brush' && activeTool !== 'eraser' && activeTool !== 'puffPrint')
+        // Handle brush, eraser, and puff print tools during move
+        if (activeTool === 'brush' || activeTool === 'eraser' || activeTool === 'puffPrint') {
+            e.stopPropagation();
+            paintAtEvent(e);
             return;
-        e.stopPropagation();
-        paintAtEvent(e);
+        }
     };
     const onPointerOver = (e) => {
         const uv = e.uv;
@@ -1331,6 +1362,14 @@ export function Shirt() {
             shapeStartRef.current = null;
             shapeBeforeRef.current = null;
         }
+        
+        // Re-enable camera controls when tool interaction ends
+        setControlsEnabled(true);
+        
+        // Also set a timeout to ensure controls are re-enabled even if onPointerUp doesn't fire
+        setTimeout(() => {
+            setControlsEnabled(true);
+        }, 100);
         if (vectorMode) {
             vectorDragRef.current = null;
             // Commit current path if we were drawing with pen tool
@@ -2144,7 +2183,7 @@ export function Shirt() {
                 opacity: stitchOpacity
             };
             // Debug canvas context before stitch rendering
-            if (process.env.NODE_ENV === 'development') {
+            if (import.meta.env.DEV) {
                 console.log('🎨 Canvas context before stitch rendering:', {
                     strokeStyle: ctx.strokeStyle,
                     fillStyle: ctx.fillStyle,
@@ -2316,7 +2355,7 @@ export function Shirt() {
             const appState = useApp.getState();
             const toolToUse = shape.tool || appState.activeTool;
             // Debug logging
-            if (process.env.NODE_ENV === 'development') {
+            if (import.meta.env.DEV) {
                 console.log(`🎨 Rendering shape ${shape.id}: storedTool=${shape.tool}, toolToUse=${toolToUse}, activeTool=${appState.activeTool}`);
             }
             // Use direct rendering for now (vectorToolManager is placeholder)
@@ -2988,6 +3027,11 @@ export function Shirt() {
             material: material ? 'loaded' : 'null'
         });
     }
+    // Debug logging for model state
+    if (import.meta.env.DEV) {
+        console.log('Shirt render - modelScene:', !!modelScene, 'geometry:', !!geometry, 'material:', !!material);
+    }
+    
     return (_jsxs(_Fragment, { children: [modelScene ? (_jsx("group", { onPointerDown: onPointerDown, onPointerMove: onPointerMove, onPointerOver: onPointerOver, onPointerUp: onPointerUp, onPointerLeave: onPointerLeave, children: _jsx("primitive", { object: modelScene, castShadow: true, receiveShadow: true }) })) : (
             /* Fallback to geometry-based rendering for basic shapes */
             _jsx("mesh", { ref: meshRef, geometry: geometry, material: material, castShadow: true, receiveShadow: true, onPointerDown: onPointerDown, onPointerMove: onPointerMove, onPointerOver: onPointerOver, onPointerUp: onPointerUp, onPointerLeave: onPointerLeave })), loadingError && (_jsx(Html, { position: [0, 0, 0], center: true, children: _jsxs("div", { style: {
