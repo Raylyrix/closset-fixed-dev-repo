@@ -1,22 +1,26 @@
 import { memo } from 'react';
+import { useApp } from '../App';
 
 type Props = {
   x: number;
   y: number;
   visible: boolean;
-  tool: 'brush' | 'eraser' | 'fill' | 'picker' | 'smudge' | 'blur' | 'select' | 'transform' | 'move' | 'undo' | 'redo' | 'puffPrint' | 'line' | 'rect' | 'ellipse' | 'gradient' | 'embroidery';
+  tool: 'brush' | 'eraser' | 'fill' | 'picker' | 'smudge' | 'blur' | 'select' | 'transform' | 'move' | 'undo' | 'redo' | 'puffPrint' | 'line' | 'rect' | 'ellipse' | 'gradient' | 'embroidery' | 'vectorTools' | 'pen' | 'curvature' | 'addAnchor' | 'removeAnchor' | 'convertAnchor' | 'pathSelection';
   size: number;
   shape?: 'round' | 'square' | 'airbrush' | 'calligraphy' | 'diamond' | 'triangle';
   angle?: number;
 };
 
 export const CursorOverlay = memo(function CursorOverlay({ x, y, visible, tool, size, shape = 'round', angle = 0 }: Props) {
+  const vectorMode = useApp(s => (s as any).vectorMode);
   if (!visible) return null;
-  const drawing = ['brush','eraser','fill','picker','smudge','blur','select','transform','move','puffPrint','line','rect','ellipse','gradient','embroidery'].includes(tool);
+  // Treat vectorMode as an active drawing mode so overlay appears and uses plus cursor
+  const drawing = vectorMode || ['brush','eraser','fill','picker','smudge','blur','select','transform','move','puffPrint','line','rect','ellipse','gradient','embroidery','vectorTools','pen','curvature','addAnchor','removeAnchor','convertAnchor','pathSelection'].includes(tool);
   if (!drawing) return null;
 
   const diameter = Math.max(6, Math.min(256, size));
-  const isCircle = (tool === 'brush' || tool === 'eraser' || tool === 'smudge' || tool === 'blur' || tool === 'puffPrint' || tool === 'line' || tool === 'rect' || tool === 'ellipse' || tool === 'gradient' || tool === 'embroidery') && shape !== 'square';
+  const isVectorTool = vectorMode || tool === 'vectorTools' || ['pen', 'curvature', 'addAnchor', 'removeAnchor', 'convertAnchor', 'pathSelection'].includes(tool);
+  const isCircle = (tool === 'brush' || tool === 'eraser' || tool === 'smudge' || tool === 'blur' || tool === 'puffPrint' || tool === 'line' || tool === 'rect' || tool === 'ellipse' || tool === 'gradient' || tool === 'embroidery') && shape !== 'square' && !isVectorTool;
   const border = (
     tool === 'eraser' ? '1px dashed rgba(255,255,255,0.95)'
     : tool === 'smudge' ? '2px double rgba(147,197,253,0.9)'
@@ -84,6 +88,50 @@ export const CursorOverlay = memo(function CursorOverlay({ x, y, visible, tool, 
             <circle cx="12" cy="12" r="2" fill="#ff69b4" opacity="0.6"/>
           </svg>
         );
+      case 'pen':
+      case 'vectorTools':
+        return (
+          <svg className="cursor-svg" style={{ ...common, marginLeft: -8, marginTop: -26 }} width="20" height="20" viewBox="0 0 24 24">
+            <path d="M12 5v14M5 12h14" stroke="#8B5CF6" strokeWidth="2" fill="none"/>
+            <circle cx="12" cy="12" r="2" stroke="#8B5CF6" strokeWidth="1" fill="none"/>
+          </svg>
+        );
+      case 'curvature':
+        return (
+          <svg className="cursor-svg" style={{ ...common, marginLeft: -8, marginTop: -26 }} width="20" height="20" viewBox="0 0 24 24">
+            <path d="M3 12c0-3 2-5 5-5s5 2 5 5-2 5-5 5-5-2-5-5z" stroke="#10B981" strokeWidth="1.5" fill="none"/>
+            <path d="M15 8c2 0 4 2 4 4s-2 4-4 4" stroke="#10B981" strokeWidth="1.5" fill="none"/>
+          </svg>
+        );
+      case 'addAnchor':
+        return (
+          <svg className="cursor-svg" style={{ ...common, marginLeft: -8, marginTop: -26 }} width="20" height="20" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="3" stroke="#F59E0B" strokeWidth="1.5" fill="none"/>
+            <path d="M12 8v8M8 12h8" stroke="#F59E0B" strokeWidth="1.5"/>
+          </svg>
+        );
+      case 'removeAnchor':
+        return (
+          <svg className="cursor-svg" style={{ ...common, marginLeft: -8, marginTop: -26 }} width="20" height="20" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="3" stroke="#EF4444" strokeWidth="1.5" fill="none"/>
+            <path d="M9 9l6 6M15 9l-6 6" stroke="#EF4444" strokeWidth="1.5"/>
+          </svg>
+        );
+      case 'convertAnchor':
+        return (
+          <svg className="cursor-svg" style={{ ...common, marginLeft: -8, marginTop: -26 }} width="20" height="20" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="3" stroke="#8B5CF6" strokeWidth="1.5" fill="none"/>
+            <path d="M8 12h8M12 8v8" stroke="#8B5CF6" strokeWidth="1.5"/>
+            <path d="M10 10l4 4M14 10l-4 4" stroke="#8B5CF6" strokeWidth="1"/>
+          </svg>
+        );
+      case 'pathSelection':
+        return (
+          <svg className="cursor-svg" style={{ ...common, marginLeft: -8, marginTop: -26 }} width="20" height="20" viewBox="0 0 24 24">
+            <path d="M3 3h18v18H3z" stroke="#3B82F6" strokeWidth="1.5" fill="none"/>
+            <path d="M7 7h10v10H7z" stroke="#3B82F6" strokeWidth="1" fill="none"/>
+          </svg>
+        );
       default:
         return null;
     }
@@ -91,7 +139,12 @@ export const CursorOverlay = memo(function CursorOverlay({ x, y, visible, tool, 
 
   return (
     <div className="cursor-overlay" style={{ left: 0, top: 0 }}>
-      {isCircle ? (
+      {isVectorTool ? (
+        <div className="cursor-plus" style={{ transform: `translate(${x}px, ${y}px)` }}>
+          <div className="plus-h" />
+          <div className="plus-v" />
+        </div>
+      ) : isCircle ? (
         <div
           className="cursor-circle"
           style={{
@@ -119,7 +172,7 @@ export const CursorOverlay = memo(function CursorOverlay({ x, y, visible, tool, 
           </div>
         )
       )}
-      {icon}
+      {!isVectorTool && icon}
     </div>
   );
 });

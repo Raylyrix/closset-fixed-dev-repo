@@ -3,11 +3,11 @@ import { Navigation } from './Navigation';
 import { Toolbar } from './Toolbar';
 import { RightPanel } from './RightPanel';
 import { LeftPanel } from './LeftPanel';
-import { EmbroiderySidebar } from './EmbroiderySidebar';
 import { GridOverlay } from './GridOverlay';
 import { VectorOverlay } from './VectorOverlay';
 import VectorToolbar from './VectorToolbar';
 import { useApp } from '../App';
+import { vectorStore } from '../vector/vectorStore';
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -541,12 +541,13 @@ export function MainLayout({ children }: MainLayoutProps) {
     setShowRightPanel(next);
   };
 
-  console.log('🏗️ MainLayout: Rendering layout', {
-    showNavigation,
-    showLeftPanel,
-    showRightPanel,
-    activeTool
-  });
+  // Performance optimization: Reduce console logging
+  // console.log('🏗️ MainLayout: Rendering layout', {
+  //   showNavigation,
+  //   showLeftPanel,
+  //   showRightPanel,
+  //   activeTool
+  // });
 
   return (
     <div className="main-layout" style={{
@@ -810,6 +811,14 @@ export function MainLayout({ children }: MainLayoutProps) {
               console.log('🎨 Vector Tools button clicked - toggling vectorMode');
               setShowVectorToolbar(!showVectorToolbar);
               setVectorMode(!vectorMode);
+              // Set the active tool to vectorTools when entering vector mode
+              if (!vectorMode) {
+                setActiveTool('vectorTools');
+                // Initialize vector store with pen tool
+                vectorStore.set('tool', 'pen');
+              } else {
+                setActiveTool('brush'); // Return to brush when exiting vector mode
+              }
               console.log('🎨 Vector mode set to:', !vectorMode);
             }}
             style={{
@@ -910,8 +919,8 @@ export function MainLayout({ children }: MainLayoutProps) {
             <GridOverlay canvasRef={canvasRef} />
           </div>
 
-          {/* Right Panel */}
-          {showRightPanel && (
+          {/* Right Panel - Hide when embroidery tool is active */}
+          {showRightPanel && activeTool !== 'embroidery' && (
             <div className="right-panel-container" style={{
               width: `${rightWidth}px`,
               background: 'linear-gradient(135deg, #1E293B 0%, #0F172A 100%)',
@@ -924,8 +933,6 @@ export function MainLayout({ children }: MainLayoutProps) {
         </div>
       </div>
 
-      {/* Embroidery Sidebar - Fixed position overlay */}
-      <EmbroiderySidebar active={activeTool === 'embroidery'} />
     </div>
   );
 }

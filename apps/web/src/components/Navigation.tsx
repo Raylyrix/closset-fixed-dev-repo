@@ -185,11 +185,12 @@ export function Navigation({ active }: NavigationProps) {
     return null;
   }
 
-  console.log('🧭 Navigation: Rendering component', { 
-    categoriesCount: toolCategories.length,
-    expandedCategories: Array.from(expandedCategories),
-    activeTool
-  });
+  // Performance optimization: Reduce console logging
+  // console.log('🧭 Navigation: Rendering component', { 
+  //   categoriesCount: toolCategories.length,
+  //   expandedCategories: Array.from(expandedCategories),
+  //   activeTool
+  // });
 
   return (
     <div className="navigation" style={{

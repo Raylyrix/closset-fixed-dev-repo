@@ -87,6 +87,50 @@ class PerformanceMonitor {
     clearMetrics() {
         this.metrics = [];
     }
+    /**
+     * Configure the performance monitor
+     */
+    configure(options) {
+        if (options.maxMetrics !== undefined) {
+            this.maxMetrics = options.maxMetrics;
+        }
+        if (options.enableMonitoring !== undefined) {
+            this.isMonitoring = options.enableMonitoring;
+        }
+    }
+    /**
+     * Track a custom event
+     */
+    trackCustomEvent(eventName, data) {
+        this.trackMetric(`event_${eventName}`, 1, 'count', 'event', undefined);
+        if (data) {
+            console.log(`📊 Custom event: ${eventName}`, data);
+        }
+    }
+    /**
+     * Track an error
+     */
+    trackError(error, component, severity, context) {
+        this.trackMetric('error', 1, 'count', 'error', component);
+        console.error(`❌ Error in ${component} (${severity}):`, error.message, context);
+    }
+    /**
+     * Subscribe to performance metrics
+     */
+    subscribe(callback) {
+        // Simple implementation - in production, this would use a proper event system
+        const interval = setInterval(() => {
+            if (this.isMonitoring) {
+                callback({
+                    fps: 60, // Placeholder
+                    memoryUsage: performance.memory?.usedJSHeapSize || 0,
+                    renderTime: 0, // Placeholder
+                    updateTime: 0 // Placeholder
+                });
+            }
+        }, 1000);
+        return () => clearInterval(interval);
+    }
     generateMetricId() {
         return `metric_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     }

@@ -930,7 +930,7 @@ export class ProfessionalVectorTools {
     event.preventDefault();
     
     const zoomFactor = event.deltaY > 0 ? 0.9 : 1.1;
-    this.state.zoom = Math.max(0.1, Math.min(10, this.state.zoom * zoomFactor));
+    this.state.zoom = Math.max(0.01, Math.min(100, this.state.zoom * zoomFactor));
     
     this.emit('view:changed', { zoom: this.state.zoom, pan: this.state.pan });
   }
@@ -955,12 +955,12 @@ export class ProfessionalVectorTools {
   }
   
   private zoomIn(): void {
-    this.state.zoom = Math.min(10, this.state.zoom * 1.2);
+    this.state.zoom = Math.min(100, this.state.zoom * 1.2);
     this.emit('view:changed', { zoom: this.state.zoom });
   }
   
   private zoomOut(): void {
-    this.state.zoom = Math.max(0.1, this.state.zoom * 0.8);
+    this.state.zoom = Math.max(0.01, this.state.zoom * 0.8);
     this.emit('view:changed', { zoom: this.state.zoom });
   }
   

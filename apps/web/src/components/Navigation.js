@@ -159,11 +159,12 @@ export function Navigation({ active }) {
         // Console log removed
         return null;
     }
-    console.log('🧭 Navigation: Rendering component', {
-        categoriesCount: toolCategories.length,
-        expandedCategories: Array.from(expandedCategories),
-        activeTool
-    });
+    // Performance optimization: Reduce console logging
+    // console.log('🧭 Navigation: Rendering component', { 
+    //   categoriesCount: toolCategories.length,
+    //   expandedCategories: Array.from(expandedCategories),
+    //   activeTool
+    // });
     return (_jsxs("div", { className: "navigation", style: {
             width: '280px',
             height: '100vh',

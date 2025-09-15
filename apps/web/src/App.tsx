@@ -19,6 +19,7 @@ import { MainLayout } from './components/MainLayout';
 import { ToolRouter } from './components/ToolRouter';
 import { EmbroideryStitch, EmbroideryPattern } from './services/embroideryService';
 import { handleRenderingError, handleCanvasError, ErrorCategory, ErrorSeverity } from './utils/CentralizedErrorHandler';
+import { vectorStore } from './vector/vectorState';
 
 type Tool =
   | 'brush' | 'eraser' | 'fill' | 'picker' | 'smudge' | 'blur' | 'select' | 'transform' | 'move' | 'text'
@@ -219,6 +220,7 @@ interface AppState {
   controlsEnabled: boolean;
   controlsTarget: [number, number, number];
   controlsDistance: number;
+  clickingOnModel: boolean;
 
   
   // Methods
@@ -267,6 +269,7 @@ interface AppState {
   setControlsEnabled: (enabled: boolean) => void;
   setControlsTarget: (target: [number, number, number]) => void;
   setControlsDistance: (distance: number) => void;
+  setClickingOnModel: (clicking: boolean) => void;
   
   // Grid & Scale setters
   setShowGrid: (show: boolean) => void;
@@ -458,6 +461,7 @@ export const useApp = create<AppState>((set, get) => ({
   controlsEnabled: true,
   controlsTarget: [0, 0, 0],
   controlsDistance: 2,
+  clickingOnModel: false,
 
 
   // Methods
@@ -506,6 +510,7 @@ export const useApp = create<AppState>((set, get) => ({
   setControlsEnabled: (enabled) => set({ controlsEnabled: enabled }),
   setControlsTarget: (target) => set({ controlsTarget: target }),
   setControlsDistance: (distance) => set({ controlsDistance: distance }),
+  setClickingOnModel: (clicking: boolean) => set({ clickingOnModel: clicking }),
   
   // Grid & Scale setters
   setShowGrid: (show) => set({ showGrid: show }),
@@ -651,7 +656,10 @@ export const useApp = create<AppState>((set, get) => ({
     const canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
-    const ctx = canvas.getContext('2d')!;
+    // Optimize canvas for frequent readback operations
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
     ctx.fillStyle = 'transparent';
     ctx.fillRect(0, 0, width, height);
     const id = Math.random().toString(36).slice(2);
@@ -663,10 +671,30 @@ export const useApp = create<AppState>((set, get) => ({
   initCanvases: (w, h) => {
     const base = document.createElement('canvas');
     base.width = w; base.height = h;
+    // Optimize canvas for frequent readback operations
+    const baseCtx = base.getContext('2d', { willReadFrequently: true });
+    if (baseCtx) {
+      baseCtx.imageSmoothingEnabled = true;
+      baseCtx.imageSmoothingQuality = 'high';
+    }
+    
     const composed = document.createElement('canvas');
     composed.width = w; composed.height = h;
+    // Optimize composed canvas for frequent readback operations
+    const composedCtx = composed.getContext('2d', { willReadFrequently: true });
+    if (composedCtx) {
+      composedCtx.imageSmoothingEnabled = true;
+      composedCtx.imageSmoothingQuality = 'high';
+    }
+    
     const paint = document.createElement('canvas');
     paint.width = w; paint.height = h;
+    // Optimize paint canvas for frequent readback operations
+    const paintCtx = paint.getContext('2d', { willReadFrequently: true });
+    if (paintCtx) {
+      paintCtx.imageSmoothingEnabled = true;
+      paintCtx.imageSmoothingQuality = 'high';
+    }
     const layers = [
       { id: 'paint', name: 'Paint', visible: true, canvas: paint, history: [], future: [] }
     ];
@@ -1078,7 +1106,12 @@ export const useApp = create<AppState>((set, get) => ({
 function App() {
   const composedCanvas = useApp(s => s.composedCanvas);
   const activeTool = useApp(s => s.activeTool);
-  const drawingActive = ['brush','eraser','fill','picker','smudge','blur','select','transform','move','puffPrint'].includes(activeTool as any);
+  const vectorMode = useApp(s => s.vectorMode);
+  const drawingActive = vectorMode || [
+    'brush','eraser','fill','picker','smudge','blur','select','transform','move','puffPrint','embroidery',
+    'line','rect','ellipse','text','moveText','gradient','vectorTools','advancedSelection',
+    'advancedBrush','meshDeformation','3dPainting','smartFill'
+  ].includes(activeTool as any);
   const wrapRef = useRef<HTMLDivElement>(null);
   const controlsTarget = useApp(s => s.controlsTarget);
   const controlsDistance = useApp(s => s.controlsDistance);
@@ -1086,11 +1119,37 @@ function App() {
   const controlsRef = useRef<any>(null);
   const decals = useApp(s => s.decals);
   const activeDecalId = useApp(s => s.activeDecalId);
+  const clickingOnModel = useApp(s => s.clickingOnModel);
+  const setClickingOnModel = useApp(s => s.setClickingOnModel);
 
   // Initialize canvases
   useEffect(() => {
     useApp.getState().initCanvases(2048, 2048);
   }, []);
+
+  // Handle model click detection
+  useEffect(() => {
+    const handleModelClick = () => {
+      setClickingOnModel(true);
+    };
+    
+    const handleModelClickEnd = () => {
+      setClickingOnModel(false);
+    };
+
+    // Listen for custom events from the Shirt component
+    window.addEventListener('modelClick', handleModelClick);
+    window.addEventListener('modelClickEnd', handleModelClickEnd);
+    window.addEventListener('mouseup', handleModelClickEnd);
+    window.addEventListener('mouseleave', handleModelClickEnd);
+
+    return () => {
+      window.removeEventListener('modelClick', handleModelClick);
+      window.removeEventListener('modelClickEnd', handleModelClickEnd);
+      window.removeEventListener('mouseup', handleModelClickEnd);
+      window.removeEventListener('mouseleave', handleModelClickEnd);
+    };
+  }, [setClickingOnModel]);
 
   // Camera view effect
   useEffect(() => {
@@ -1150,8 +1209,9 @@ function App() {
             />
             <OrbitControls
               ref={controlsRef}
-              enablePan
-              enableZoom
+              enablePan={!drawingActive || !useApp(s => s.clickingOnModel)}
+              enableZoom={true}
+              enableRotate={!drawingActive || !useApp(s => s.clickingOnModel)}
               zoomToCursor
               enabled={useApp(s => s.controlsEnabled)}
               minDistance={useApp(s=> {
@@ -1160,7 +1220,7 @@ function App() {
                 const minDim = (s as any).modelMinDimension || h * 0.1;
                 return Math.max(0.001, Math.min(h * scale * 0.001, minDim * scale * 0.01));
               })}
-              maxDistance={useApp(s=> Math.max(2, (s.controlsDistance ?? 1) * 8))}
+              maxDistance={useApp(s=> Math.max(2, (s.controlsDistance ?? 1) * 50))}
             />
             <GizmoHelper alignment="bottom-right" margin={[60,60]}>
               <GizmoViewport axisColors={["#ef4444","#22c55e","#60a5fa"]} labelColor="#e5e7eb" />
@@ -1182,11 +1242,18 @@ function App() {
 
 function CursorManager({ wrapRef, drawingActive }: { wrapRef: React.RefObject<HTMLDivElement>; drawingActive: boolean }) {
   const tool = useApp(s => s.activeTool);
+  const vectorMode = useApp(s => s.vectorMode);
   const size = useApp(s => s.brushSize);
   const shape = useApp(s => s.brushShape);
   const angle = useApp(s => s.cursorAngle);
   const [pos, setPos] = useState<{x:number;y:number}>({ x: 0, y: 0 });
   const [visible, setVisible] = useState(false);
+  // Track current vector subtool from the vector store
+  const [vectorTool, setVectorTool] = useState<string>(vectorStore.getState().tool);
+  useEffect(() => {
+    const unsub = vectorStore.subscribe(state => setVectorTool(state.tool));
+    return () => unsub();
+  }, []);
   
   useEffect(() => {
     const el = wrapRef.current;
@@ -1209,13 +1276,15 @@ function CursorManager({ wrapRef, drawingActive }: { wrapRef: React.RefObject<HT
       el.removeEventListener('mouseleave', onLeave);
       el.removeEventListener('mouseenter', onEnter);
     };
-  }, [wrapRef, drawingActive, tool]);
+  }, [wrapRef, drawingActive, tool, vectorMode, vectorTool]);
   
   useEffect(() => { 
     if (!drawingActive) setVisible(false); 
   }, [drawingActive]);
   
-  return <CursorOverlay x={pos.x} y={pos.y} visible={visible} tool={tool as any} size={size} shape={shape} angle={angle} />;
+  // When vector mode is enabled, reflect the current vector subtool in the overlay
+  const overlayTool = vectorMode ? (vectorTool as any) : (tool as any);
+  return <CursorOverlay x={pos.x} y={pos.y} visible={visible} tool={overlayTool} size={size} shape={shape} angle={angle} />;
 }
 
 export default App;

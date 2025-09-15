@@ -1,0 +1,2 @@
+# Normalize text files and let Git handle CRLF/LF on checkout
+* text=auto

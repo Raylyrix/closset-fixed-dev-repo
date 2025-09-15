@@ -298,7 +298,10 @@ export const useApp = create((set, get) => ({
         const canvas = document.createElement('canvas');
         canvas.width = width;
         canvas.height = height;
-        const ctx = canvas.getContext('2d');
+        // Optimize canvas for frequent readback operations
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
         ctx.fillStyle = 'transparent';
         ctx.fillRect(0, 0, width, height);
         const id = Math.random().toString(36).slice(2);
@@ -310,12 +313,30 @@ export const useApp = create((set, get) => ({
         const base = document.createElement('canvas');
         base.width = w;
         base.height = h;
+        // Optimize canvas for frequent readback operations
+        const baseCtx = base.getContext('2d', { willReadFrequently: true });
+        if (baseCtx) {
+            baseCtx.imageSmoothingEnabled = true;
+            baseCtx.imageSmoothingQuality = 'high';
+        }
         const composed = document.createElement('canvas');
         composed.width = w;
         composed.height = h;
+        // Optimize composed canvas for frequent readback operations
+        const composedCtx = composed.getContext('2d', { willReadFrequently: true });
+        if (composedCtx) {
+            composedCtx.imageSmoothingEnabled = true;
+            composedCtx.imageSmoothingQuality = 'high';
+        }
         const paint = document.createElement('canvas');
         paint.width = w;
         paint.height = h;
+        // Optimize paint canvas for frequent readback operations
+        const paintCtx = paint.getContext('2d', { willReadFrequently: true });
+        if (paintCtx) {
+            paintCtx.imageSmoothingEnabled = true;
+            paintCtx.imageSmoothingQuality = 'high';
+        }
         const layers = [
             { id: 'paint', name: 'Paint', visible: true, canvas: paint, history: [], future: [] }
         ];
@@ -701,7 +722,12 @@ export const useApp = create((set, get) => ({
 function App() {
     const composedCanvas = useApp(s => s.composedCanvas);
     const activeTool = useApp(s => s.activeTool);
-    const drawingActive = ['brush', 'eraser', 'fill', 'picker', 'smudge', 'blur', 'select', 'transform', 'move', 'puffPrint'].includes(activeTool);
+    const vectorMode = useApp(s => s.vectorMode);
+    const drawingActive = vectorMode || [
+        'brush', 'eraser', 'fill', 'picker', 'smudge', 'blur', 'select', 'transform', 'move', 'puffPrint', 'embroidery',
+        'line', 'rect', 'ellipse', 'text', 'moveText', 'gradient', 'vectorTools', 'advancedSelection',
+        'advancedBrush', 'meshDeformation', '3dPainting', 'smartFill'
+    ].includes(activeTool);
     const wrapRef = useRef(null);
     const controlsTarget = useApp(s => s.controlsTarget);
     const controlsDistance = useApp(s => s.controlsDistance);
@@ -757,6 +783,7 @@ function App() {
 }
 function CursorManager({ wrapRef, drawingActive }) {
     const tool = useApp(s => s.activeTool);
+    const vectorMode = useApp(s => s.vectorMode);
     const size = useApp(s => s.brushSize);
     const shape = useApp(s => s.brushShape);
     const angle = useApp(s => s.cursorAngle);
@@ -781,11 +808,13 @@ function CursorManager({ wrapRef, drawingActive }) {
             el.removeEventListener('mouseleave', onLeave);
             el.removeEventListener('mouseenter', onEnter);
         };
-    }, [wrapRef, drawingActive, tool]);
+    }, [wrapRef, drawingActive, tool, vectorMode]);
     useEffect(() => {
         if (!drawingActive)
             setVisible(false);
     }, [drawingActive]);
-    return _jsx(CursorOverlay, { x: pos.x, y: pos.y, visible: visible, tool: tool, size: size, shape: shape, angle: angle });
+    // Force vector cursor when vector mode is enabled, regardless of activeTool
+    const overlayTool = vectorMode ? 'vectorTools' : tool;
+    return _jsx(CursorOverlay, { x: pos.x, y: pos.y, visible: visible, tool: overlayTool, size: size, shape: shape, angle: angle });
 }
 export default App;

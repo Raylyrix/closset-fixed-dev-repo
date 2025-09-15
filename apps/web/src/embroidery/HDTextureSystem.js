@@ -5,7 +5,7 @@
 import { performanceMonitor } from '../utils/PerformanceMonitor';
 import { centralizedErrorHandler, ErrorCategory, ErrorSeverity } from '../utils/CentralizedErrorHandler';
 export class HDTextureSystem {
-    constructor(gl) {
+    constructor(gl = null) {
         this.gl = null;
         this.textures = new Map();
         this.textureAtlases = new Map();
@@ -14,7 +14,9 @@ export class HDTextureSystem {
         this.maxTextureSize = 0;
         this.maxAnisotropy = 0;
         this.gl = gl;
-        this.initialize();
+        if (gl) {
+            this.initialize();
+        }
     }
     /**
      * Initialize the texture system
@@ -24,9 +26,25 @@ export class HDTextureSystem {
             if (!this.gl) {
                 throw new Error('WebGL context not available');
             }
-            // Get WebGL capabilities
-            this.maxTextureSize = this.gl.getParameter(this.gl.MAX_TEXTURE_SIZE);
-            this.maxAnisotropy = this.gl.getParameter(this.gl.MAX_TEXTURE_MAX_ANISOTROPY_EXT) || 1;
+            // Get WebGL capabilities with proper extension handling
+            try {
+                this.maxTextureSize = this.gl.getParameter(this.gl.MAX_TEXTURE_SIZE) || 4096;
+                // Check for anisotropy extension before using it
+                const anisotropyExt = this.gl.getExtension('EXT_texture_filter_anisotropic') ||
+                    this.gl.getExtension('WEBKIT_EXT_texture_filter_anisotropic') ||
+                    this.gl.getExtension('MOZ_EXT_texture_filter_anisotropic');
+                if (anisotropyExt) {
+                    this.maxAnisotropy = this.gl.getParameter(anisotropyExt.MAX_TEXTURE_MAX_ANISOTROPY_EXT) || 1;
+                }
+                else {
+                    this.maxAnisotropy = 1;
+                }
+            }
+            catch (error) {
+                console.warn('WebGL parameter access failed, using fallback values:', error);
+                this.maxTextureSize = 4096;
+                this.maxAnisotropy = 1;
+            }
             console.log(`🎨 HD Texture System initialized - Max texture size: ${this.maxTextureSize}x${this.maxTextureSize}, Max anisotropy: ${this.maxAnisotropy}`);
             this.isInitialized = true;
         }
@@ -497,8 +515,13 @@ export class HDTextureSystem {
             this.gl.generateMipmap(this.gl.TEXTURE_2D);
         }
         // Set anisotropy if available
-        if (properties.anisotropy > 1 && this.gl.getExtension('EXT_texture_filter_anisotropic')) {
-            this.gl.texParameterf(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAX_ANISOTROPY_EXT, properties.anisotropy);
+        if (properties.anisotropy > 1) {
+            const anisotropyExt = this.gl.getExtension('EXT_texture_filter_anisotropic') ||
+                this.gl.getExtension('WEBKIT_EXT_texture_filter_anisotropic') ||
+                this.gl.getExtension('MOZ_EXT_texture_filter_anisotropic');
+            if (anisotropyExt) {
+                this.gl.texParameterf(this.gl.TEXTURE_2D, anisotropyExt.MAX_TEXTURE_MAX_ANISOTROPY_EXT, properties.anisotropy);
+            }
         }
     }
     getWrapMode(wrap) {

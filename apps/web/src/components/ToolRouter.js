@@ -16,6 +16,7 @@ import { MeshDeformationTool } from './MeshDeformationTool';
 import { ProceduralGenerator } from './ProceduralGenerator';
 import { ThreeDPaintingTool } from './3DPaintingTool';
 import { SmartFillTool } from './SmartFillTool';
+import EmbroideryTool from './EmbroideryTool';
 export function ToolRouter({ active }) {
     // Console log removed
     const activeTool = useApp(s => s.activeTool);
@@ -47,7 +48,7 @@ export function ToolRouter({ active }) {
         // Textile Design
         'puffPrint': null, // Handled by existing PuffPrintTool
         'patternMaker': PatternMaker,
-        'embroidery': null, // Handled by RightPanel sidebar
+        'embroidery': EmbroideryTool, // Enhanced embroidery tool with advanced features
         // AI & Automation
         'aiAssistant': AIDesignAssistant,
         'batch': BatchProcessing,
@@ -81,6 +82,30 @@ export function ToolRouter({ active }) {
         activeTool,
         componentName: ToolComponent.name
     });
+    // Special handling for embroidery tool - create a right sidebar
+    if (activeTool === 'embroidery') {
+        return (_jsx("div", { className: "embroidery-right-sidebar", style: {
+                position: 'fixed',
+                top: '60px', // Below the toolbar
+                right: '0',
+                width: '350px',
+                height: 'calc(100vh - 60px)',
+                background: 'linear-gradient(135deg, #1E293B 0%, #0F172A 100%)',
+                borderLeft: '1px solid #334155',
+                zIndex: 1000,
+                overflow: 'hidden',
+                display: 'flex',
+                flexDirection: 'column'
+            }, children: _jsx("div", { style: {
+                    flex: 1,
+                    overflowY: 'auto',
+                    overflowX: 'hidden',
+                    padding: '0',
+                    scrollbarWidth: 'thin',
+                    scrollbarColor: '#475569 #1E293B'
+                }, children: _jsx(ToolComponent, { active: true }) }) }));
+    }
+    // Default overlay behavior for other tools
     return (_jsx("div", { className: "tool-router", style: {
             position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10, pointerEvents: 'none'
         }, children: _jsx("div", { style: {

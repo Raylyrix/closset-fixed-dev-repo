@@ -31,6 +31,7 @@ button, input, select { font: inherit; }
 .center { grid-area: center; position: relative; }
 .canvas-wrap { position: absolute; inset: 0; }
 .canvas-wrap.drawing { cursor: none; }
+.canvas-wrap.drawing canvas, .canvas-wrap.drawing * { cursor: none !important; }
 .cursor-overlay { position: absolute; inset: 0; pointer-events: none; z-index: 10000; }
 .cursor-circle { position: absolute; border-radius: 999px; box-shadow: 0 0 0 1px rgba(0,0,0,0.4) inset; }
 .cursor-crosshair { 
@@ -66,6 +67,31 @@ button, input, select { font: inherit; }
   border-radius: 50%;
   box-shadow: 0 0 4px rgba(0,0,0,1), 0 0 8px rgba(255,255,255,0.5);
   border: 1px solid rgba(0,0,0,0.8);
+}
+
+/* Plus cursor for vector tools */
+.cursor-plus { 
+  position: absolute; 
+  pointer-events: none; 
+  transform: translate(-50%, -50%); /* Center the plus precisely */
+}
+.cursor-plus .plus-h { 
+  position: absolute; 
+  left: -15px; 
+  width: 30px; 
+  height: 3px; 
+  background: linear-gradient(to right, transparent, rgba(139,92,246,1), rgba(139,92,246,1), transparent);
+  box-shadow: 0 0 3px rgba(0,0,0,0.9), 0 0 6px rgba(139,92,246,0.3);
+  top: -1.5px;
+}
+.cursor-plus .plus-v { 
+  position: absolute; 
+  top: -15px; 
+  height: 30px; 
+  width: 3px; 
+  background: linear-gradient(to bottom, transparent, rgba(139,92,246,1), rgba(139,92,246,1), transparent);
+  box-shadow: 0 0 3px rgba(0,0,0,0.9), 0 0 6px rgba(139,92,246,0.3);
+  left: -1.5px;
 }
 .cursor-svg { filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6)); pointer-events: none; }
 .cursor-marquee { border: 1px dashed rgba(103,232,249,0.9); background: rgba(103,232,249,0.15); }

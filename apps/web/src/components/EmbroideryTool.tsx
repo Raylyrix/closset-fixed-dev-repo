@@ -1,8 +1,33 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useApp } from '../App';
 import { embroideryAI, type EmbroideryStitch, type EmbroideryPattern } from '../services/embroideryService';
 import { embroideryBackend, type EmbroideryPlan, type GenerateFromPointsRequest } from '../services/embroideryBackendService';
 import * as THREE from 'three';
+
+// Import advanced embroidery systems
+import { AdvancedEmbroideryEngine } from '../embroidery/AdvancedEmbroideryEngine';
+import { InkStitchIntegration } from '../embroidery/InkStitchIntegration';
+import { HDTextureSystem } from '../embroidery/HDTextureSystem';
+import { RealisticLightingSystem } from '../embroidery/RealisticLightingSystem';
+import { UltraRealisticSatinStitch, SatinStitchGeometry, SatinStitchMaterial, SatinStitchLighting, SatinStitch3DProperties } from '../embroidery/UltraRealisticSatinStitch';
+import { SatinStitchShaders } from '../embroidery/SatinStitchShaders';
+import { UltraRealisticFillStitch, FillStitchGeometry, FillStitchMaterial, FillStitchLighting, FillStitch3DProperties } from '../embroidery/UltraRealisticFillStitch';
+import { UltraRealisticCrossStitch, CrossStitchGeometry, CrossStitchMaterial, CrossStitchLighting, CrossStitch3DProperties } from '../embroidery/UltraRealisticCrossStitch';
+import { UltraRealisticOutlineStitch, OutlineStitchGeometry, OutlineStitchPattern, OutlineStitchMaterial, OutlineStitchLighting, OutlineStitch3DProperties } from '../embroidery/UltraRealisticOutlineStitch';
+import { UltraRealisticChainStitch, ChainStitchGeometry, ChainStitchPattern, ChainStitchMaterial, ChainStitchLighting, ChainStitch3DProperties } from '../embroidery/UltraRealisticChainStitch';
+import { UltraRealisticBackstitch, BackstitchGeometry, BackstitchPattern, BackstitchMaterial, BackstitchLighting, Backstitch3DProperties } from '../embroidery/UltraRealisticBackstitch';
+import { UltraRealisticFrenchKnot, FrenchKnotGeometry, FrenchKnotPattern, FrenchKnotMaterial, FrenchKnotLighting, FrenchKnot3DProperties } from '../embroidery/UltraRealisticFrenchKnot';
+import { UltraRealisticBullion, BullionGeometry, BullionPattern, BullionMaterial, BullionLighting, Bullion3DProperties } from '../embroidery/UltraRealisticBullion';
+import { UltraRealisticLazyDaisy, LazyDaisyGeometry, LazyDaisyPattern, LazyDaisyMaterial, LazyDaisyLighting, LazyDaisy3DProperties } from '../embroidery/UltraRealisticLazyDaisy';
+import { UltraRealisticFeather, FeatherGeometry, FeatherPattern, FeatherMaterial, FeatherLighting, Feather3DProperties } from '../embroidery/UltraRealisticFeather';
+import { renderStitchType } from '../utils/SimpleStitchRenderer';
+import { generateStitchPattern, type StitchPoint, type StitchConfig } from '../utils/StitchGenerator';
+import EnhancedEmbroideryManager from '../utils/EnhancedEmbroideryManager';
+import EnhancedStitchGenerator from '../utils/EnhancedStitchGenerator';
+import { enhancedStitchRenderer } from '../utils/EnhancedStitchRenderer';
+import { advancedMemoryManager } from '../utils/AdvancedMemoryManager';
+import { advancedPerformanceMonitor } from '../utils/AdvancedPerformanceMonitor';
+import { advancedUndoRedoSystem } from '../utils/AdvancedUndoRedoSystem';
 
 interface EmbroideryToolProps {
   active?: boolean;
@@ -50,6 +75,22 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
   const [lightingDirection, setLightingDirection] = useState('top-left');
   const [fabricType, setFabricType] = useState('cotton');
   
+  // Enhanced managers
+  const [enhancedManager, setEnhancedManager] = useState<EnhancedEmbroideryManager | null>(null);
+  const [enhancedGenerator, setEnhancedGenerator] = useState<EnhancedStitchGenerator | null>(null);
+  const [useEnhancedMode, setUseEnhancedMode] = useState(true);
+  
+  // Advanced system states
+  const [performanceMetrics, setPerformanceMetrics] = useState<any>(null);
+  const [memoryStats, setMemoryStats] = useState<any>(null);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+  const [showPerformancePanel, setShowPerformancePanel] = useState(false);
+  const [enableAdvancedRendering, setEnableAdvancedRendering] = useState(true);
+  const [enableAntiAliasing, setEnableAntiAliasing] = useState(true);
+  const [enableCaching, setEnableCaching] = useState(true);
+  const [enableLOD, setEnableLOD] = useState(true);
+  
   // Use global grid settings
   const {
     showGrid,
@@ -74,13 +115,45 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
   const [exportFormat, setExportFormat] = useState<'dst' | 'pes' | 'exp'>('dst');
   const [showExportOptions, setShowExportOptions] = useState(false);
   
-  // Revolutionary new features for next-level technology
+  // Enhanced 4K HD embroidery features
   const [advancedStitchTypes, setAdvancedStitchTypes] = useState([
     'satin', 'fill', 'outline', 'cross-stitch', 'chain', 'backstitch',
     'french-knot', 'bullion', 'lazy-daisy', 'feather', 'couching', 'appliqué',
     'seed', 'stem', 'split', 'brick', 'long-short', 'fishbone', 'herringbone',
-    'satin-ribbon', 'metallic', 'glow-thread', 'variegated', 'gradient'
+    'satin-ribbon', 'metallic', 'glow-thread', 'variegated', 'gradient',
+    'running-stitch', 'back-stitch', 'blanket-stitch', 'feather-stitch', 'herringbone-stitch'
   ]);
+  
+  // Advanced rendering settings
+  const [renderQuality, setRenderQuality] = useState<'low' | 'medium' | 'high' | 'ultra'>('high');
+  const [enable4K, setEnable4K] = useState(true);
+  const [enableWebGL, setEnableWebGL] = useState(true);
+  const [enablePBR, setEnablePBR] = useState(true);
+  const [enableShadows, setEnableShadows] = useState(true);
+  const [enableLighting, setEnableLighting] = useState(true);
+  const [enableAdvancedStitches, setEnableAdvancedStitches] = useState(true);
+  const [enableRealTimePreview, setEnableRealTimePreview] = useState(true);
+  const [enableMemoryOptimization, setEnableMemoryOptimization] = useState(true);
+  const [enableGPUAcceleration, setEnableGPUAcceleration] = useState(true);
+  
+  // Advanced stitch generation settings
+  const [stitchOptimization, setStitchOptimization] = useState(true);
+  const [jumpStitchMinimization, setJumpStitchMinimization] = useState(true);
+  const [realTimePatternGeneration, setRealTimePatternGeneration] = useState(true);
+  
+  // Advanced material settings
+  const [threadMaterial, setThreadMaterial] = useState<'cotton' | 'polyester' | 'silk' | 'metallic' | 'glow' | 'variegated'>('cotton');
+  const [fabricWeave, setFabricWeave] = useState<'plain' | 'twill' | 'satin' | 'basket' | 'jersey'>('plain');
+  const [enableNormalMapping, setEnableNormalMapping] = useState(true);
+  const [enableAnisotropicFiltering, setEnableAnisotropicFiltering] = useState(true);
+  
+  // Advanced lighting settings
+  const [ambientLightIntensity, setAmbientLightIntensity] = useState(0.4);
+  const [directionalLightIntensity, setDirectionalLightIntensity] = useState(0.8);
+  const [enableGlobalIllumination, setEnableGlobalIllumination] = useState(true);
+  const [enableAmbientOcclusion, setEnableAmbientOcclusion] = useState(true);
+  const [enableToneMapping, setEnableToneMapping] = useState(true);
+  const [gammaCorrection, setGammaCorrection] = useState(2.2);
   const [selectedAdvancedStitch, setSelectedAdvancedStitch] = useState('french-knot');
   const [threadLibrary, setThreadLibrary] = useState({
     metallic: ['#FFD700', '#C0C0C0', '#CD7F32', '#B87333', '#E6E6FA'],
@@ -103,6 +176,168 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
   const [mlOptimization, setMlOptimization] = useState(false);
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [stitchComplexity, setStitchComplexity] = useState('beginner');
+  
+  // Ultra-realistic stitch state variables
+  const [fillMaterial, setFillMaterial] = useState<FillStitchMaterial>({
+    threadType: 'cotton',
+    sheen: 0.3,
+    roughness: 0.4,
+    metallic: false,
+    glowIntensity: 0.0,
+    variegationPattern: 'none',
+    threadTwist: 0.5,
+    threadThickness: 0.2,
+    color: '#FF69B4',
+    threadCount: 1
+  });
+  
+  const [fillLighting, setFillLighting] = useState<FillStitchLighting>({
+    ambientIntensity: 0.4,
+    directionalIntensity: 0.8,
+    lightDirection: { x: 0.5, y: 0.5, z: 1.0 },
+    shadowSoftness: 0.5,
+    highlightIntensity: 0.6,
+    rimLighting: true,
+    rimIntensity: 0.3,
+    fillHighlighting: true,
+    fillIntensity: 0.4
+  });
+  
+  const [fill3DProperties, setFill3DProperties] = useState<FillStitch3DProperties>({
+    height: 0.3,
+    padding: 0.1,
+    compression: 0.2,
+    tension: 0.5,
+    stitchDensity: 2.0,
+    underlayType: 'center',
+    underlayDensity: 1.5,
+    stitchOverlap: 0.1,
+    stitchVariation: 0.05,
+    curveSmoothing: 0.8,
+    fillDensity: 0.7,
+    fillAngle: 45,
+    fillSpacing: 0.3
+  });
+  
+  const [crossStitchMaterial, setCrossStitchMaterial] = useState<CrossStitchMaterial>({
+    threadType: 'cotton',
+    sheen: 0.2,
+    roughness: 0.3,
+    metallic: false,
+    glowIntensity: 0.0,
+    variegationPattern: 'none',
+    threadTwist: 0.3,
+    threadThickness: 0.15,
+    color: '#FF69B4',
+    threadCount: 1
+  });
+  
+  const [crossStitchLighting, setCrossStitchLighting] = useState<CrossStitchLighting>({
+    ambientIntensity: 0.4,
+    directionalIntensity: 0.8,
+    lightDirection: { x: 0.5, y: 0.5, z: 1.0 },
+    shadowSoftness: 0.5,
+    highlightIntensity: 0.6,
+    rimLighting: true,
+    rimIntensity: 0.3,
+    crossHighlighting: true,
+    crossIntensity: 0.4
+  });
+  
+  const [crossStitch3DProperties, setCrossStitch3DProperties] = useState<CrossStitch3DProperties>({
+    height: 0.2,
+    padding: 0.05,
+    compression: 0.1,
+    tension: 0.4,
+    stitchDensity: 3.0,
+    underlayType: 'center',
+    underlayDensity: 2.0,
+    stitchOverlap: 0.0,
+    stitchVariation: 0.02,
+    curveSmoothing: 0.9,
+    crossSize: 0.5,
+    crossAngle: 0,
+    crossSpacing: 0.4
+  });
+  
+  const [outlineMaterial, setOutlineMaterial] = useState<OutlineStitchMaterial>({
+    threadType: 'cotton',
+    sheen: 0.4,
+    roughness: 0.3,
+    metallic: false,
+    glowIntensity: 0.0,
+    variegationPattern: 'none',
+    threadTwist: 0.4,
+    threadThickness: 0.18,
+    color: '#FF69B4',
+    threadCount: 1
+  });
+  
+  const [outlineLighting, setOutlineLighting] = useState<OutlineStitchLighting>({
+    ambientIntensity: 0.4,
+    directionalIntensity: 0.8,
+    lightDirection: { x: 0.5, y: 0.5, z: 1.0 },
+    shadowSoftness: 0.5,
+    highlightIntensity: 0.6,
+    rimLighting: true,
+    rimIntensity: 0.3,
+    edgeHighlighting: true,
+    edgeIntensity: 0.4
+  });
+  
+  const [outline3DProperties, setOutline3DProperties] = useState<OutlineStitch3DProperties>({
+    height: 0.25,
+    padding: 0.08,
+    compression: 0.15,
+    tension: 0.45,
+    stitchDensity: 2.5,
+    underlayType: 'center',
+    underlayDensity: 1.8,
+    stitchOverlap: 0.05,
+    stitchVariation: 0.03,
+    curveSmoothing: 0.85,
+    edgeSharpness: 0.8
+  });
+  
+  const [chainMaterial, setChainMaterial] = useState<ChainStitchMaterial>({
+    threadType: 'cotton',
+    sheen: 0.5,
+    roughness: 0.2,
+    metallic: false,
+    glowIntensity: 0.0,
+    variegationPattern: 'none',
+    threadTwist: 0.6,
+    threadThickness: 0.22,
+    color: '#FF69B4',
+    threadCount: 1
+  });
+  
+  const [chainLighting, setChainLighting] = useState<ChainStitchLighting>({
+    ambientIntensity: 0.4,
+    directionalIntensity: 0.8,
+    lightDirection: { x: 0.5, y: 0.5, z: 1.0 },
+    shadowSoftness: 0.5,
+    highlightIntensity: 0.6,
+    rimLighting: true,
+    rimIntensity: 0.3,
+    loopHighlighting: true,
+    loopIntensity: 0.4
+  });
+  
+  const [chain3DProperties, setChain3DProperties] = useState<ChainStitch3DProperties>({
+    height: 0.35,
+    padding: 0.12,
+    compression: 0.25,
+    tension: 0.55,
+    stitchDensity: 2.2,
+    underlayType: 'center',
+    underlayDensity: 1.6,
+    stitchOverlap: 0.08,
+    stitchVariation: 0.04,
+    curveSmoothing: 0.75,
+    loopSize: 0.6,
+    loopTightness: 0.7
+  });
   const [designLayers, setDesignLayers] = useState<any[]>([]);
   const [currentLayer, setCurrentLayer] = useState(0);
   const [undoStack, setUndoStack] = useState<any[]>([]);
@@ -113,8 +348,265 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
     memoryUsage: 0
   });
 
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  // Advanced embroidery system refs
+  const advancedEngineRef = useRef<AdvancedEmbroideryEngine | null>(null);
+  const inkStitchRef = useRef<InkStitchIntegration | null>(null);
+  const textureSystemRef = useRef<HDTextureSystem | null>(null);
+  const lightingSystemRef = useRef<RealisticLightingSystem | null>(null);
+  const ultraRealisticSatinRef = useRef<UltraRealisticSatinStitch | null>(null);
+  
+  // Performance optimization refs
+  const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastRenderTimeRef = useRef<number>(0);
+  const frameRequestRef = useRef<number | null>(null);
+  const performanceModeRef = useRef<boolean>(false);
+  
+  // Ultra-realistic satin stitch state
+  const [satinMaterial, setSatinMaterial] = useState<SatinStitchMaterial>({
+    threadType: 'silk',
+    sheen: 0.8,
+    roughness: 0.2,
+    metallic: false,
+    glowIntensity: 0.0,
+    variegationPattern: 'none',
+    threadTwist: 2.0,
+    threadThickness: 0.3
+  });
+  
+  const [satinLighting, setSatinLighting] = useState<SatinStitchLighting>({
+    ambientIntensity: 0.3,
+    directionalIntensity: 0.7,
+    lightDirection: { x: 0.5, y: 0.5, z: 1.0 },
+    shadowSoftness: 0.5,
+    highlightIntensity: 1.0
+  });
+  
+  const [satin3DProperties, setSatin3DProperties] = useState<SatinStitch3DProperties>({
+    height: 0.5,
+    padding: 0.2,
+    compression: 0.1,
+    tension: 1.0,
+    stitchDensity: 8.0,
+    zigzagAmplitude: 0.3,
+    zigzagFrequency: 2.0
+  });
+
+  // Backstitch state
+  const [backstitchMaterial, setBackstitchMaterial] = useState<BackstitchMaterial>({
+    threadType: 'cotton',
+    sheen: 0.3,
+    roughness: 0.4,
+    metallic: false,
+    glowIntensity: 0,
+    variegationPattern: '',
+    threadTwist: 2.5,
+    threadThickness: 0.2,
+    color: '#FF69B4',
+    threadCount: 2
+  });
+
+  const [backstitchLighting, setBackstitchLighting] = useState<BackstitchLighting>({
+    ambientIntensity: 0.4,
+    directionalIntensity: 0.6,
+    lightDirection: { x: 0.5, y: 0.5, z: 1 },
+    shadowSoftness: 0.5,
+    highlightIntensity: 0.8,
+    rimLighting: true,
+    rimIntensity: 0.3,
+    stitchHighlighting: true,
+    stitchIntensity: 0.4
+  });
+
+  const [backstitch3DProperties, setBackstitch3DProperties] = useState<Backstitch3DProperties>({
+    height: 0.4,
+    padding: 0.15,
+    compression: 0.25,
+    tension: 0.6,
+    stitchDensity: 6,
+    underlayType: 'contour',
+    underlayDensity: 3,
+    stitchOverlap: 0.2,
+    stitchVariation: 0.05,
+    curveSmoothing: 0.7,
+    backstitchLength: 0.5,
+    backstitchSpacing: 0.3,
+    backstitchAngle: 30,
+    backstitchTightness: 0.8,
+    backstitchTexture: 0.6
+  });
+
+  // French Knot state
+  const [frenchKnotMaterial, setFrenchKnotMaterial] = useState<FrenchKnotMaterial>({
+    threadType: 'cotton',
+    sheen: 0.4,
+    roughness: 0.3,
+    metallic: false,
+    glowIntensity: 0,
+    variegationPattern: '',
+    threadTwist: 3.0,
+    threadThickness: 0.25,
+    color: '#FF69B4',
+    threadCount: 3
+  });
+
+  const [frenchKnotLighting, setFrenchKnotLighting] = useState<FrenchKnotLighting>({
+    ambientIntensity: 0.3,
+    directionalIntensity: 0.7,
+    lightDirection: { x: 0.3, y: 0.3, z: 1 },
+    shadowSoftness: 0.6,
+    highlightIntensity: 0.9,
+    rimLighting: true,
+    rimIntensity: 0.4,
+    knotHighlighting: true,
+    knotIntensity: 0.5
+  });
+
+  const [frenchKnot3DProperties, setFrenchKnot3DProperties] = useState<FrenchKnot3DProperties>({
+    height: 0.8,
+    padding: 0.3,
+    compression: 0.4,
+    tension: 0.8,
+    stitchDensity: 10,
+    underlayType: 'center',
+    underlayDensity: 5,
+    stitchOverlap: 0.4,
+    stitchVariation: 0.08,
+    curveSmoothing: 0.9,
+    knotSize: 0.7,
+    knotTightness: 0.8,
+    knotWraps: 4,
+    knotTexture: 0.9
+  });
+
+  // Bullion state
+  const [bullionMaterial, setBullionMaterial] = useState<BullionMaterial>({
+    threadType: 'cotton',
+    sheen: 0.5,
+    roughness: 0.2,
+    metallic: false,
+    glowIntensity: 0,
+    variegationPattern: '',
+    threadTwist: 2.8,
+    threadThickness: 0.3,
+    color: '#FF69B4',
+    threadCount: 4
+  });
+
+  const [bullionLighting, setBullionLighting] = useState<BullionLighting>({
+    ambientIntensity: 0.35,
+    directionalIntensity: 0.65,
+    lightDirection: { x: 0.4, y: 0.4, z: 1 },
+    shadowSoftness: 0.7,
+    highlightIntensity: 0.85,
+    rimLighting: true,
+    rimIntensity: 0.35,
+    stitchHighlighting: true,
+    stitchIntensity: 0.45
+  });
+
+  const [bullion3DProperties, setBullion3DProperties] = useState<Bullion3DProperties>({
+    height: 1.0,
+    padding: 0.4,
+    compression: 0.5,
+    tension: 0.9,
+    stitchDensity: 12,
+    underlayType: 'center',
+    underlayDensity: 6,
+    stitchOverlap: 0.5,
+    stitchVariation: 0.1,
+    curveSmoothing: 0.95,
+    bullionLength: 0.8,
+    bullionSpacing: 0.2,
+    bullionWraps: 6,
+    bullionTightness: 0.9
+  });
+
+  // Lazy Daisy state
+  const [lazyDaisyMaterial, setLazyDaisyMaterial] = useState<LazyDaisyMaterial>({
+    threadType: 'cotton',
+    sheen: 0.35,
+    roughness: 0.35,
+    metallic: false,
+    glowIntensity: 0,
+    variegationPattern: '',
+    threadTwist: 2.2,
+    threadThickness: 0.22,
+    color: '#FF69B4',
+    threadCount: 2
+  });
+
+  const [lazyDaisyLighting, setLazyDaisyLighting] = useState<LazyDaisyLighting>({
+    ambientIntensity: 0.45,
+    directionalIntensity: 0.55,
+    lightDirection: { x: 0.6, y: 0.6, z: 1 },
+    shadowSoftness: 0.4,
+    highlightIntensity: 0.75,
+    rimLighting: true,
+    rimIntensity: 0.25,
+    petalHighlighting: true,
+    petalIntensity: 0.3
+  });
+
+  const [lazyDaisy3DProperties, setLazyDaisy3DProperties] = useState<LazyDaisy3DProperties>({
+    height: 0.6,
+    padding: 0.25,
+    compression: 0.3,
+    tension: 0.65,
+    stitchDensity: 7,
+    underlayType: 'center',
+    underlayDensity: 4,
+    stitchOverlap: 0.25,
+    stitchVariation: 0.06,
+    curveSmoothing: 0.8,
+    petalSize: 0.8,
+    petalCurve: 0.7,
+    petalThickness: 0.6,
+    petalCount: 5,
+    centerSize: 0.3
+  });
+
+  // Feather state
+  const [featherMaterial, setFeatherMaterial] = useState<FeatherMaterial>({
+    threadType: 'cotton',
+    sheen: 0.4,
+    roughness: 0.3,
+    metallic: false,
+    glowIntensity: 0,
+    variegationPattern: '',
+    threadTwist: 2.0,
+    threadThickness: 0.18,
+    color: '#FF69B4',
+    threadCount: 2
+  });
+
+  const [featherLighting, setFeatherLighting] = useState<FeatherLighting>({
+    ambientIntensity: 0.4,
+    directionalIntensity: 0.6,
+    lightDirection: { x: 0.5, y: 0.5, z: 1 },
+    shadowSoftness: 0.5,
+    highlightIntensity: 0.8,
+    rimLighting: true,
+    rimIntensity: 0.3,
+    stitchHighlighting: true,
+    stitchIntensity: 0.4
+  });
+
+  const [feather3DProperties, setFeather3DProperties] = useState<Feather3DProperties>({
+    height: 0.5,
+    padding: 0.2,
+    compression: 0.25,
+    tension: 0.6,
+    stitchDensity: 5,
+    underlayType: 'contour',
+    underlayDensity: 3,
+    stitchOverlap: 0.2,
+    stitchVariation: 0.05,
+    curveSmoothing: 0.7,
+    featherLength: 0.6,
+    featherSpacing: 0.4,
+    featherAngle: 45,
+    featherCurve: 0.6
+  });
 
   // Predefined embroidery patterns
   const embroideryPatterns = [
@@ -130,106 +622,433 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
     return null;
   }
 
-  // Initialize canvas
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) {
-      console.warn('⚠️ CANVAS REF NOT FOUND: Cannot initialize canvas');
-      return;
-    }
-
-    console.log('🎨 INITIALIZING CANVAS with high-quality rendering');
-
-    const ctx = canvas.getContext('2d', { 
-      willReadFrequently: true, 
-      alpha: true, 
-      desynchronized: false 
-    });
-    if (!ctx) {
-      console.error('❌ CANVAS CONTEXT FAILED: Cannot get 2D context');
-      return;
-    }
-
-    // Set canvas size with high DPI
-    const rect = canvas.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 2;
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
-    ctx.scale(dpr, dpr);
-
-    console.log(`🎨 Canvas initialized: ${rect.width}x${rect.height} (DPR: ${dpr})`);
-
-    // Enable high-quality rendering
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-
-    // Clear canvas
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  // Performance optimization utilities
+  const debounce = useCallback((func: Function, delay: number) => {
+    return (...args: any[]) => {
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+      }
+      debounceTimeoutRef.current = setTimeout(() => func(...args), delay);
+    };
   }, []);
 
-
-  // Draw embroidery stitches
-  const drawStitches = () => {
-    const startTime = performance.now();
-    const canvas = canvasRef.current;
-    if (!canvas) {
-      console.warn('⚠️ CANVAS NOT FOUND: Cannot draw stitches');
-      return;
-    }
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) {
-      console.warn('⚠️ CONTEXT NOT FOUND: Cannot get 2D context');
-      return;
-    }
-
-    console.log(`🎨 DRAWING ALL STITCHES: ${embroideryStitches.length} stitches + ${currentStitch ? '1 current' : '0 current'}`);
-
-    // Enable high-quality rendering
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-
-    const rect = canvas.getBoundingClientRect();
-    ctx.clearRect(0, 0, rect.width, rect.height);
-
-    // Draw all stitches with error handling
-    if (Array.isArray(embroideryStitches)) {
-      console.log(`📝 Drawing ${embroideryStitches.length} existing stitches`);
-      embroideryStitches.forEach((stitch, index) => {
-        try {
-          console.log(`📝 Drawing stitch ${index + 1}/${embroideryStitches.length}: ${stitch.type}`);
-          drawStitch(ctx, stitch, rect);
-        } catch (error) {
-          console.error(`❌ Error drawing stitch ${index}:`, error);
-        }
-      });
-    } else {
-      console.warn('⚠️ EMBROIDERY STITCHES IS NOT ARRAY:', embroideryStitches);
-    }
-
-    // Draw current stitch preview with error handling
-    if (currentStitch) {
-      try {
-        console.log(`👁️ Drawing current stitch preview: ${currentStitch.type} with ${currentStitch.points.length} points`);
-        drawStitch(ctx, currentStitch, rect, true);
-      } catch (error) {
-        console.error('❌ Error drawing current stitch:', error);
+  const throttle = useCallback((func: Function, limit: number) => {
+    let inThrottle: boolean;
+    return (...args: any[]) => {
+      if (!inThrottle) {
+        func(...args);
+        inThrottle = true;
+        setTimeout(() => inThrottle = false, limit);
       }
-    } else {
-      console.log('👁️ No current stitch to preview');
+    };
+  }, []);
+
+  // Performance monitoring
+  const updatePerformanceStats = useCallback(() => {
+    const now = performance.now();
+    const renderTime = now - lastRenderTimeRef.current;
+    lastRenderTimeRef.current = now;
+    
+    setPerformanceStats(prev => ({
+      ...prev,
+      renderTime: Math.round(renderTime * 100) / 100,
+      stitchCount: embroideryStitches.length,
+      memoryUsage: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1024 / 1024) : 0
+    }));
+  }, [embroideryStitches.length]);
+
+  // Auto-adjust quality based on performance
+  const adjustQualityForPerformance = useCallback(() => {
+    const stats = performanceStats;
+    if (stats.renderTime > 16.67) { // More than 60fps
+      if (renderQuality !== 'low') {
+        console.log('🔧 Performance: Reducing quality for better performance');
+        setRenderQuality('low');
+        setEnable4K(false);
+        setEnablePBR(false);
+        setEnableShadows(false);
+        performanceModeRef.current = true;
+      }
+    } else if (stats.renderTime < 8 && performanceModeRef.current) {
+      console.log('🔧 Performance: Increasing quality - performance is good');
+      setRenderQuality('high');
+      setEnable4K(true);
+      setEnablePBR(true);
+      setEnableShadows(true);
+      performanceModeRef.current = false;
+    }
+  }, [performanceStats, renderQuality]);
+
+  // Initialize advanced embroidery systems with performance optimization
+  useEffect(() => {
+    console.log('🚀 Initializing Advanced Embroidery Systems...');
+    initializeAdvancedSystems();
+  }, [renderQuality, enable4K, enableWebGL, enablePBR, enableShadows, enableLighting]);
+
+  // Initialize enhanced managers
+  useEffect(() => {
+    if (composedCanvas) {
+      const manager = new EnhancedEmbroideryManager(composedCanvas);
+      const generator = new EnhancedStitchGenerator(true); // Enable AI
+      
+      setEnhancedManager(manager);
+      setEnhancedGenerator(generator);
+      
+      // Set performance mode
+      manager.setPerformanceMode(performanceMode);
+      
+      console.log('🚀 Enhanced Embroidery Managers initialized');
+    }
+  }, [composedCanvas, performanceMode]);
+
+  // Initialize advanced embroidery systems
+  const initializeAdvancedSystems = async () => {
+    try {
+      console.log('🚀 Initializing Advanced Embroidery Systems...');
+      
+      // Initialize Advanced Embroidery Engine
+      if (enableWebGL) {
+        // Create a temporary canvas for WebGL context
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = renderQuality === 'ultra' ? 8192 : renderQuality === 'high' ? 4096 : renderQuality === 'medium' ? 2048 : 1024;
+        tempCanvas.height = renderQuality === 'ultra' ? 8192 : renderQuality === 'high' ? 4096 : renderQuality === 'medium' ? 2048 : 1024;
+        
+        advancedEngineRef.current = new AdvancedEmbroideryEngine(tempCanvas, {
+          resolution: renderQuality === 'ultra' ? 8192 : renderQuality === 'high' ? 4096 : renderQuality === 'medium' ? 2048 : 1024,
+          quality: renderQuality as 'low' | 'medium' | 'high' | 'ultra',
+          enableShadows,
+          enableLighting,
+          enableMemoryOptimization,
+          enableGPUAcceleration
+        });
+        await advancedEngineRef.current.initialize();
+        console.log('✅ Advanced Embroidery Engine initialized');
+      }
+      
+      // Initialize InkStitch Integration
+      inkStitchRef.current = new InkStitchIntegration({
+        enableOptimization: stitchOptimization,
+        enableJumpStitchMinimization: jumpStitchMinimization,
+        enableRealTimeGeneration: realTimePatternGeneration,
+        stitchDensity
+      });
+      console.log('✅ InkStitch Integration initialized');
+      
+      // Initialize HD Texture System
+      const webglContext = advancedEngineRef.current?.getWebGLContext();
+      if (webglContext) {
+        textureSystemRef.current = new HDTextureSystem(webglContext);
+      } else {
+        console.warn('⚠️ WebGL context not available, HD Texture System will use fallback mode');
+        textureSystemRef.current = new HDTextureSystem(null);
+      }
+      console.log('✅ HD Texture System initialized');
+      
+      // Initialize Realistic Lighting System
+      lightingSystemRef.current = new RealisticLightingSystem({
+        ambientIntensity: ambientLightIntensity,
+        directionalIntensity: directionalLightIntensity,
+        enableGlobalIllumination,
+        enableAmbientOcclusion,
+        enableToneMapping,
+        gammaCorrection
+      });
+      console.log('✅ Realistic Lighting System initialized');
+      
+      console.log('🎉 All Advanced Embroidery Systems initialized successfully!');
+      
+        } catch (error) {
+      console.error('❌ Failed to initialize advanced systems:', error);
+    }
+  };
+
+  // Optimized draw stitches with debouncing and performance monitoring
+  const drawStitches = useCallback(() => {
+    // Cancel previous frame request
+    if (frameRequestRef.current) {
+      cancelAnimationFrame(frameRequestRef.current);
     }
     
-    // Update performance stats
-    const endTime = performance.now();
-    setPerformanceStats({
-      renderTime: Math.round(endTime - startTime),
-      stitchCount: embroideryStitches.length,
-      memoryUsage: Math.round((performance as any).memory?.usedJSHeapSize / 1024 / 1024 || 0)
+    // Use requestAnimationFrame for smooth rendering
+    frameRequestRef.current = requestAnimationFrame(() => {
+      const startTime = performance.now();
+      console.log('🎨 Drawing stitches on main canvas...');
+      updatePerformanceStats();
+      
+      if (useEnhancedMode && enhancedManager) {
+        // Use enhanced manager for better performance and persistence
+        enhancedManager.redrawAll();
+        
+        // Render current stitch being drawn with enhanced renderer
+        if (currentStitch && currentStitch.points && currentStitch.points.length > 0) {
+          const ctx = composedCanvas?.getContext('2d');
+          if (ctx && enableAdvancedRendering) {
+            enhancedStitchRenderer.renderStitch(
+              currentStitch.points,
+              {
+                type: currentStitch.type,
+                color: currentStitch.color,
+                thickness: currentStitch.thickness,
+                opacity: currentStitch.opacity,
+                threadType: currentStitch.threadType,
+                quality: renderQuality,
+                antiAliasing: enableAntiAliasing,
+                shadow: true,
+                highlight: true
+              },
+              {
+                canvas: composedCanvas!,
+                context: ctx,
+                enableCaching: enableCaching,
+                enableLOD: enableLOD
+              }
+            );
+          } else if (ctx) {
+            renderStitch(ctx, currentStitch);
+          }
+        }
+      } else {
+        // Fallback to original rendering
+        if (composedCanvas) {
+          const ctx = composedCanvas.getContext('2d');
+          if (ctx) {
+            // Clear canvas
+            ctx.clearRect(0, 0, composedCanvas.width, composedCanvas.height);
+            
+            // Render all stitches with enhanced renderer if enabled
+            embroideryStitches.forEach(stitch => {
+              if (stitch.points && stitch.points.length > 0) {
+                if (enableAdvancedRendering) {
+                  enhancedStitchRenderer.renderStitch(
+                    stitch.points,
+                    {
+                      type: stitch.type,
+                      color: stitch.color,
+                      thickness: stitch.thickness,
+                      opacity: stitch.opacity,
+                      threadType: stitch.threadType,
+                      quality: renderQuality,
+                      antiAliasing: enableAntiAliasing,
+                      shadow: true,
+                      highlight: true
+                    },
+                    {
+                      canvas: composedCanvas,
+                      context: ctx,
+                      enableCaching: enableCaching,
+                      enableLOD: enableLOD
+                    }
+                  );
+                } else {
+                  renderStitch(ctx, stitch);
+                }
+              }
+            });
+            
+            // Render current stitch being drawn
+            if (currentStitch && currentStitch.points && currentStitch.points.length > 0) {
+              if (enableAdvancedRendering) {
+                enhancedStitchRenderer.renderStitch(
+                  currentStitch.points,
+                  {
+                    type: currentStitch.type,
+                    color: currentStitch.color,
+                    thickness: currentStitch.thickness,
+                    opacity: currentStitch.opacity,
+                    threadType: currentStitch.threadType,
+                    quality: renderQuality,
+                    antiAliasing: enableAntiAliasing,
+                    shadow: true,
+                    highlight: true
+                  },
+                  {
+                    canvas: composedCanvas,
+                    context: ctx,
+                    enableCaching: enableCaching,
+                    enableLOD: enableLOD
+                  }
+                );
+              } else {
+                renderStitch(ctx, currentStitch);
+              }
+            }
+          }
+        }
+      }
+      
+      // Record performance metrics
+      const renderTime = performance.now() - startTime;
+      advancedPerformanceMonitor.recordFrameEnd(startTime);
+      advancedPerformanceMonitor.recordRenderTime(renderTime);
+      advancedPerformanceMonitor.updateStitchCount(embroideryStitches.length);
+      
+      // Update performance metrics state
+      setPerformanceMetrics(advancedPerformanceMonitor.getMetrics());
+      setMemoryStats(advancedMemoryManager.getMemoryStats());
     });
+  }, [updatePerformanceStats, composedCanvas, embroideryStitches, currentStitch, useEnhancedMode, enhancedManager]);
+
+  // Render a single stitch
+  const renderStitch = useCallback((ctx: CanvasRenderingContext2D, stitch: EmbroideryStitch) => {
+    if (!stitch.points || stitch.points.length === 0) return;
+
+    const config: StitchConfig = {
+      type: stitch.type,
+      color: stitch.color,
+      thickness: stitch.thickness,
+      opacity: stitch.opacity
+    };
+
+    try {
+      renderStitchType(ctx, stitch.points, config);
+        } catch (error) {
+      console.error(`Error rendering ${stitch.type} stitch:`, error);
+      // Fallback to basic line rendering
+      ctx.save();
+      ctx.strokeStyle = stitch.color;
+      ctx.lineWidth = stitch.thickness;
+      ctx.globalAlpha = stitch.opacity;
+      ctx.beginPath();
+      ctx.moveTo(stitch.points[0].x, stitch.points[0].y);
+      for (let i = 1; i < stitch.points.length; i++) {
+        ctx.lineTo(stitch.points[i].x, stitch.points[i].y);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+  }, []);
+
+  // Debounced version of drawStitches for frequent updates
+  const debouncedDrawStitches = useMemo(
+    () => debounce(drawStitches, 16), // ~60fps
+    [drawStitches, debounce]
+  );
+
+  // Advanced pattern generation for complex designs
+  const generateComplexPattern = (patternType: string, complexity: number = 5) => {
+    console.log(`🎨 Generating complex ${patternType} pattern with complexity ${complexity}`);
+    
+    const patterns = [];
+    const basePoints = 20;
+    const pointCount = basePoints * complexity;
+    
+    for (let i = 0; i < pointCount; i++) {
+      const angle = (i / pointCount) * Math.PI * 2;
+      const radius = 50 + Math.sin(angle * 3) * 20 + Math.cos(angle * 5) * 10;
+      const x = 200 + Math.cos(angle) * radius;
+      const y = 200 + Math.sin(angle) * radius;
+      
+      patterns.push({
+        x: x + (Math.random() - 0.5) * 10,
+        y: y + (Math.random() - 0.5) * 10,
+        pressure: 0.5 + Math.random() * 0.5
+      });
+    }
+    
+    return patterns;
+  };
+
+  // Advanced stitch path optimization for complex designs
+  const optimizeComplexStitchPath = (stitches: EmbroideryStitch[]) => {
+    console.log('🔧 Optimizing complex stitch path...');
+    
+    // Group stitches by color and type
+    const groupedStitches = new Map<string, EmbroideryStitch[]>();
+    
+    stitches.forEach(stitch => {
+      const key = `${stitch.color}_${stitch.type}`;
+      if (!groupedStitches.has(key)) {
+        groupedStitches.set(key, []);
+      }
+      groupedStitches.get(key)!.push(stitch);
+    });
+    
+    // Optimize each group
+    const optimizedStitches: EmbroideryStitch[] = [];
+    
+    groupedStitches.forEach(group => {
+      // Sort by distance to minimize jumps
+      const sortedGroup = group.sort((a, b) => {
+        const aCenter = getStitchCenter(a);
+        const bCenter = getStitchCenter(b);
+        return Math.sqrt(aCenter.x * aCenter.x + aCenter.y * aCenter.y) - 
+               Math.sqrt(bCenter.x * bCenter.x + bCenter.y * bCenter.y);
+      });
+      
+      optimizedStitches.push(...sortedGroup);
+    });
+    
+    return optimizedStitches;
+  };
+
+  // Get center point of a stitch
+  const getStitchCenter = (stitch: EmbroideryStitch) => {
+    if (stitch.points.length === 0) return { x: 0, y: 0 };
+    
+    const sum = stitch.points.reduce((acc, point) => ({
+      x: acc.x + point.x,
+      y: acc.y + point.y
+    }), { x: 0, y: 0 });
+    
+    return {
+      x: sum.x / stitch.points.length,
+      y: sum.y / stitch.points.length
+    };
+  };
+
+  // Advanced pattern recognition for complex designs
+  const recognizePattern = (stitches: EmbroideryStitch[]) => {
+    console.log('🔍 Recognizing pattern in complex design...');
+    
+    const patterns = {
+      geometric: 0,
+      organic: 0,
+      text: 0,
+      floral: 0,
+      abstract: 0
+    };
+    
+    stitches.forEach(stitch => {
+      const center = getStitchCenter(stitch);
+      const points = stitch.points;
+      
+      // Analyze geometric patterns
+      if (points.length > 3) {
+        const angles = [];
+        for (let i = 1; i < points.length - 1; i++) {
+          const angle = calculateAngle(points[i-1], points[i], points[i+1]);
+          angles.push(angle);
+        }
+        
+        const avgAngle = angles.reduce((a, b) => a + b, 0) / angles.length;
+        if (Math.abs(avgAngle - 90) < 15) patterns.geometric++;
+        else if (Math.abs(avgAngle - 60) < 15) patterns.geometric++;
+        else if (Math.abs(avgAngle - 120) < 15) patterns.geometric++;
+        else patterns.organic++;
+      }
+      
+      // Analyze text patterns
+      if (stitch.type === 'satin' && points.length > 2) {
+        const isLinear = points.every((point, i) => {
+          if (i === 0) return true;
+          const prev = points[i-1];
+          const slope = Math.abs((point.y - prev.y) / (point.x - prev.x));
+          return slope < 0.5 || slope > 2;
+        });
+        if (isLinear) patterns.text++;
+      }
+    });
+    
+    return patterns;
+  };
+
+  // Calculate angle between three points
+  const calculateAngle = (p1: {x: number, y: number}, p2: {x: number, y: number}, p3: {x: number, y: number}) => {
+    const a = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+    const b = Math.sqrt(Math.pow(p3.x - p2.x, 2) + Math.pow(p3.y - p2.y, 2));
+    const c = Math.sqrt(Math.pow(p3.x - p1.x, 2) + Math.pow(p3.y - p1.y, 2));
+    
+    return Math.acos((a * a + b * b - c * c) / (2 * a * b)) * (180 / Math.PI);
   };
 
   const drawStitch = (ctx: CanvasRenderingContext2D, stitch: EmbroideryStitch, rect: DOMRect, isPreview = false) => {
@@ -280,7 +1099,7 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
     gradient.addColorStop(1, darkerColor);
     
     ctx.strokeStyle = gradient;
-    ctx.lineWidth = stitch.thickness;
+    ctx.lineWidth = stitch.thickness * qualityScale;
     
     // Add realistic shadow based on lighting direction
     const shadowIntensity = lightingDirection === 'top' ? 0.4 : lightingDirection === 'bottom' ? 0.6 : 0.5;
@@ -1974,126 +2793,9 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
   };
 
   // Handle mouse events
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if (!canvasRef.current) return;
+  // Mouse events are handled by the main canvas, not this tool panel
 
-    const rect = canvasRef.current.getBoundingClientRect();
-    let x = (e.clientX - rect.left) / rect.width;
-    let y = (e.clientY - rect.top) / rect.height;
 
-    // Apply snap to grid if enabled
-    if (snapToGrid && (window as any).snapToGridPoint) {
-      const pixelX = x * rect.width;
-      const pixelY = y * rect.height;
-      const snapped = (window as any).snapToGridPoint(pixelX, pixelY);
-      x = snapped.x / rect.width;
-      y = snapped.y / rect.height;
-    }
-
-    console.log(`🖱️ MOUSE DOWN: Starting ${embroideryStitchType} stitch at (${x.toFixed(3)}, ${y.toFixed(3)})`);
-    
-    setIsDrawing(true);
-    setCurrentStitch({
-      id: `stitch_${Date.now()}`,
-      type: embroideryStitchType,
-      points: [{ x, y }],
-      color: embroideryColor,
-      threadType: embroideryThreadType,
-      thickness: embroideryThickness,
-      opacity: embroideryOpacity
-    });
-  };
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isDrawing || !currentStitch || !canvasRef.current) return;
-
-    try {
-      const rect = canvasRef.current.getBoundingClientRect();
-      let x = (e.clientX - rect.left) / rect.width;
-      let y = (e.clientY - rect.top) / rect.height;
-
-      // Apply snap to grid if enabled
-      if (snapToGrid && (window as any).snapToGridPoint) {
-        const pixelX = x * rect.width;
-        const pixelY = y * rect.height;
-        const snapped = (window as any).snapToGridPoint(pixelX, pixelY);
-        x = snapped.x / rect.width;
-        y = snapped.y / rect.height;
-      }
-
-      // Throttle updates for better performance
-      const now = Date.now();
-      if (now - (handleMouseMove as any).lastUpdate < 16) return; // ~60fps
-      (handleMouseMove as any).lastUpdate = now;
-
-      setCurrentStitch(prev => prev ? {
-        ...prev,
-        points: [...prev.points, { x, y }]
-      } : null);
-
-      // Use requestAnimationFrame for smooth rendering
-      requestAnimationFrame(() => {
-        if (!canvasRef.current) return;
-        
-        const canvas = canvasRef.current;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          // Enable high-quality rendering
-          ctx.imageSmoothingEnabled = true;
-          ctx.imageSmoothingQuality = 'high';
-          ctx.lineCap = 'round';
-          ctx.lineJoin = 'round';
-          
-          // Clear only the preview area and redraw
-          const rect = canvas.getBoundingClientRect();
-          ctx.clearRect(0, 0, rect.width, rect.height);
-          
-          // Redraw all stitches
-          if (Array.isArray(embroideryStitches)) {
-            embroideryStitches.forEach((stitch) => {
-              drawStitch(ctx, stitch, rect);
-            });
-          }
-          
-          // Draw current stitch preview
-          if (currentStitch) {
-            drawStitch(ctx, currentStitch, rect, true);
-          }
-        }
-      });
-    } catch (error) {
-      console.error('Error in handleMouseMove:', error);
-    }
-  };
-
-  const handleMouseUp = () => {
-    if (!isDrawing || !currentStitch) return;
-
-    console.log(`🖱️ MOUSE UP: Completing ${currentStitch.type} stitch with ${currentStitch.points.length} points`);
-
-    try {
-      setIsDrawing(false);
-      
-      // Save current state before adding stitch
-      saveToUndoStack('add_stitch');
-      
-      // Add the completed stitch
-      setEmbroideryStitches([...embroideryStitches, currentStitch]);
-      console.log(`✅ STITCH ADDED: Total stitches now: ${embroideryStitches.length + 1}`);
-      
-      setCurrentStitch(null);
-      
-      // Redraw all stitches to make them persistent
-      drawStitches();
-      
-      // Clear redo stack when new action is performed
-      setRedoStack([]);
-    } catch (error) {
-      console.error('Error in handleMouseUp:', error);
-      setIsDrawing(false);
-      setCurrentStitch(null);
-    }
-  };
 
   // Generate pattern with AI
   const generatePattern = async () => {
@@ -2109,22 +2811,444 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
     setIsGenerating(true);
     
     try {
-      // Simulate AI pattern generation with realistic stitch patterns
-      const patterns = generateAIPattern(embroideryPatternDescription, embroideryStitchType, embroideryColor);
+      // Generate base pattern with AI
+      let patterns = generateAIPattern(embroideryPatternDescription, embroideryStitchType, embroideryColor);
+      
+      // Enhance with InkStitch algorithms if available
+      if (inkStitchRef.current && enableAdvancedStitches) {
+        console.log('🧵 Applying InkStitch optimization...');
+        patterns = await inkStitchRef.current.optimizePattern(patterns, {
+          stitchType: embroideryStitchType,
+          density: stitchDensity,
+          threadType: threadMaterial,
+          fabricType: fabricWeave,
+          enableOptimization: stitchOptimization,
+          enableJumpStitchMinimization: jumpStitchMinimization
+        });
+      }
       
       if (patterns && patterns.length > 0) {
-        console.log(`✅ AI GENERATED ${patterns.length} stitches`);
+        console.log(`✅ ADVANCED PATTERN GENERATED: ${patterns.length} stitches`);
         setEmbroideryStitches(patterns);
+        
+        // Apply advanced rendering if WebGL is enabled
+        if (advancedEngineRef.current && enableWebGL) {
+          console.log('🎨 Rendering with advanced WebGL engine...');
+          await advancedEngineRef.current.renderPattern(patterns);
+        } else {
         drawStitches();
+        }
       } else {
-        console.warn('⚠️ AI generated no stitches');
+        console.warn('⚠️ Advanced pattern generation produced no stitches');
       }
     } catch (error) {
-      console.error('❌ Error generating pattern:', error);
+      console.error('❌ Error generating advanced pattern:', error);
     } finally {
       setIsGenerating(false);
     }
   };
+
+  // Generate ultra-realistic satin stitch
+  const generateUltraRealisticSatin = useCallback(() => {
+    console.log('🌟 Generating ultra-realistic satin stitch...');
+    
+    try {
+      // Create sample geometry for satin stitch
+      const geometry: SatinStitchGeometry = {
+        rails: [
+          { x: 100, y: 100, z: 0 },
+          { x: 200, y: 100, z: 0 }
+        ],
+        rungs: [
+          { x: 150, y: 100, z: 0 },
+          { x: 150, y: 120, z: 0 },
+          { x: 150, y: 140, z: 0 },
+          { x: 150, y: 160, z: 0 },
+          { x: 150, y: 180, z: 0 }
+        ],
+        width: 100,
+        length: 80,
+        angle: 0
+      };
+      
+      // Generate ultra-realistic satin stitches
+      const satinStitches = UltraRealisticSatinStitch.generateUltraRealisticSatin(
+        geometry,
+        satinMaterial,
+        satinLighting,
+        satin3DProperties
+      );
+      
+      console.log(`✅ Generated ${satinStitches.length} ultra-realistic satin stitches`);
+      
+      // Update stitches
+      setEmbroideryStitches(prev => [...prev, ...satinStitches]);
+      
+    } catch (error) {
+      console.error('❌ Error generating ultra-realistic satin:', error);
+    }
+  }, [satinMaterial, satinLighting, satin3DProperties]);
+
+  const generateUltraRealisticFill = useCallback(() => {
+    console.log('🎨 Generating ultra-realistic fill stitch...');
+    
+    try {
+      // Create sample geometry for fill stitch
+      const geometry: FillStitchGeometry = {
+        path: [
+          { x: 100, y: 100, z: 0 },
+          { x: 200, y: 100, z: 0 },
+          { x: 200, y: 200, z: 0 },
+          { x: 100, y: 200, z: 0 },
+          { x: 100, y: 100, z: 0 }
+        ],
+        width: 100,
+        length: 100,
+        bounds: { minX: 100, minY: 100, maxX: 200, maxY: 200 },
+        isClosed: true
+      };
+      
+      // Generate ultra-realistic fill stitches
+      const fillStitches = UltraRealisticFillStitch.generateUltraRealisticFill(
+        geometry,
+        fillMaterial,
+        fillLighting,
+        fill3DProperties
+      );
+      
+      console.log(`✅ Generated ${fillStitches.length} ultra-realistic fill stitches`);
+      
+      // Update stitches
+      setEmbroideryStitches(prev => [...prev, ...fillStitches]);
+      
+    } catch (error) {
+      console.error('❌ Error generating ultra-realistic fill:', error);
+    }
+  }, [fillMaterial, fillLighting, fill3DProperties]);
+
+  const generateUltraRealisticCrossStitch = useCallback(() => {
+    console.log('❌ Generating ultra-realistic cross-stitch...');
+    
+    try {
+      // Create sample geometry for cross-stitch
+      const geometry: CrossStitchGeometry = {
+        path: [
+          { x: 100, y: 100, z: 0 },
+          { x: 150, y: 100, z: 0 },
+          { x: 150, y: 150, z: 0 },
+          { x: 100, y: 150, z: 0 }
+        ],
+        width: 50,
+        length: 50,
+        bounds: { minX: 100, minY: 100, maxX: 150, maxY: 150 },
+        isClosed: true
+      };
+      
+      // Generate ultra-realistic cross-stitches
+      const crossStitches = UltraRealisticCrossStitch.generateUltraRealisticCrossStitch(
+        geometry,
+        crossStitchMaterial,
+        crossStitchLighting,
+        crossStitch3DProperties
+      );
+      
+      console.log(`✅ Generated ${crossStitches.length} ultra-realistic cross-stitches`);
+      
+      // Update stitches
+      setEmbroideryStitches(prev => [...prev, ...crossStitches]);
+      
+    } catch (error) {
+      console.error('❌ Error generating ultra-realistic cross-stitch:', error);
+    }
+  }, [crossStitchMaterial, crossStitchLighting, crossStitch3DProperties]);
+
+  const generateUltraRealisticOutline = useCallback(() => {
+    console.log('📏 Generating ultra-realistic outline stitch...');
+    
+    try {
+      // Create sample geometry for outline stitch
+      const geometry: OutlineStitchGeometry = {
+        path: [
+          { x: 100, y: 100, z: 0 },
+          { x: 200, y: 100, z: 0 },
+          { x: 200, y: 200, z: 0 },
+          { x: 100, y: 200, z: 0 }
+        ],
+        width: 100,
+        length: 100,
+        bounds: { minX: 100, minY: 100, maxX: 200, maxY: 200 },
+        isClosed: false
+      };
+      
+      const pattern: OutlineStitchPattern = {
+        type: 'running',
+        direction: 'forward',
+        density: 2.0,
+        complexity: 5,
+        symmetry: true,
+        curveHandling: 'smooth'
+      };
+      
+      // Generate ultra-realistic outline stitches
+      const outlineStitches = UltraRealisticOutlineStitch.generateUltraRealisticOutline(
+        geometry,
+        pattern,
+        outlineMaterial,
+        outlineLighting,
+        outline3DProperties
+      );
+      
+      console.log(`✅ Generated ${outlineStitches.length} ultra-realistic outline stitches`);
+      
+      // Update stitches
+      setEmbroideryStitches(prev => [...prev, ...outlineStitches]);
+      
+    } catch (error) {
+      console.error('❌ Error generating ultra-realistic outline:', error);
+    }
+  }, [outlineMaterial, outlineLighting, outline3DProperties]);
+
+  const generateUltraRealisticChain = useCallback(() => {
+    console.log('🔗 Generating ultra-realistic chain stitch...');
+    
+    try {
+      // Create sample geometry for chain stitch
+      const geometry: ChainStitchGeometry = {
+        path: [
+          { x: 100, y: 100, z: 0 },
+          { x: 200, y: 100, z: 0 },
+          { x: 200, y: 200, z: 0 },
+          { x: 100, y: 200, z: 0 }
+        ],
+        width: 100,
+        length: 100,
+        bounds: { minX: 100, minY: 100, maxX: 200, maxY: 200 },
+        isClosed: false
+      };
+      
+      const pattern: ChainStitchPattern = {
+        type: 'single',
+        direction: 'forward',
+        density: 2.0,
+        complexity: 5,
+        symmetry: true,
+        curveHandling: 'smooth'
+      };
+      
+      // Generate ultra-realistic chain stitches
+      const chainStitches = UltraRealisticChainStitch.generateUltraRealisticChain(
+        geometry,
+        pattern,
+        chainMaterial,
+        chainLighting,
+        chain3DProperties
+      );
+      
+      console.log(`✅ Generated ${chainStitches.length} ultra-realistic chain stitches`);
+      
+      // Update stitches
+      setEmbroideryStitches(prev => [...prev, ...chainStitches]);
+      
+    } catch (error) {
+      console.error('❌ Error generating ultra-realistic chain:', error);
+    }
+  }, [chainMaterial, chainLighting, chain3DProperties]);
+
+  // Generate ultra-realistic backstitch
+  const generateUltraRealisticBackstitch = useCallback(() => {
+    console.log('↩️ Generating ultra-realistic backstitch...');
+    
+    try {
+      const geometry: BackstitchGeometry = {
+        path: [
+          { x: 100, y: 100, z: 0 },
+          { x: 150, y: 100, z: 0 },
+          { x: 200, y: 100, z: 0 },
+          { x: 200, y: 150, z: 0 },
+          { x: 200, y: 200, z: 0 }
+        ],
+        width: 50,
+        length: 100,
+        bounds: { minX: 100, minY: 100, maxX: 200, maxY: 200 },
+        isClosed: false
+      };
+
+      const pattern: BackstitchPattern = {
+        type: 'single',
+        direction: 'forward',
+        density: 6,
+        complexity: 5,
+        symmetry: true,
+        curveHandling: 'smooth'
+      };
+
+      const backstitches = UltraRealisticBackstitch.generateUltraRealisticBackstitch(
+        geometry,
+        pattern,
+        backstitchMaterial,
+        backstitchLighting,
+        backstitch3DProperties
+      );
+
+      setEmbroideryStitches(prev => [...prev, ...backstitches]);
+      
+    } catch (error) {
+      console.error('❌ Error generating ultra-realistic backstitch:', error);
+    }
+  }, [backstitchMaterial, backstitchLighting, backstitch3DProperties]);
+
+  // Generate ultra-realistic French knot
+  const generateUltraRealisticFrenchKnot = useCallback(() => {
+    console.log('🎯 Generating ultra-realistic French knot...');
+    
+    try {
+      const geometry: FrenchKnotGeometry = {
+        position: { x: 150, y: 150, z: 0 },
+        size: 8,
+        bounds: { minX: 142, minY: 142, maxX: 158, maxY: 158 },
+        knotCount: 1
+      };
+
+      const pattern: FrenchKnotPattern = {
+        type: 'single',
+        direction: 'clockwise',
+        density: 10,
+        complexity: 8,
+        symmetry: true,
+        spacing: 2
+      };
+
+      const frenchKnots = UltraRealisticFrenchKnot.generateUltraRealisticFrenchKnot(
+        geometry,
+        pattern,
+        frenchKnotMaterial,
+        frenchKnotLighting,
+        frenchKnot3DProperties
+      );
+
+      setEmbroideryStitches(prev => [...prev, ...frenchKnots]);
+      
+    } catch (error) {
+      console.error('❌ Error generating ultra-realistic French knot:', error);
+    }
+  }, [frenchKnotMaterial, frenchKnotLighting, frenchKnot3DProperties]);
+
+  // Generate ultra-realistic bullion
+  const generateUltraRealisticBullion = useCallback(() => {
+    console.log('🌀 Generating ultra-realistic bullion...');
+    
+    try {
+      const geometry: BullionGeometry = {
+        path: [
+          { x: 100, y: 100, z: 0 },
+          { x: 200, y: 100, z: 0 }
+        ],
+        width: 20,
+        length: 100,
+        bounds: { minX: 100, minY: 100, maxX: 200, maxY: 100 },
+        isClosed: false
+      };
+
+      const pattern: BullionPattern = {
+        type: 'single',
+        direction: 'forward',
+        density: 8,
+        complexity: 6,
+        symmetry: true,
+        curveHandling: 'smooth'
+      };
+
+      const bullions = UltraRealisticBullion.generateUltraRealisticBullion(
+        geometry,
+        pattern,
+        bullionMaterial,
+        bullionLighting,
+        bullion3DProperties
+      );
+
+      setEmbroideryStitches(prev => [...prev, ...bullions]);
+      
+    } catch (error) {
+      console.error('❌ Error generating ultra-realistic bullion:', error);
+    }
+  }, [bullionMaterial, bullionLighting, bullion3DProperties]);
+
+  // Generate ultra-realistic lazy daisy
+  const generateUltraRealisticLazyDaisy = useCallback(() => {
+    console.log('🌸 Generating ultra-realistic lazy daisy...');
+    
+    try {
+      const geometry: LazyDaisyGeometry = {
+        position: { x: 150, y: 150, z: 0 },
+        size: 20,
+        bounds: { minX: 130, minY: 130, maxX: 170, maxY: 170 },
+        petalCount: 5,
+        petalAngle: 0
+      };
+
+      const pattern: LazyDaisyPattern = {
+        type: 'single',
+        direction: 'clockwise',
+        density: 7,
+        complexity: 6,
+        symmetry: true,
+        spacing: 3
+      };
+
+      const lazyDaisies = UltraRealisticLazyDaisy.generateUltraRealisticLazyDaisy(
+        geometry,
+        pattern,
+        lazyDaisyMaterial,
+        lazyDaisyLighting,
+        lazyDaisy3DProperties
+      );
+
+      setEmbroideryStitches(prev => [...prev, ...lazyDaisies]);
+      
+    } catch (error) {
+      console.error('❌ Error generating ultra-realistic lazy daisy:', error);
+    }
+  }, [lazyDaisyMaterial, lazyDaisyLighting, lazyDaisy3DProperties]);
+
+  // Generate ultra-realistic feather
+  const generateUltraRealisticFeather = useCallback(() => {
+    console.log('🪶 Generating ultra-realistic feather...');
+    
+    try {
+      const geometry: FeatherGeometry = {
+        path: [
+          { x: 100, y: 100, z: 0 },
+          { x: 200, y: 100, z: 0 }
+        ],
+        width: 30,
+        length: 100,
+        bounds: { minX: 100, minY: 100, maxX: 200, maxY: 100 },
+        isClosed: false
+      };
+
+      const pattern: FeatherPattern = {
+        type: 'single',
+        direction: 'forward',
+        density: 5,
+        complexity: 5,
+        symmetry: true,
+        curveHandling: 'smooth'
+      };
+
+      const feathers = UltraRealisticFeather.generateUltraRealisticFeather(
+        geometry,
+        pattern,
+        featherMaterial,
+        featherLighting,
+        feather3DProperties
+      );
+
+      setEmbroideryStitches(prev => [...prev, ...feathers]);
+      
+    } catch (error) {
+      console.error('❌ Error generating ultra-realistic feather:', error);
+    }
+  }, [featherMaterial, featherLighting, feather3DProperties]);
 
   // AI Pattern Generation Function
   const generateAIPattern = (description: string, stitchType: string, color: string) => {
@@ -2810,11 +3934,6 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
     ctx.moveTo(points[0].x, points[0].y);
     
     console.log('🧵 Rendering stitch type:', stitch.type, 'Type check:', typeof stitch.type);
-    
-    // Debug: Check if stitch type is correct
-    if (stitch.type !== 'satin') {
-      console.warn('⚠️ WARNING: Expected satin stitch but got:', stitch.type);
-    }
     
     switch (stitch.type) {
       case 'satin':
@@ -4136,6 +5255,25 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
       const { u, v } = e.detail;
       setIsDrawing(true);
       console.log('🧵 Starting embroidery with stitch type:', embroideryStitchType, 'Type of:', typeof embroideryStitchType);
+      
+      if (useEnhancedMode && enhancedGenerator) {
+        // Use enhanced generator
+        const config: StitchGenerationConfig = {
+          type: embroideryStitchType,
+          color: embroideryColor,
+          thickness: embroideryThickness,
+          opacity: embroideryOpacity,
+          threadType: embroideryThreadType,
+          quality: 'high'
+        };
+
+        const newStitch = enhancedGenerator.generateStitchFromInput(
+          [{ x: u, y: v, pressure: 0.5, timestamp: Date.now() }],
+          config
+        );
+        setCurrentStitch(newStitch);
+      } else {
+        // Fallback to original method
       const newStitch = {
         id: `stitch_${Date.now()}`,
         type: embroideryStitchType,
@@ -4147,6 +5285,7 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
       };
       console.log('🧵 Created stitch object:', newStitch);
       setCurrentStitch(newStitch);
+      }
     };
 
     const handleEmbroideryMove = (e: CustomEvent) => {
@@ -4175,9 +5314,52 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
     const handleEmbroideryEnd = () => {
       if (!isDrawing || !currentStitch) return;
       setIsDrawing(false);
-      setEmbroideryStitches([...embroideryStitches, currentStitch]);
+      
+      // Save state before adding stitch for undo functionality
+      const newStitches = useEnhancedMode && enhancedManager 
+        ? [...enhancedManager.getAllStitches(), currentStitch]
+        : [...embroideryStitches, currentStitch];
+      
+      advancedUndoRedoSystem.saveState(newStitches, 'add_stitch', `Added ${currentStitch.type} stitch`);
+      
+      if (useEnhancedMode && enhancedManager) {
+        // Use enhanced manager for better persistence
+        const stitchId = enhancedManager.addStitch(currentStitch);
+        const allStitches = enhancedManager.getAllStitches();
+        setEmbroideryStitches(allStitches);
+        console.log('✅ Stitch added to enhanced manager:', stitchId);
+      } else {
+        // Fallback to original method
+        setEmbroideryStitches([...embroideryStitches, currentStitch]);
+      }
+      
+      // Update undo/redo state
+      setCanUndo(advancedUndoRedoSystem.canUndo());
+      setCanRedo(advancedUndoRedoSystem.canRedo());
+      
       setCurrentStitch(null);
     };
+
+    // Undo/Redo functions
+    const handleUndo = useCallback(() => {
+      const stitches = advancedUndoRedoSystem.undo();
+      if (stitches) {
+        setEmbroideryStitches(stitches);
+        setCanUndo(advancedUndoRedoSystem.canUndo());
+        setCanRedo(advancedUndoRedoSystem.canRedo());
+        console.log('↩️ Undo performed');
+      }
+    }, []);
+
+    const handleRedo = useCallback(() => {
+      const stitches = advancedUndoRedoSystem.redo();
+      if (stitches) {
+        setEmbroideryStitches(stitches);
+        setCanUndo(advancedUndoRedoSystem.canUndo());
+        setCanRedo(advancedUndoRedoSystem.canRedo());
+        console.log('↪️ Redo performed');
+      }
+    }, []);
 
     window.addEventListener('embroideryStart', handleEmbroideryStart as EventListener);
     window.addEventListener('embroideryMove', handleEmbroideryMove as EventListener);
@@ -4191,10 +5373,15 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
   }, [isDrawing, currentStitch, embroideryStitchType, embroideryColor, embroideryThreadType, embroideryThickness, embroideryOpacity, setEmbroideryStitches, composedCanvas]);
 
 
-  // Redraw when stitches change
+  // Redraw when stitches change (optimized with debouncing)
   useEffect(() => {
-    drawStitches();
-  }, [embroideryStitches, currentStitch]);
+    debouncedDrawStitches();
+  }, [embroideryStitches, currentStitch, debouncedDrawStitches]);
+
+  // Performance monitoring effect
+  useEffect(() => {
+    adjustQualityForPerformance();
+  }, [adjustQualityForPerformance]);
 
   // Debug stitch type changes
   useEffect(() => {
@@ -4206,12 +5393,74 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
     checkBackendConnection();
   }, []);
 
+  // Cleanup effect to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      // Cancel any pending frame requests
+      if (frameRequestRef.current) {
+        cancelAnimationFrame(frameRequestRef.current);
+      }
+      
+      // Clear debounce timeout
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+      }
+      
+      // Dispose of advanced systems
+      if (advancedEngineRef.current) {
+        try {
+          advancedEngineRef.current.dispose();
+        } catch (error) {
+          console.warn('Error disposing advanced engine:', error);
+        }
+      }
+      
+      if (textureSystemRef.current) {
+        try {
+          textureSystemRef.current.dispose();
+        } catch (error) {
+          console.warn('Error disposing texture system:', error);
+        }
+      }
+      
+      if (lightingSystemRef.current) {
+        try {
+          lightingSystemRef.current.dispose();
+        } catch (error) {
+          console.warn('Error disposing lighting system:', error);
+        }
+      }
+    };
+  }, []);
+
   return (
-    <div className="embroidery-sidebar" style={{
-      background: 'linear-gradient(135deg, #1E293B 0%, #0F172A 100%)',
+    <>
+      <style>
+        {`
+          .embroidery-controls::-webkit-scrollbar {
+            width: 6px;
+          }
+          .embroidery-controls::-webkit-scrollbar-track {
+            background: #1E293B;
+          }
+          .embroidery-controls::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 3px;
+          }
+          .embroidery-controls::-webkit-scrollbar-thumb:hover {
+            background: #64748B;
+          }
+        `}
+      </style>
+      <div className="embroidery-tool-panel" style={{
+        background: 'transparent', // Remove background since parent has it
       color: 'white',
       height: '100%',
-      overflow: 'auto'
+        width: '100%',
+        overflow: 'hidden',
+        padding: '0',
+        display: 'flex',
+        flexDirection: 'column'
     }}>
       <div className="tool-header" style={{
         background: 'linear-gradient(135deg, #8B5CF6 0%, #A855F7 100%)',
@@ -4237,11 +5486,85 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
           <span style={{ fontSize: '11px', opacity: 0.8 }}>
             {embroideryStitches.length} stitches
           </span>
+          <span style={{ fontSize: '10px', opacity: 0.7, color: enable4K ? '#10B981' : '#6B7280' }}>
+            {enable4K ? '4K HD' : 'HD'}
+          </span>
           {embroideryAIEnabled && (
             <span style={{ fontSize: '10px', opacity: 0.7 }}>
               🤖 AI
             </span>
           )}
+      </div>
+
+      {/* 4K HD Quality Control Panel */}
+      <div className="quality-control-panel" style={{
+        background: 'rgba(0, 0, 0, 0.3)',
+        padding: '12px',
+        borderBottom: '1px solid #334155',
+        marginBottom: '8px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+          <span style={{ fontSize: '12px', fontWeight: '600', color: '#8B5CF6' }}>🎨 4K HD Quality</span>
+          <div style={{ display: 'flex', gap: '4px' }}>
+            {['low', 'medium', 'high', 'ultra'].map((quality) => (
+              <button
+                key={quality}
+                onClick={() => setRenderQuality(quality as any)}
+                style={{
+                  padding: '2px 6px',
+                  fontSize: '10px',
+                  borderRadius: '4px',
+                  background: renderQuality === quality ? '#8B5CF6' : '#374151',
+                  color: 'white',
+                  border: 'none',
+                  cursor: 'pointer',
+                  textTransform: 'capitalize'
+                }}
+              >
+                {quality}
+              </button>
+            ))}
+          </div>
+        </div>
+        
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '11px' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <input
+              type="checkbox"
+              checked={enable4K}
+              onChange={(e) => setEnable4K(e.target.checked)}
+              style={{ accentColor: '#8B5CF6' }}
+            />
+            4K Resolution
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <input
+              type="checkbox"
+              checked={enableWebGL}
+              onChange={(e) => setEnableWebGL(e.target.checked)}
+              style={{ accentColor: '#8B5CF6' }}
+            />
+            WebGL2
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <input
+              type="checkbox"
+              checked={enablePBR}
+              onChange={(e) => setEnablePBR(e.target.checked)}
+              style={{ accentColor: '#8B5CF6' }}
+            />
+            PBR Materials
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <input
+              type="checkbox"
+              checked={enableShadows}
+              onChange={(e) => setEnableShadows(e.target.checked)}
+              style={{ accentColor: '#8B5CF6' }}
+            />
+            Shadows
+          </label>
+        </div>
       </div>
 
         {/* Quick AI Actions */}
@@ -4282,10 +5605,15 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
       </div>
 
       <div className="embroidery-controls" style={{
+        flex: 1,
         display: 'flex',
         flexDirection: 'column',
         gap: '16px',
-        padding: '16px'
+        padding: '16px',
+        overflowY: 'auto',
+        overflowX: 'hidden',
+        maxWidth: '100%',
+        boxSizing: 'border-box'
       }}>
         {/* Pattern Description */}
         <div className="control-group" style={{
@@ -4374,17 +5702,43 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
 
         {/* Thread Type */}
         <div className="control-group">
-          <label>Thread Type</label>
+          <label>Thread Type & Material</label>
+          <div style={{ display: 'flex', gap: '8px', flexDirection: 'column' }}>
         <select
             value={embroideryThreadType}
             onChange={(e) => setEmbroideryThreadType(e.target.value as any)}
+              style={{ marginBottom: '4px' }}
         >
           <option value="cotton">Cotton</option>
           <option value="polyester">Polyester</option>
           <option value="silk">Silk</option>
           <option value="metallic">Metallic</option>
           <option value="glow">Glow-in-Dark</option>
+              <option value="variegated">Variegated</option>
         </select>
+            
+            {/* Advanced Material Properties */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px', fontSize: '11px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <input
+                  type="checkbox"
+                  checked={enablePBR}
+                  onChange={(e) => setEnablePBR(e.target.checked)}
+                  style={{ accentColor: '#8B5CF6' }}
+                />
+                PBR Materials
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <input
+                  type="checkbox"
+                  checked={enableNormalMapping}
+                  onChange={(e) => setEnableNormalMapping(e.target.checked)}
+                  style={{ accentColor: '#8B5CF6' }}
+                />
+                Normal Maps
+              </label>
+            </div>
+          </div>
       </div>
 
         {/* Color */}
@@ -4789,7 +6143,270 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
               <option value="polyester">Polyester</option>
             </select>
           </div>
+
+        {/* Enhanced Mode Toggle */}
+        <div>
+          <label style={{ fontSize: '12px', color: '#22C55E', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <input
+              type="checkbox"
+              checked={useEnhancedMode}
+              onChange={(e) => setUseEnhancedMode(e.target.checked)}
+              style={{ margin: 0 }}
+            />
+            Enhanced Mode (Better Performance & Persistence)
+          </label>
+        </div>
+
+        {/* Advanced Rendering Controls */}
+        <div className="control-group" style={{
+          background: 'rgba(59, 130, 246, 0.1)',
+          padding: '12px',
+          borderRadius: '8px',
+          border: '1px solid rgba(59, 130, 246, 0.3)',
+          marginTop: '12px'
+        }}>
+          <label style={{ 
+            display: 'block', 
+            marginBottom: '8px', 
+            fontWeight: '500',
+            color: '#E2E8F0',
+            fontSize: '14px'
+          }}>Advanced Rendering</label>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '11px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <input
+                type="checkbox"
+                checked={enableAdvancedRendering}
+                onChange={(e) => setEnableAdvancedRendering(e.target.checked)}
+                style={{ accentColor: '#3B82F6' }}
+              />
+              Advanced Rendering
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <input
+                type="checkbox"
+                checked={enableAntiAliasing}
+                onChange={(e) => setEnableAntiAliasing(e.target.checked)}
+                style={{ accentColor: '#3B82F6' }}
+              />
+              Anti-Aliasing
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <input
+                type="checkbox"
+                checked={enableCaching}
+                onChange={(e) => setEnableCaching(e.target.checked)}
+                style={{ accentColor: '#3B82F6' }}
+              />
+              Caching
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <input
+                type="checkbox"
+                checked={enableLOD}
+                onChange={(e) => setEnableLOD(e.target.checked)}
+                style={{ accentColor: '#3B82F6' }}
+              />
+              Level of Detail
+            </label>
+          </div>
+        </div>
+
+        {/* Undo/Redo Controls */}
+        <div className="control-group" style={{
+          background: 'rgba(16, 185, 129, 0.1)',
+          padding: '12px',
+          borderRadius: '8px',
+          border: '1px solid rgba(16, 185, 129, 0.3)',
+          marginTop: '12px'
+        }}>
+          <label style={{ 
+            display: 'block', 
+            marginBottom: '8px', 
+            fontWeight: '500',
+            color: '#E2E8F0',
+            fontSize: '14px'
+          }}>History</label>
+          
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              onClick={handleUndo}
+              disabled={!canUndo}
+              style={{
+                flex: 1,
+                padding: '8px 12px',
+                borderRadius: '6px',
+                border: '1px solid #10B981',
+                background: canUndo ? '#10B981' : '#374151',
+                color: canUndo ? '#FFFFFF' : '#6B7280',
+                cursor: canUndo ? 'pointer' : 'not-allowed',
+                fontSize: '12px',
+                fontWeight: '500'
+              }}
+            >
+              ↩️ Undo
+            </button>
+            <button
+              onClick={handleRedo}
+              disabled={!canRedo}
+              style={{
+                flex: 1,
+                padding: '8px 12px',
+                borderRadius: '6px',
+                border: '1px solid #10B981',
+                background: canRedo ? '#10B981' : '#374151',
+                color: canRedo ? '#FFFFFF' : '#6B7280',
+                cursor: canRedo ? 'pointer' : 'not-allowed',
+                fontSize: '12px',
+                fontWeight: '500'
+              }}
+            >
+              ↪️ Redo
+            </button>
+          </div>
+        </div>
+
+        {/* Performance Panel Toggle */}
+        <div className="control-group" style={{
+          background: 'rgba(245, 158, 11, 0.1)',
+          padding: '12px',
+          borderRadius: '8px',
+          border: '1px solid rgba(245, 158, 11, 0.3)',
+          marginTop: '12px'
+        }}>
+          <label style={{ 
+            display: 'block', 
+            marginBottom: '8px', 
+            fontWeight: '500',
+            color: '#E2E8F0',
+            fontSize: '14px'
+          }}>Performance</label>
+          
+          <button
+            onClick={() => setShowPerformancePanel(!showPerformancePanel)}
+            style={{
+              width: '100%',
+              padding: '8px 12px',
+              borderRadius: '6px',
+              border: '1px solid #F59E0B',
+              background: '#1E293B',
+              color: '#E2E8F0',
+              cursor: 'pointer',
+              fontSize: '12px',
+              fontWeight: '500'
+            }}
+          >
+            {showPerformancePanel ? 'Hide' : 'Show'} Performance Panel
+          </button>
+        </div>
       </div>
+
+      {/* Performance Panel */}
+      {showPerformancePanel && (
+        <div className="control-group" style={{
+          background: 'rgba(245, 158, 11, 0.1)',
+          padding: '16px',
+          borderRadius: '8px',
+          border: '1px solid rgba(245, 158, 11, 0.3)',
+          marginTop: '12px'
+        }}>
+          <label style={{ 
+            display: 'block', 
+            marginBottom: '12px', 
+            fontWeight: '600',
+            color: '#F59E0B',
+            fontSize: '16px'
+          }}>Performance Metrics</label>
+          
+          {performanceMetrics && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', fontSize: '12px' }}>
+              <div>
+                <div style={{ color: '#E2E8F0', fontWeight: '500' }}>FPS</div>
+                <div style={{ color: performanceMetrics.fps > 30 ? '#10B981' : '#EF4444', fontSize: '18px', fontWeight: '600' }}>
+                  {performanceMetrics.fps.toFixed(1)}
+                </div>
+              </div>
+              <div>
+                <div style={{ color: '#E2E8F0', fontWeight: '500' }}>Frame Time</div>
+                <div style={{ color: performanceMetrics.frameTime < 33 ? '#10B981' : '#EF4444', fontSize: '18px', fontWeight: '600' }}>
+                  {performanceMetrics.frameTime.toFixed(1)}ms
+                </div>
+              </div>
+              <div>
+                <div style={{ color: '#E2E8F0', fontWeight: '500' }}>Render Time</div>
+                <div style={{ color: performanceMetrics.renderTime < 16 ? '#10B981' : '#EF4444', fontSize: '18px', fontWeight: '600' }}>
+                  {performanceMetrics.renderTime.toFixed(1)}ms
+                </div>
+              </div>
+              <div>
+                <div style={{ color: '#E2E8F0', fontWeight: '500' }}>Stitch Count</div>
+                <div style={{ color: '#3B82F6', fontSize: '18px', fontWeight: '600' }}>
+                  {performanceMetrics.stitchCount}
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {memoryStats && (
+            <div style={{ marginTop: '12px', fontSize: '12px' }}>
+              <div style={{ color: '#E2E8F0', fontWeight: '500', marginBottom: '8px' }}>Memory Usage</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                <div>
+                  <div style={{ color: '#9CA3AF' }}>Used</div>
+                  <div style={{ color: '#F59E0B', fontWeight: '600' }}>
+                    {(memoryStats.usedMemory / 1024 / 1024).toFixed(1)}MB
+                  </div>
+                </div>
+                <div>
+                  <div style={{ color: '#9CA3AF' }}>Available</div>
+                  <div style={{ color: '#10B981', fontWeight: '600' }}>
+                    {(memoryStats.freeMemory / 1024 / 1024).toFixed(1)}MB
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          <div style={{ marginTop: '12px', display: 'flex', gap: '8px' }}>
+            <button
+              onClick={() => advancedMemoryManager.forceGarbageCollection()}
+              style={{
+                flex: 1,
+                padding: '6px 12px',
+                borderRadius: '6px',
+                border: '1px solid #F59E0B',
+                background: '#1E293B',
+                color: '#F59E0B',
+                cursor: 'pointer',
+                fontSize: '11px',
+                fontWeight: '500'
+              }}
+            >
+              🧹 Force GC
+            </button>
+            <button
+              onClick={() => {
+                const stats = advancedPerformanceMonitor.getStatistics();
+                console.log('Performance Statistics:', stats);
+              }}
+              style={{
+                flex: 1,
+                padding: '6px 12px',
+                borderRadius: '6px',
+                border: '1px solid #F59E0B',
+                background: '#1E293B',
+                color: '#F59E0B',
+                cursor: 'pointer',
+                fontSize: '11px',
+                fontWeight: '500'
+              }}
+            >
+              📊 Export Stats
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Pattern Library */}
         <div className="control-group" style={{
@@ -4851,7 +6468,1045 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
           )}
       </div>
 
-        {/* Revolutionary Advanced Stitch Types */}
+        {/* Performance Stats */}
+        <div className="control-group" style={{
+          background: 'rgba(255, 193, 7, 0.1)',
+          padding: '12px',
+          borderRadius: '8px',
+          border: '1px solid rgba(255, 193, 7, 0.3)',
+          marginBottom: '12px'
+        }}>
+          <label style={{
+            display: 'block',
+            marginBottom: '8px',
+            fontWeight: '500',
+            color: '#FFC107'
+          }}>⚡ Performance Stats</label>
+          <div style={{ fontSize: '11px', color: '#B0BEC5' }}>
+            <div>Render Time: {performanceStats.renderTime}ms</div>
+            <div>Stitch Count: {performanceStats.stitchCount}</div>
+            <div>Memory: {performanceStats.memoryUsage}MB</div>
+            <div style={{ 
+              marginTop: '4px', 
+              padding: '4px', 
+              background: performanceModeRef.current ? 'rgba(255, 0, 0, 0.2)' : 'rgba(0, 255, 0, 0.2)',
+              borderRadius: '4px',
+              fontSize: '10px'
+            }}>
+              {performanceModeRef.current ? '🔧 Performance Mode' : '✅ Normal Mode'}
+            </div>
+          </div>
+        </div>
+
+        {/* Ultra-Realistic Satin Stitch Controls */}
+        <div className="control-group" style={{
+          background: 'rgba(255, 20, 147, 0.1)',
+          padding: '12px',
+          borderRadius: '8px',
+          border: '1px solid rgba(255, 20, 147, 0.3)',
+          marginBottom: '12px'
+        }}>
+          <label style={{
+            display: 'block',
+            marginBottom: '8px',
+            fontWeight: '500',
+            color: '#FF1493'
+          }}>🌟 Ultra-Realistic Satin Stitch</label>
+          
+          {/* Material Properties */}
+          <div style={{ marginBottom: '8px' }}>
+            <label style={{ fontSize: '11px', color: '#FF1493', display: 'block', marginBottom: '4px' }}>Thread Type:</label>
+            <select 
+              value={satinMaterial.threadType} 
+              onChange={(e) => setSatinMaterial(prev => ({ ...prev, threadType: e.target.value as any }))}
+              style={{ width: '100%', padding: '4px', fontSize: '11px', borderRadius: '4px', border: '1px solid #FF1493' }}
+            >
+              <option value="cotton">Cotton</option>
+              <option value="polyester">Polyester</option>
+              <option value="silk">Silk</option>
+              <option value="metallic">Metallic</option>
+              <option value="glow">Glow</option>
+              <option value="variegated">Variegated</option>
+            </select>
+          </div>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '8px' }}>
+            <div>
+              <label style={{ fontSize: '10px', color: '#FF1493' }}>Sheen:</label>
+              <input 
+                type="range" 
+                min="0" 
+                max="1" 
+                step="0.1" 
+                value={satinMaterial.sheen} 
+                onChange={(e) => setSatinMaterial(prev => ({ ...prev, sheen: parseFloat(e.target.value) }))}
+                style={{ width: '100%' }}
+              />
+              <span style={{ fontSize: '9px', color: '#FF1493' }}>{satinMaterial.sheen.toFixed(1)}</span>
+            </div>
+            <div>
+              <label style={{ fontSize: '10px', color: '#FF1493' }}>Roughness:</label>
+              <input 
+                type="range" 
+                min="0" 
+                max="1" 
+                step="0.1" 
+                value={satinMaterial.roughness} 
+                onChange={(e) => setSatinMaterial(prev => ({ ...prev, roughness: parseFloat(e.target.value) }))}
+                style={{ width: '100%' }}
+              />
+              <span style={{ fontSize: '9px', color: '#FF1493' }}>{satinMaterial.roughness.toFixed(1)}</span>
+            </div>
+          </div>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '8px' }}>
+            <div>
+              <label style={{ fontSize: '10px', color: '#FF1493' }}>Height:</label>
+              <input 
+                type="range" 
+                min="0" 
+                max="2" 
+                step="0.1" 
+                value={satin3DProperties.height} 
+                onChange={(e) => setSatin3DProperties(prev => ({ ...prev, height: parseFloat(e.target.value) }))}
+                style={{ width: '100%' }}
+              />
+              <span style={{ fontSize: '9px', color: '#FF1493' }}>{satin3DProperties.height.toFixed(1)}mm</span>
+            </div>
+            <div>
+              <label style={{ fontSize: '10px', color: '#FF1493' }}>Density:</label>
+              <input 
+                type="range" 
+                min="2" 
+                max="20" 
+                step="1" 
+                value={satin3DProperties.stitchDensity} 
+                onChange={(e) => setSatin3DProperties(prev => ({ ...prev, stitchDensity: parseFloat(e.target.value) }))}
+                style={{ width: '100%' }}
+              />
+              <span style={{ fontSize: '9px', color: '#FF1493' }}>{satin3DProperties.stitchDensity}/mm</span>
+            </div>
+          </div>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '8px' }}>
+            <div>
+              <label style={{ fontSize: '10px', color: '#FF1493' }}>Zigzag Amp:</label>
+              <input 
+                type="range" 
+                min="0" 
+                max="1" 
+                step="0.1" 
+                value={satin3DProperties.zigzagAmplitude} 
+                onChange={(e) => setSatin3DProperties(prev => ({ ...prev, zigzagAmplitude: parseFloat(e.target.value) }))}
+                style={{ width: '100%' }}
+              />
+              <span style={{ fontSize: '9px', color: '#FF1493' }}>{satin3DProperties.zigzagAmplitude.toFixed(1)}</span>
+            </div>
+            <div>
+              <label style={{ fontSize: '10px', color: '#FF1493' }}>Zigzag Freq:</label>
+              <input 
+                type="range" 
+                min="0.5" 
+                max="5" 
+                step="0.5" 
+                value={satin3DProperties.zigzagFrequency} 
+                onChange={(e) => setSatin3DProperties(prev => ({ ...prev, zigzagFrequency: parseFloat(e.target.value) }))}
+                style={{ width: '100%' }}
+              />
+              <span style={{ fontSize: '9px', color: '#FF1493' }}>{satin3DProperties.zigzagFrequency.toFixed(1)}</span>
+            </div>
+          </div>
+          
+          <button 
+            onClick={generateUltraRealisticSatin}
+            style={{
+              width: '100%',
+              padding: '8px',
+              fontSize: '11px',
+              background: 'linear-gradient(135deg, #FF1493, #FF69B4)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontWeight: '500',
+              boxShadow: '0 2px 4px rgba(255, 20, 147, 0.3)'
+            }}
+          >
+            🌟 Generate Ultra-Realistic Satin
+          </button>
+        </div>
+
+        {/* Ultra-Realistic Fill Stitch Controls */}
+        <div className="control-group" style={{
+          background: 'rgba(0, 150, 255, 0.1)',
+          padding: '12px',
+          borderRadius: '8px',
+          border: '1px solid rgba(0, 150, 255, 0.3)',
+          marginBottom: '12px'
+        }}>
+          <label style={{
+            display: 'block',
+            marginBottom: '8px',
+            fontWeight: '500',
+            color: '#0096FF'
+          }}>🎨 Ultra-Realistic Fill Stitch</label>
+          
+          {/* Material Properties */}
+          <div style={{ marginBottom: '8px' }}>
+            <label style={{ fontSize: '11px', color: '#0096FF', display: 'block', marginBottom: '4px' }}>Thread Type:</label>
+            <select 
+              value={fillMaterial.threadType} 
+              onChange={(e) => setFillMaterial(prev => ({ ...prev, threadType: e.target.value as any }))}
+              style={{ width: '100%', padding: '4px', fontSize: '11px', borderRadius: '4px', border: '1px solid #0096FF' }}
+            >
+              <option value="cotton">Cotton</option>
+              <option value="polyester">Polyester</option>
+              <option value="silk">Silk</option>
+              <option value="metallic">Metallic</option>
+              <option value="glow">Glow</option>
+              <option value="variegated">Variegated</option>
+            </select>
+          </div>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '8px' }}>
+            <div>
+              <label style={{ fontSize: '10px', color: '#0096FF' }}>Sheen:</label>
+              <input 
+                type="range" 
+                min="0" 
+                max="1" 
+                step="0.1" 
+                value={fillMaterial.sheen} 
+                onChange={(e) => setFillMaterial(prev => ({ ...prev, sheen: parseFloat(e.target.value) }))}
+                style={{ width: '100%' }}
+              />
+              <span style={{ fontSize: '9px', color: '#0096FF' }}>{fillMaterial.sheen.toFixed(1)}</span>
+            </div>
+            <div>
+              <label style={{ fontSize: '10px', color: '#0096FF' }}>Roughness:</label>
+              <input 
+                type="range" 
+                min="0" 
+                max="1" 
+                step="0.1" 
+                value={fillMaterial.roughness} 
+                onChange={(e) => setFillMaterial(prev => ({ ...prev, roughness: parseFloat(e.target.value) }))}
+                style={{ width: '100%' }}
+              />
+              <span style={{ fontSize: '9px', color: '#0096FF' }}>{fillMaterial.roughness.toFixed(1)}</span>
+            </div>
+          </div>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '8px' }}>
+            <div>
+              <label style={{ fontSize: '10px', color: '#0096FF' }}>Height:</label>
+              <input 
+                type="range" 
+                min="0" 
+                max="2" 
+                step="0.1" 
+                value={fill3DProperties.height} 
+                onChange={(e) => setFill3DProperties(prev => ({ ...prev, height: parseFloat(e.target.value) }))}
+                style={{ width: '100%' }}
+              />
+              <span style={{ fontSize: '9px', color: '#0096FF' }}>{fill3DProperties.height.toFixed(1)}mm</span>
+            </div>
+            <div>
+              <label style={{ fontSize: '10px', color: '#0096FF' }}>Density:</label>
+              <input 
+                type="range" 
+                min="1" 
+                max="10" 
+                step="0.5" 
+                value={fill3DProperties.stitchDensity} 
+                onChange={(e) => setFill3DProperties(prev => ({ ...prev, stitchDensity: parseFloat(e.target.value) }))}
+                style={{ width: '100%' }}
+              />
+              <span style={{ fontSize: '9px', color: '#0096FF' }}>{fill3DProperties.stitchDensity.toFixed(1)}/mm</span>
+            </div>
+          </div>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '8px' }}>
+            <div>
+              <label style={{ fontSize: '10px', color: '#0096FF' }}>Fill Density:</label>
+              <input 
+                type="range" 
+                min="0" 
+                max="1" 
+                step="0.1" 
+                value={fill3DProperties.fillDensity} 
+                onChange={(e) => setFill3DProperties(prev => ({ ...prev, fillDensity: parseFloat(e.target.value) }))}
+                style={{ width: '100%' }}
+              />
+              <span style={{ fontSize: '9px', color: '#0096FF' }}>{fill3DProperties.fillDensity.toFixed(1)}</span>
+            </div>
+            <div>
+              <label style={{ fontSize: '10px', color: '#0096FF' }}>Fill Angle:</label>
+              <input 
+                type="range" 
+                min="0" 
+                max="180" 
+                step="15" 
+                value={fill3DProperties.fillAngle} 
+                onChange={(e) => setFill3DProperties(prev => ({ ...prev, fillAngle: parseFloat(e.target.value) }))}
+                style={{ width: '100%' }}
+              />
+              <span style={{ fontSize: '9px', color: '#0096FF' }}>{fill3DProperties.fillAngle}°</span>
+            </div>
+          </div>
+          
+          <button 
+            onClick={generateUltraRealisticFill}
+            style={{
+              width: '100%',
+              padding: '8px',
+              fontSize: '11px',
+              background: 'linear-gradient(135deg, #0096FF, #00BFFF)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontWeight: '500',
+              boxShadow: '0 2px 4px rgba(0, 150, 255, 0.3)'
+            }}
+          >
+            🎨 Generate Ultra-Realistic Fill
+          </button>
+        </div>
+
+        {/* Ultra-Realistic Cross-Stitch Controls */}
+        <div className="control-group" style={{
+          background: 'rgba(255, 165, 0, 0.1)',
+          padding: '12px',
+          borderRadius: '8px',
+          border: '1px solid rgba(255, 165, 0, 0.3)',
+          marginBottom: '12px'
+        }}>
+          <label style={{
+            display: 'block',
+            marginBottom: '8px',
+            fontWeight: '500',
+            color: '#FFA500'
+          }}>❌ Ultra-Realistic Cross-Stitch</label>
+          
+          {/* Material Properties */}
+          <div style={{ marginBottom: '8px' }}>
+            <label style={{ fontSize: '11px', color: '#FFA500', display: 'block', marginBottom: '4px' }}>Thread Type:</label>
+            <select 
+              value={crossStitchMaterial.threadType} 
+              onChange={(e) => setCrossStitchMaterial(prev => ({ ...prev, threadType: e.target.value as any }))}
+              style={{ width: '100%', padding: '4px', fontSize: '11px', borderRadius: '4px', border: '1px solid #FFA500' }}
+            >
+              <option value="cotton">Cotton</option>
+              <option value="polyester">Polyester</option>
+              <option value="silk">Silk</option>
+              <option value="metallic">Metallic</option>
+              <option value="glow">Glow</option>
+              <option value="variegated">Variegated</option>
+            </select>
+          </div>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '8px' }}>
+            <div>
+              <label style={{ fontSize: '10px', color: '#FFA500' }}>Sheen:</label>
+              <input 
+                type="range" 
+                min="0" 
+                max="1" 
+                step="0.1" 
+                value={crossStitchMaterial.sheen} 
+                onChange={(e) => setCrossStitchMaterial(prev => ({ ...prev, sheen: parseFloat(e.target.value) }))}
+                style={{ width: '100%' }}
+              />
+              <span style={{ fontSize: '9px', color: '#FFA500' }}>{crossStitchMaterial.sheen.toFixed(1)}</span>
+            </div>
+            <div>
+              <label style={{ fontSize: '10px', color: '#FFA500' }}>Roughness:</label>
+              <input 
+                type="range" 
+                min="0" 
+                max="1" 
+                step="0.1" 
+                value={crossStitchMaterial.roughness} 
+                onChange={(e) => setCrossStitchMaterial(prev => ({ ...prev, roughness: parseFloat(e.target.value) }))}
+                style={{ width: '100%' }}
+              />
+              <span style={{ fontSize: '9px', color: '#FFA500' }}>{crossStitchMaterial.roughness.toFixed(1)}</span>
+            </div>
+          </div>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '8px' }}>
+            <div>
+              <label style={{ fontSize: '10px', color: '#FFA500' }}>Height:</label>
+              <input 
+                type="range" 
+                min="0" 
+                max="2" 
+                step="0.1" 
+                value={crossStitch3DProperties.height} 
+                onChange={(e) => setCrossStitch3DProperties(prev => ({ ...prev, height: parseFloat(e.target.value) }))}
+                style={{ width: '100%' }}
+              />
+              <span style={{ fontSize: '9px', color: '#FFA500' }}>{crossStitch3DProperties.height.toFixed(1)}mm</span>
+            </div>
+            <div>
+              <label style={{ fontSize: '10px', color: '#FFA500' }}>Density:</label>
+              <input 
+                type="range" 
+                min="1" 
+                max="10" 
+                step="0.5" 
+                value={crossStitch3DProperties.stitchDensity} 
+                onChange={(e) => setCrossStitch3DProperties(prev => ({ ...prev, stitchDensity: parseFloat(e.target.value) }))}
+                style={{ width: '100%' }}
+              />
+              <span style={{ fontSize: '9px', color: '#FFA500' }}>{crossStitch3DProperties.stitchDensity.toFixed(1)}/mm</span>
+            </div>
+          </div>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '8px' }}>
+            <div>
+              <label style={{ fontSize: '10px', color: '#FFA500' }}>Cross Size:</label>
+              <input 
+                type="range" 
+                min="0" 
+                max="1" 
+                step="0.1" 
+                value={crossStitch3DProperties.crossSize} 
+                onChange={(e) => setCrossStitch3DProperties(prev => ({ ...prev, crossSize: parseFloat(e.target.value) }))}
+                style={{ width: '100%' }}
+              />
+              <span style={{ fontSize: '9px', color: '#FFA500' }}>{crossStitch3DProperties.crossSize.toFixed(1)}</span>
+            </div>
+            <div>
+              <label style={{ fontSize: '10px', color: '#FFA500' }}>Cross Angle:</label>
+              <input 
+                type="range" 
+                min="0" 
+                max="180" 
+                step="15" 
+                value={crossStitch3DProperties.crossAngle} 
+                onChange={(e) => setCrossStitch3DProperties(prev => ({ ...prev, crossAngle: parseFloat(e.target.value) }))}
+                style={{ width: '100%' }}
+              />
+              <span style={{ fontSize: '9px', color: '#FFA500' }}>{crossStitch3DProperties.crossAngle}°</span>
+            </div>
+          </div>
+          
+          <button 
+            onClick={generateUltraRealisticCrossStitch}
+            style={{
+              width: '100%',
+              padding: '8px',
+              fontSize: '11px',
+              background: 'linear-gradient(135deg, #FFA500, #FFD700)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontWeight: '500',
+              boxShadow: '0 2px 4px rgba(255, 165, 0, 0.3)'
+            }}
+          >
+            ❌ Generate Ultra-Realistic Cross-Stitch
+          </button>
+        </div>
+
+        {/* Ultra-Realistic Outline Stitch Controls */}
+        <div className="control-group" style={{
+          background: 'rgba(50, 205, 50, 0.1)',
+          padding: '12px',
+          borderRadius: '8px',
+          border: '1px solid rgba(50, 205, 50, 0.3)',
+          marginBottom: '12px'
+        }}>
+          <label style={{
+            display: 'block',
+            marginBottom: '8px',
+            fontWeight: '500',
+            color: '#32CD32'
+          }}>📏 Ultra-Realistic Outline Stitch</label>
+          
+          {/* Material Properties */}
+          <div style={{ marginBottom: '8px' }}>
+            <label style={{ fontSize: '11px', color: '#32CD32', display: 'block', marginBottom: '4px' }}>Thread Type:</label>
+            <select 
+              value={outlineMaterial.threadType} 
+              onChange={(e) => setOutlineMaterial(prev => ({ ...prev, threadType: e.target.value as any }))}
+              style={{ width: '100%', padding: '4px', fontSize: '11px', borderRadius: '4px', border: '1px solid #32CD32' }}
+            >
+              <option value="cotton">Cotton</option>
+              <option value="polyester">Polyester</option>
+              <option value="silk">Silk</option>
+              <option value="metallic">Metallic</option>
+              <option value="glow">Glow</option>
+              <option value="variegated">Variegated</option>
+            </select>
+          </div>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '8px' }}>
+            <div>
+              <label style={{ fontSize: '10px', color: '#32CD32' }}>Sheen:</label>
+              <input 
+                type="range" 
+                min="0" 
+                max="1" 
+                step="0.1" 
+                value={outlineMaterial.sheen} 
+                onChange={(e) => setOutlineMaterial(prev => ({ ...prev, sheen: parseFloat(e.target.value) }))}
+                style={{ width: '100%' }}
+              />
+              <span style={{ fontSize: '9px', color: '#32CD32' }}>{outlineMaterial.sheen.toFixed(1)}</span>
+            </div>
+            <div>
+              <label style={{ fontSize: '10px', color: '#32CD32' }}>Roughness:</label>
+              <input 
+                type="range" 
+                min="0" 
+                max="1" 
+                step="0.1" 
+                value={outlineMaterial.roughness} 
+                onChange={(e) => setOutlineMaterial(prev => ({ ...prev, roughness: parseFloat(e.target.value) }))}
+                style={{ width: '100%' }}
+              />
+              <span style={{ fontSize: '9px', color: '#32CD32' }}>{outlineMaterial.roughness.toFixed(1)}</span>
+            </div>
+          </div>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '8px' }}>
+            <div>
+              <label style={{ fontSize: '10px', color: '#32CD32' }}>Height:</label>
+              <input 
+                type="range" 
+                min="0" 
+                max="2" 
+                step="0.1" 
+                value={outline3DProperties.height} 
+                onChange={(e) => setOutline3DProperties(prev => ({ ...prev, height: parseFloat(e.target.value) }))}
+                style={{ width: '100%' }}
+              />
+              <span style={{ fontSize: '9px', color: '#32CD32' }}>{outline3DProperties.height.toFixed(1)}mm</span>
+            </div>
+            <div>
+              <label style={{ fontSize: '10px', color: '#32CD32' }}>Density:</label>
+              <input 
+                type="range" 
+                min="1" 
+                max="10" 
+                step="0.5" 
+                value={outline3DProperties.stitchDensity} 
+                onChange={(e) => setOutline3DProperties(prev => ({ ...prev, stitchDensity: parseFloat(e.target.value) }))}
+                style={{ width: '100%' }}
+              />
+              <span style={{ fontSize: '9px', color: '#32CD32' }}>{outline3DProperties.stitchDensity.toFixed(1)}/mm</span>
+            </div>
+          </div>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '8px' }}>
+            <div>
+              <label style={{ fontSize: '10px', color: '#32CD32' }}>Edge Sharpness:</label>
+              <input 
+                type="range" 
+                min="0" 
+                max="1" 
+                step="0.1" 
+                value={outline3DProperties.edgeSharpness} 
+                onChange={(e) => setOutline3DProperties(prev => ({ ...prev, edgeSharpness: parseFloat(e.target.value) }))}
+                style={{ width: '100%' }}
+              />
+              <span style={{ fontSize: '9px', color: '#32CD32' }}>{outline3DProperties.edgeSharpness.toFixed(1)}</span>
+            </div>
+            <div>
+              <label style={{ fontSize: '10px', color: '#32CD32' }}>Curve Smoothing:</label>
+              <input 
+                type="range" 
+                min="0" 
+                max="1" 
+                step="0.1" 
+                value={outline3DProperties.curveSmoothing} 
+                onChange={(e) => setOutline3DProperties(prev => ({ ...prev, curveSmoothing: parseFloat(e.target.value) }))}
+                style={{ width: '100%' }}
+              />
+              <span style={{ fontSize: '9px', color: '#32CD32' }}>{outline3DProperties.curveSmoothing.toFixed(1)}</span>
+            </div>
+          </div>
+          
+          <button 
+            onClick={generateUltraRealisticOutline}
+            style={{
+              width: '100%',
+              padding: '8px',
+              fontSize: '11px',
+              background: 'linear-gradient(135deg, #32CD32, #00FF7F)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontWeight: '500',
+              boxShadow: '0 2px 4px rgba(50, 205, 50, 0.3)'
+            }}
+          >
+            📏 Generate Ultra-Realistic Outline
+          </button>
+        </div>
+
+        {/* Ultra-Realistic Chain Stitch Controls */}
+        <div className="control-group" style={{
+          background: 'rgba(138, 43, 226, 0.1)',
+          padding: '12px',
+          borderRadius: '8px',
+          border: '1px solid rgba(138, 43, 226, 0.3)',
+          marginBottom: '12px'
+        }}>
+          <label style={{
+            display: 'block',
+            marginBottom: '8px',
+            fontWeight: '500',
+            color: '#8A2BE2'
+          }}>🔗 Ultra-Realistic Chain Stitch</label>
+          
+          {/* Material Properties */}
+          <div style={{ marginBottom: '8px' }}>
+            <label style={{ fontSize: '11px', color: '#8A2BE2', display: 'block', marginBottom: '4px' }}>Thread Type:</label>
+            <select 
+              value={chainMaterial.threadType} 
+              onChange={(e) => setChainMaterial(prev => ({ ...prev, threadType: e.target.value as any }))}
+              style={{ width: '100%', padding: '4px', fontSize: '11px', borderRadius: '4px', border: '1px solid #8A2BE2' }}
+            >
+              <option value="cotton">Cotton</option>
+              <option value="polyester">Polyester</option>
+              <option value="silk">Silk</option>
+              <option value="metallic">Metallic</option>
+              <option value="glow">Glow</option>
+              <option value="variegated">Variegated</option>
+            </select>
+          </div>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '8px' }}>
+            <div>
+              <label style={{ fontSize: '10px', color: '#8A2BE2' }}>Sheen:</label>
+              <input 
+                type="range" 
+                min="0" 
+                max="1" 
+                step="0.1" 
+                value={chainMaterial.sheen} 
+                onChange={(e) => setChainMaterial(prev => ({ ...prev, sheen: parseFloat(e.target.value) }))}
+                style={{ width: '100%' }}
+              />
+              <span style={{ fontSize: '9px', color: '#8A2BE2' }}>{chainMaterial.sheen.toFixed(1)}</span>
+            </div>
+            <div>
+              <label style={{ fontSize: '10px', color: '#8A2BE2' }}>Roughness:</label>
+              <input 
+                type="range" 
+                min="0" 
+                max="1" 
+                step="0.1" 
+                value={chainMaterial.roughness} 
+                onChange={(e) => setChainMaterial(prev => ({ ...prev, roughness: parseFloat(e.target.value) }))}
+                style={{ width: '100%' }}
+              />
+              <span style={{ fontSize: '9px', color: '#8A2BE2' }}>{chainMaterial.roughness.toFixed(1)}</span>
+            </div>
+          </div>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '8px' }}>
+            <div>
+              <label style={{ fontSize: '10px', color: '#8A2BE2' }}>Height:</label>
+              <input 
+                type="range" 
+                min="0" 
+                max="2" 
+                step="0.1" 
+                value={chain3DProperties.height} 
+                onChange={(e) => setChain3DProperties(prev => ({ ...prev, height: parseFloat(e.target.value) }))}
+                style={{ width: '100%' }}
+              />
+              <span style={{ fontSize: '9px', color: '#8A2BE2' }}>{chain3DProperties.height.toFixed(1)}mm</span>
+            </div>
+            <div>
+              <label style={{ fontSize: '10px', color: '#8A2BE2' }}>Density:</label>
+              <input 
+                type="range" 
+                min="1" 
+                max="10" 
+                step="0.5" 
+                value={chain3DProperties.stitchDensity} 
+                onChange={(e) => setChain3DProperties(prev => ({ ...prev, stitchDensity: parseFloat(e.target.value) }))}
+                style={{ width: '100%' }}
+              />
+              <span style={{ fontSize: '9px', color: '#8A2BE2' }}>{chain3DProperties.stitchDensity.toFixed(1)}/mm</span>
+            </div>
+          </div>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '8px' }}>
+            <div>
+              <label style={{ fontSize: '10px', color: '#8A2BE2' }}>Loop Size:</label>
+              <input 
+                type="range" 
+                min="0" 
+                max="1" 
+                step="0.1" 
+                value={chain3DProperties.loopSize} 
+                onChange={(e) => setChain3DProperties(prev => ({ ...prev, loopSize: parseFloat(e.target.value) }))}
+                style={{ width: '100%' }}
+              />
+              <span style={{ fontSize: '9px', color: '#8A2BE2' }}>{chain3DProperties.loopSize.toFixed(1)}</span>
+            </div>
+            <div>
+              <label style={{ fontSize: '10px', color: '#8A2BE2' }}>Loop Tightness:</label>
+              <input 
+                type="range" 
+                min="0" 
+                max="1" 
+                step="0.1" 
+                value={chain3DProperties.loopTightness} 
+                onChange={(e) => setChain3DProperties(prev => ({ ...prev, loopTightness: parseFloat(e.target.value) }))}
+                style={{ width: '100%' }}
+              />
+              <span style={{ fontSize: '9px', color: '#8A2BE2' }}>{chain3DProperties.loopTightness.toFixed(1)}</span>
+            </div>
+          </div>
+          
+          <button 
+            onClick={generateUltraRealisticChain}
+            style={{
+              width: '100%',
+              padding: '8px',
+              fontSize: '11px',
+              background: 'linear-gradient(135deg, #8A2BE2, #9370DB)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontWeight: '500',
+              boxShadow: '0 2px 4px rgba(138, 43, 226, 0.3)'
+            }}
+          >
+            🔗 Generate Ultra-Realistic Chain
+          </button>
+        </div>
+
+        {/* Ultra-Realistic Backstitch Controls */}
+        <div className="control-group" style={{
+          background: 'rgba(255, 99, 71, 0.1)',
+          padding: '12px',
+          borderRadius: '8px',
+          border: '1px solid rgba(255, 99, 71, 0.3)',
+          marginBottom: '12px'
+        }}>
+          <label style={{
+            display: 'block',
+            marginBottom: '8px',
+            fontSize: '12px',
+            fontWeight: '600',
+            color: '#FF6347'
+          }}>↩️ Ultra-Realistic Backstitch</label>
+          
+          <button 
+            onClick={generateUltraRealisticBackstitch}
+            style={{
+              width: '100%',
+              padding: '8px',
+              fontSize: '11px',
+              background: 'linear-gradient(135deg, #FF6347, #FF7F50)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontWeight: '500',
+              boxShadow: '0 2px 4px rgba(255, 99, 71, 0.3)'
+            }}
+          >
+            ↩️ Generate Ultra-Realistic Backstitch
+          </button>
+        </div>
+
+        {/* Ultra-Realistic French Knot Controls */}
+        <div className="control-group" style={{
+          background: 'rgba(255, 215, 0, 0.1)',
+          padding: '12px',
+          borderRadius: '8px',
+          border: '1px solid rgba(255, 215, 0, 0.3)',
+          marginBottom: '12px'
+        }}>
+          <label style={{
+            display: 'block',
+            marginBottom: '8px',
+            fontSize: '12px',
+            fontWeight: '600',
+            color: '#FFD700'
+          }}>🎯 Ultra-Realistic French Knot</label>
+          
+          <button 
+            onClick={generateUltraRealisticFrenchKnot}
+            style={{
+              width: '100%',
+              padding: '8px',
+              fontSize: '11px',
+              background: 'linear-gradient(135deg, #FFD700, #FFA500)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontWeight: '500',
+              boxShadow: '0 2px 4px rgba(255, 215, 0, 0.3)'
+            }}
+          >
+            🎯 Generate Ultra-Realistic French Knot
+          </button>
+        </div>
+
+        {/* Ultra-Realistic Bullion Controls */}
+        <div className="control-group" style={{
+          background: 'rgba(147, 112, 219, 0.1)',
+          padding: '12px',
+          borderRadius: '8px',
+          border: '1px solid rgba(147, 112, 219, 0.3)',
+          marginBottom: '12px'
+        }}>
+          <label style={{
+            display: 'block',
+            marginBottom: '8px',
+            fontSize: '12px',
+            fontWeight: '600',
+            color: '#9370DB'
+          }}>🌀 Ultra-Realistic Bullion</label>
+          
+          <button 
+            onClick={generateUltraRealisticBullion}
+            style={{
+              width: '100%',
+              padding: '8px',
+              fontSize: '11px',
+              background: 'linear-gradient(135deg, #9370DB, #8A2BE2)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontWeight: '500',
+              boxShadow: '0 2px 4px rgba(147, 112, 219, 0.3)'
+            }}
+          >
+            🌀 Generate Ultra-Realistic Bullion
+          </button>
+        </div>
+
+        {/* Ultra-Realistic Lazy Daisy Controls */}
+        <div className="control-group" style={{
+          background: 'rgba(255, 192, 203, 0.1)',
+          padding: '12px',
+          borderRadius: '8px',
+          border: '1px solid rgba(255, 192, 203, 0.3)',
+          marginBottom: '12px'
+        }}>
+          <label style={{
+            display: 'block',
+            marginBottom: '8px',
+            fontSize: '12px',
+            fontWeight: '600',
+            color: '#FFC0CB'
+          }}>🌸 Ultra-Realistic Lazy Daisy</label>
+          
+          <button 
+            onClick={generateUltraRealisticLazyDaisy}
+            style={{
+              width: '100%',
+              padding: '8px',
+              fontSize: '11px',
+              background: 'linear-gradient(135deg, #FFC0CB, #FFB6C1)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontWeight: '500',
+              boxShadow: '0 2px 4px rgba(255, 192, 203, 0.3)'
+            }}
+          >
+            🌸 Generate Ultra-Realistic Lazy Daisy
+          </button>
+        </div>
+
+        {/* Ultra-Realistic Feather Controls */}
+        <div className="control-group" style={{
+          background: 'rgba(173, 216, 230, 0.1)',
+          padding: '12px',
+          borderRadius: '8px',
+          border: '1px solid rgba(173, 216, 230, 0.3)',
+          marginBottom: '12px'
+        }}>
+          <label style={{
+            display: 'block',
+            marginBottom: '8px',
+            fontSize: '12px',
+            fontWeight: '600',
+            color: '#ADD8E6'
+          }}>🪶 Ultra-Realistic Feather</label>
+          
+          <button 
+            onClick={generateUltraRealisticFeather}
+            style={{
+              width: '100%',
+              padding: '8px',
+              fontSize: '11px',
+              background: 'linear-gradient(135deg, #ADD8E6, #87CEEB)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontWeight: '500',
+              boxShadow: '0 2px 4px rgba(173, 216, 230, 0.3)'
+            }}
+          >
+            🪶 Generate Ultra-Realistic Feather
+          </button>
+        </div>
+
+        {/* Advanced Complex Design Tools */}
+        <div className="control-group" style={{
+          background: 'rgba(0, 150, 255, 0.1)',
+          padding: '12px',
+          borderRadius: '8px',
+          border: '1px solid rgba(0, 150, 255, 0.3)',
+          marginBottom: '12px'
+        }}>
+          <label style={{
+            display: 'block',
+            marginBottom: '8px',
+            fontWeight: '500',
+            color: '#0096FF'
+          }}>🎨 Complex Design Tools</label>
+          
+          {/* Pattern Generation Controls */}
+          <div style={{ 
+            display: 'grid', 
+            gridTemplateColumns: '1fr 1fr', 
+            gap: '6px', 
+            marginBottom: '8px',
+            fontSize: '11px'
+          }}>
+            <button
+              onClick={() => {
+                const patterns = generateComplexPattern('geometric', 8);
+                console.log('Generated geometric pattern with', patterns.length, 'points');
+              }}
+              style={{
+                padding: '6px 8px',
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '10px',
+                fontWeight: '500'
+              }}
+            >
+              🔷 Geometric
+            </button>
+            <button
+              onClick={() => {
+                const patterns = generateComplexPattern('organic', 10);
+                console.log('Generated organic pattern with', patterns.length, 'points');
+              }}
+              style={{
+                padding: '6px 8px',
+                background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '10px',
+                fontWeight: '500'
+              }}
+            >
+              🌿 Organic
+            </button>
+            <button
+              onClick={() => {
+                const patterns = generateComplexPattern('floral', 12);
+                console.log('Generated floral pattern with', patterns.length, 'points');
+              }}
+              style={{
+                padding: '6px 8px',
+                background: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '10px',
+                fontWeight: '500'
+              }}
+            >
+              🌸 Floral
+            </button>
+            <button
+              onClick={() => {
+                const patterns = generateComplexPattern('abstract', 15);
+                console.log('Generated abstract pattern with', patterns.length, 'points');
+              }}
+              style={{
+                padding: '6px 8px',
+                background: 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '10px',
+                fontWeight: '500'
+              }}
+            >
+              🎭 Abstract
+            </button>
+          </div>
+          
+          {/* Pattern Recognition */}
+          <button
+            onClick={() => {
+              const patterns = recognizePattern(embroideryStitches);
+              console.log('Pattern recognition results:', patterns);
+              alert(`Pattern Analysis:\nGeometric: ${patterns.geometric}\nOrganic: ${patterns.organic}\nText: ${patterns.text}\nFloral: ${patterns.floral}\nAbstract: ${patterns.abstract}`);
+            }}
+            style={{
+              width: '100%',
+              padding: '8px',
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '11px',
+              fontWeight: '500',
+              marginBottom: '8px'
+            }}
+          >
+            🔍 Analyze Pattern
+          </button>
+          
+          {/* Path Optimization */}
+          <button
+            onClick={() => {
+              const optimized = optimizeComplexStitchPath(embroideryStitches);
+              setEmbroideryStitches(optimized);
+              console.log('Optimized stitch path for', optimized.length, 'stitches');
+            }}
+            style={{
+              width: '100%',
+              padding: '8px',
+              background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '11px',
+              fontWeight: '500'
+            }}
+          >
+            🔧 Optimize Path
+          </button>
+        </div>
+
+        {/* Revolutionary Advanced Stitch Types with InkStitch Integration */}
         <div className="control-group" style={{
           background: 'rgba(255, 0, 150, 0.1)',
           padding: '12px',
@@ -4864,7 +7519,35 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
             marginBottom: '8px',
             fontWeight: '500',
             color: '#FF0096'
-          }}>🚀 Advanced Stitch Types</label>
+          }}>🚀 Advanced Stitch Types (InkStitch Enhanced)</label>
+          
+          {/* InkStitch Optimization Controls */}
+          <div style={{ 
+            display: 'grid', 
+            gridTemplateColumns: '1fr 1fr', 
+            gap: '6px', 
+            marginBottom: '8px',
+            fontSize: '11px'
+          }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <input
+                type="checkbox"
+                checked={stitchOptimization}
+                onChange={(e) => setStitchOptimization(e.target.checked)}
+                style={{ accentColor: '#FF0096' }}
+              />
+              Stitch Optimization
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <input
+                type="checkbox"
+                checked={jumpStitchMinimization}
+                onChange={(e) => setJumpStitchMinimization(e.target.checked)}
+                style={{ accentColor: '#FF0096' }}
+              />
+              Jump Minimization
+            </label>
+          </div>
           
           <div style={{
             display: 'grid',
@@ -5261,13 +7944,13 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
         </div>
       </div>
 
-      {/* Canvas */}
-      <div className="embroidery-canvas-container" ref={containerRef} style={{
-        background: 'linear-gradient(135deg, #1E293B 0%, #0F172A 100%)',
-        border: '2px solid #8B5CF6',
-        borderRadius: '12px',
-        padding: '16px',
-        margin: '8px 0'
+      {/* Canvas Controls - No Canvas Rendering */}
+      <div className="canvas-controls" style={{
+        background: 'rgba(139, 92, 246, 0.1)',
+        padding: '12px',
+        borderRadius: '8px',
+        border: '1px solid rgba(139, 92, 246, 0.3)',
+        marginBottom: '12px'
       }}>
         <div style={{
                   display: 'flex',
@@ -5277,7 +7960,7 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
         }}>
           <div>
             <h4 style={{ margin: 0, color: '#E2E8F0', fontSize: '16px' }}>
-              🎨 Design Canvas ({embroideryStitches.length} stitches)
+              🎨 Embroidery Controls ({embroideryStitches.length} stitches)
             </h4>
             <p style={{ margin: '4px 0 0 0', color: '#94A3B8', fontSize: '12px' }}>
               Current: {embroideryStitchType} • {embroideryColor} • {embroideryThickness}px
@@ -5311,13 +7994,8 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
             <button
               onClick={() => {
                 // Export pattern
-                if (canvasRef.current) {
-                  const link = document.createElement('a');
-                  link.download = `embroidery-pattern-${Date.now()}.png`;
-                  link.href = canvasRef.current.toDataURL();
-                  link.click();
-                }
                 console.log('Exporting pattern...');
+                // Export functionality will be handled by the main canvas
               }}
               style={{
                 padding: '6px 12px',
@@ -5333,14 +8011,16 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
             </button>
             <button
               onClick={() => {
-                // Clear canvas
+                // Clear stitches
+                if (useEnhancedMode && enhancedManager) {
+                  enhancedManager.clearAll();
                 setEmbroideryStitches([]);
-                if (canvasRef.current) {
-                  const ctx = canvasRef.current.getContext('2d');
-                  if (ctx) {
-                    ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-                  }
+                  console.log('Clearing all stitches with enhanced manager...');
+                } else {
+                  setEmbroideryStitches([]);
+                  console.log('Clearing all stitches...');
                 }
+                // Clear functionality will be handled by the main canvas
               }}
               style={{
                 padding: '6px 12px',
@@ -5356,44 +8036,15 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
             </button>
               </div>
           </div>
-        <div style={{ position: 'relative' }}>
-          <canvas
-            ref={canvasRef}
-            className="embroidery-canvas"
-            onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
-            onMouseLeave={handleMouseUp}
-            style={{
-              width: '100%',
-              height: '200px',
-              border: '1px solid #475569',
-              borderRadius: '8px',
-              cursor: 'crosshair',
-              background: '#0F172A'
-            }}
-          />
           <div style={{
-            position: 'absolute',
-            top: '8px',
-            left: '8px',
-            background: 'rgba(0, 0, 0, 0.7)',
-            color: 'white',
-            padding: '4px 8px',
-            borderRadius: '4px',
-            fontSize: '12px',
-            pointerEvents: 'none'
-          }}>
-            {embroideryStitchType} • {embroideryColor}
-        </div>
-        </div>
-        <div style={{
-          marginTop: '8px',
           fontSize: '12px',
           color: '#94A3B8',
-          textAlign: 'center'
+          textAlign: 'center',
+          padding: '8px',
+          background: 'rgba(0, 0, 0, 0.2)',
+          borderRadius: '6px'
         }}>
-          Click and drag to draw embroidery stitches
+          Use the main canvas to draw embroidery stitches on the 3D model
         </div>
       </div>
 
@@ -5581,6 +8232,7 @@ const EmbroideryTool: React.FC<EmbroideryToolProps> = ({ active = true }) => {
         </div>
       )}
     </div>
+    </>
   );
 };
 

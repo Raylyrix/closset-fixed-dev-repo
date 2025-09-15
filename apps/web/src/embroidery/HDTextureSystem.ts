@@ -79,9 +79,11 @@ export class HDTextureSystem {
   private maxTextureSize = 0;
   private maxAnisotropy = 0;
 
-  constructor(gl: WebGL2RenderingContext) {
+  constructor(gl: WebGL2RenderingContext | null = null) {
     this.gl = gl;
-    this.initialize();
+    if (gl) {
+      this.initialize();
+    }
   }
 
   /**
@@ -93,9 +95,25 @@ export class HDTextureSystem {
         throw new Error('WebGL context not available');
       }
 
-      // Get WebGL capabilities
-      this.maxTextureSize = this.gl.getParameter(this.gl.MAX_TEXTURE_SIZE);
-      this.maxAnisotropy = this.gl.getParameter(this.gl.MAX_TEXTURE_MAX_ANISOTROPY_EXT) || 1;
+      // Get WebGL capabilities with proper extension handling
+      try {
+        this.maxTextureSize = this.gl.getParameter(this.gl.MAX_TEXTURE_SIZE) || 4096;
+        
+        // Check for anisotropy extension before using it
+        const anisotropyExt = this.gl.getExtension('EXT_texture_filter_anisotropic') || 
+                             this.gl.getExtension('WEBKIT_EXT_texture_filter_anisotropic') ||
+                             this.gl.getExtension('MOZ_EXT_texture_filter_anisotropic');
+        
+        if (anisotropyExt) {
+          this.maxAnisotropy = this.gl.getParameter(anisotropyExt.MAX_TEXTURE_MAX_ANISOTROPY_EXT) || 1;
+        } else {
+          this.maxAnisotropy = 1;
+        }
+      } catch (error) {
+        console.warn('WebGL parameter access failed, using fallback values:', error);
+        this.maxTextureSize = 4096;
+        this.maxAnisotropy = 1;
+      }
 
       console.log(`🎨 HD Texture System initialized - Max texture size: ${this.maxTextureSize}x${this.maxTextureSize}, Max anisotropy: ${this.maxAnisotropy}`);
 
@@ -719,8 +737,14 @@ export class HDTextureSystem {
     }
     
     // Set anisotropy if available
-    if (properties.anisotropy > 1 && this.gl.getExtension('EXT_texture_filter_anisotropic')) {
-      this.gl.texParameterf(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAX_ANISOTROPY_EXT, properties.anisotropy);
+    if (properties.anisotropy > 1) {
+      const anisotropyExt = this.gl.getExtension('EXT_texture_filter_anisotropic') || 
+                           this.gl.getExtension('WEBKIT_EXT_texture_filter_anisotropic') ||
+                           this.gl.getExtension('MOZ_EXT_texture_filter_anisotropic');
+      
+      if (anisotropyExt) {
+        this.gl.texParameterf(this.gl.TEXTURE_2D, anisotropyExt.MAX_TEXTURE_MAX_ANISOTROPY_EXT, properties.anisotropy);
+      }
     }
   }
 

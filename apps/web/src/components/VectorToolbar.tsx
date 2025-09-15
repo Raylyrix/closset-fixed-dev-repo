@@ -75,7 +75,12 @@ const VectorToolbar: React.FC<VectorToolbarProps> = ({ isVisible, onClose }) => 
     setSelectedVectorTool(toolId);
     // Update the vector store with the selected tool
     vectorStore.setState({ tool: toolId as any });
-    console.log(`🎨 Vector tool selected: ${toolId}`);
+    // Ensure vector mode is active when selecting vector tools
+    if (!vectorMode) {
+      setVectorMode(true);
+      setActiveTool('vectorTools');
+    }
+    console.log(`🎨 Vector tool selected: ${toolId}, vectorMode: ${vectorMode}`);
   };
 
   const handleClearAll = () => {

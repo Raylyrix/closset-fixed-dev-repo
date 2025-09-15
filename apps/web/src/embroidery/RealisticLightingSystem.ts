@@ -78,9 +78,11 @@ export class RealisticLightingSystem {
   private shadowMapSize = 2048;
   private maxLights = 8;
 
-  constructor(gl: WebGL2RenderingContext) {
+  constructor(gl: WebGL2RenderingContext | null = null) {
     this.gl = gl;
-    this.initialize();
+    if (gl) {
+      this.initialize();
+    }
   }
 
   /**
@@ -333,7 +335,7 @@ export class RealisticLightingSystem {
   // Private helper methods
 
   private checkExtensions(): void {
-    if (!this.gl) return;
+    if (!this.gl || !this.gl.getExtension) return;
 
     // Check for required extensions
     const requiredExtensions = [
@@ -344,8 +346,12 @@ export class RealisticLightingSystem {
     ];
 
     for (const extension of requiredExtensions) {
-      if (!this.gl.getExtension(extension)) {
-        console.warn(`Extension ${extension} not available`);
+      try {
+        if (!this.gl.getExtension(extension)) {
+          console.warn(`Extension ${extension} not available`);
+        }
+      } catch (error) {
+        console.warn(`Error checking extension ${extension}:`, error);
       }
     }
   }

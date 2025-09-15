@@ -48,21 +48,10 @@ export function Shirt() {
     const symmetryZ = useApp(s => s.symmetryZ);
     const activeTool = useApp(s => s.activeTool);
     const vectorMode = useApp(s => s.vectorMode);
-    // Disable camera controls when using drawing tools
-    useEffect(() => {
-        const drawingTools = ['brush', 'eraser', 'puffPrint', 'fill', 'smudge', 'blur', 'embroidery'];
-        if (drawingTools.includes(activeTool)) {
-            console.log('🎨 Tool changed to drawing tool, disabling camera controls:', activeTool);
-            setControlsEnabled(false);
-        } else {
-            console.log('🎨 Tool changed to non-drawing tool, enabling camera controls:', activeTool);
-            setControlsEnabled(true);
-        }
-    }, [activeTool, setControlsEnabled]);
-
+    const showAnchorPoints = useApp(s => s.showAnchorPoints);
     // Debug vector mode changes and cleanup
     useEffect(() => {
-        if (import.meta.env.DEV) {
+        if (process.env.NODE_ENV === 'development') {
             console.log('🎨 Vector mode changed to:', vectorMode);
         }
         // Clear anchor points and selection when vector mode is disabled
@@ -132,6 +121,16 @@ export function Shirt() {
             }, 100); // Increased delay to ensure proper cleanup
         }
     }, [vectorMode]);
+    // Force re-render anchors when the Show Anchors toggle changes
+    useEffect(() => {
+        // Re-render vectors and anchor overlays to reflect the toggle
+        try {
+            renderVectorsWithAnchors();
+        }
+        catch (e) {
+            console.warn('ShowAnchorPoints toggle re-render failed:', e);
+        }
+    }, [showAnchorPoints]);
     // Cleanup vector store listeners on unmount
     useEffect(() => {
         return () => {
@@ -168,7 +167,7 @@ export function Shirt() {
     const [gridSize, setGridSize] = useState(10);
     const [snapToPointsEnabled, setSnapToPointsEnabled] = useState(false);
     const [snapDistance, setSnapDistance] = useState(10);
-    const [autoSmooth, setAutoSmooth] = useState(true);
+    const [autoSmooth, setAutoSmooth] = useState(false);
     const [smoothTension, setSmoothTension] = useState(0.5);
     // Selection tools state
     const [marqueeSelection, setMarqueeSelection] = useState(null);
@@ -354,6 +353,36 @@ export function Shirt() {
             console.log('🎹 Keyboard event:', ev.key, 'activeTool:', useApp.getState().activeTool);
             if (!useApp.getState().vectorMode)
                 return;
+            
+            // Handle Escape key to finish current path
+            if (ev.key === 'Escape') {
+                console.log('🎯 Escape key pressed!', { vectorMode: useApp.getState().vectorMode });
+                const st = vectorStore.getState();
+                console.log('🎯 Escape state check:', { 
+                    tool: st.tool, 
+                    hasCurrentPath: !!st.currentPath, 
+                    pointsLength: st.currentPath?.points?.length 
+                });
+                if (st.tool === 'pen' && st.currentPath && st.currentPath.points.length >= 2) {
+                    console.log('🎯 Pen tool - Escape: Finishing path with', st.currentPath.points.length, 'points');
+                    const path = { ...st.currentPath, closed: false }; // Don't close the path
+                    const b = boundsFromPoints(path.points);
+                    const appState = useApp.getState();
+                    const shape = {
+                        id: `shape_${Date.now()}`,
+                        type: 'path',
+                        path,
+                        tool: appState.activeTool,
+                        bounds: b
+                    };
+                    vectorStore.setAll({ currentPath: null, shapes: [...st.shapes, shape], selected: [shape.id] });
+                    setSelectedAnchor(null);
+                    renderVectorsWithAnchors();
+                    console.log('✅ Path finished with Escape and committed to shapes');
+                }
+                return;
+            }
+            
             if (ev.key.toLowerCase() === 'p')
                 vectorStore.set('tool', 'pen');
             if (ev.key.toLowerCase() === 'v')
@@ -461,34 +490,18 @@ export function Shirt() {
         return () => window.removeEventListener('keydown', onKey);
     }, [selectedAnchor, composeLayers]);
     const onPointerDown = (e) => {
-        // Always log for debugging
-        console.log('🎯 onPointerDown called with activeTool:', activeTool, 'vectorMode:', vectorMode, 'uv:', e.uv, 'event:', e);
+        // Emit custom event to indicate clicking on model
+        window.dispatchEvent(new CustomEvent('modelClick'));
         
-        // Simple test - just log that we received a click
-        console.log('✅ Model clicked! This means events are working.');
-        
-        // Always stop propagation to prevent camera controls from interfering
-        e.stopPropagation();
-        
+        // Reduced logging for performance
+        if (process.env.NODE_ENV === 'development' && Math.random() < 0.1) {
+            console.log('Shirt: onPointerDown called with activeTool:', activeTool, 'vectorMode:', vectorMode);
+        }
         // If we're already dragging something, don't process new pointer down events
         if (draggingAnchor || draggingControl) {
             console.log('🎯 onPointerDown - Already dragging, ignoring new pointer down');
             return;
         }
-        
-        // Disable camera controls for ALL drawing tools immediately
-        const drawingTools = ['brush', 'eraser', 'puffPrint', 'fill', 'smudge', 'blur', 'embroidery'];
-        if (drawingTools.includes(activeTool)) {
-            console.log('🎨 Disabling camera controls for drawing tool:', activeTool);
-            setControlsEnabled(false);
-        }
-        
-        // Ensure we have UV coordinates for drawing
-        if (!e.uv) {
-            console.log('⚠️ No UV coordinates available for drawing');
-            return;
-        }
-        
         if (vectorMode) {
             const uv = e.uv;
             let layer = getOrSelectActiveLayer();
@@ -499,11 +512,13 @@ export function Shirt() {
             const y = Math.floor(uv.y * canvas.height);
             const st = vectorStore.getState();
             const tool = st.tool;
-            
+            // prevent camera controls and other handlers
+            e.stopPropagation();
             try {
                 e.target?.setPointerCapture?.(e.pointerId);
             }
             catch { }
+            setControlsEnabled(false);
             // Pen tool
             if (tool === 'pen') {
                 console.log('🎯 Pen tool - Current path points:', st.currentPath?.points?.length || 0, 'buttons:', e.buttons);
@@ -512,23 +527,27 @@ export function Shirt() {
                     console.log('🎯 Pen tool - Already dragging, skipping new point creation');
                     return;
                 }
-                // Only start drawing if mouse button is pressed
-                if (e.buttons === 1) {
-                    // Start continuous drawing mode
-                    paintingActiveRef.current = true;
-                    console.log('🎯 Pen tool - Started continuous drawing mode, paintingActive:', paintingActiveRef.current);
-                }
-                else {
+                // Only proceed on primary button; we'll enable painting mode later if needed
+                if (e.buttons !== 1) {
                     console.log('🎯 Pen tool - Mouse not pressed, skipping drawing');
                     return;
                 }
-                // Check if clicking on existing anchor points of current path
+                // Check if clicking on existing anchor points of current path (selection/drag has priority)
                 if (st.currentPath && st.currentPath.points.length > 0) {
+                    console.log('🎯 Pen tool - Checking for anchor hits on current path with', st.currentPath.points.length, 'points');
                     const anchorIndex = hitPoint({ x, y }, { path: { points: st.currentPath.points } });
                     console.log('🎯 Pen tool - Hit anchor point:', anchorIndex, 'at position:', x, y);
                     console.log('🎯 Pen tool - Current path points:', st.currentPath.points.map((p, i) => `[${i}]: (${p.x}, ${p.y})`));
                     if (anchorIndex !== null) {
+                        console.log('🎯 Pen tool - Anchor hit detected, processing selection...');
+                        const isAltPressed = e.altKey || altKeyPressedRef.current;
                         const isCtrlPressed = e.ctrlKey || e.metaKey;
+                        if (isAltPressed && selectedAnchor && selectedAnchor.shapeId === 'current' && selectedAnchor.pointIndex === anchorIndex) {
+                            // Alt+click on selected anchor: start dragging anchor without entering painting mode
+                            console.log('🎯 Pen tool - Alt-drag selected anchor:', anchorIndex);
+                            setDraggingAnchor({ shapeId: 'current', pointIndex: anchorIndex });
+                            return;
+                        }
                         if (isCtrlPressed) {
                             // Ctrl+click: Select anchor point
                             console.log('🎯 Pen tool - Selecting anchor point:', anchorIndex);
@@ -540,26 +559,33 @@ export function Shirt() {
                             // Regular click on selected anchor: Start dragging
                             console.log('🎯 Pen tool - Starting drag for selected anchor point:', anchorIndex);
                             setDraggingAnchor({ shapeId: 'current', pointIndex: anchorIndex });
-                            paintingActiveRef.current = true;
                             return;
                         }
                         else {
                             // Regular click on different anchor: Select it (clear any previous selection first)
-                            console.log('🎯 Pen tool - Selecting different anchor point:', anchorIndex);
+                            console.log('🎯 Pen tool - Selecting different anchor point:', anchorIndex, 'Previous selection:', selectedAnchor);
                             setSelectedAnchor({ shapeId: 'current', pointIndex: anchorIndex });
                             renderVectorsWithAnchors();
                             return;
                         }
+                    } else {
+                        console.log('🎯 Pen tool - No anchor hit, continuing with normal pen tool logic');
                     }
-                    // Check if clicking on control handles of current path
+                } else {
+                    console.log('🎯 Pen tool - No current path or no points, continuing with normal pen tool logic');
+                }
+                // Check if clicking on control handles of current path
+                if (st.currentPath && st.currentPath.points.length > 0) {
                     const controlHit = hitControlHandle({ x, y }, { path: { points: st.currentPath.points } });
                     if (controlHit) {
                         console.log('🎯 Pen tool - Starting drag for control handle:', controlHit);
                         setDraggingControl({ shapeId: 'current', pointIndex: controlHit.pointIndex, type: controlHit.type });
-                        paintingActiveRef.current = true;
                         return;
                     }
                 }
+                // Enable continuous drawing mode now that we're sure we're not dragging/selecting
+                paintingActiveRef.current = true;
+                console.log('🎯 Pen tool - Started continuous drawing mode, paintingActive:', paintingActiveRef.current);
                 // Only add new points if we're not already dragging something
                 if (!draggingAnchor && !draggingControl) {
                     // Validate coordinates before creating/adding to path
@@ -598,7 +624,7 @@ export function Shirt() {
                             setSelectedAnchor({ shapeId: 'current', pointIndex: 0 });
                             // Reset debouncing for new path
                             lastPenPointRef.current = { x: snappedPoint.x, y: snappedPoint.y, time: Date.now() };
-                            if (import.meta.env.DEV) {
+                            if (process.env.NODE_ENV === 'development') {
                                 console.log('🎯 Pen tool - Started new path with first point');
                             }
                             // Force immediate rendering
@@ -612,6 +638,7 @@ export function Shirt() {
                         // Add point to existing path with validation and auto-smoothing
                         try {
                             let newPoint = { x: snappedPoint.x, y: snappedPoint.y, type: 'corner' };
+                            let cp;
                             // Apply auto-smoothing if enabled
                             if (autoSmooth && st.currentPath.points.length >= 2) {
                                 const prevPoint = st.currentPath.points[st.currentPath.points.length - 1];
@@ -630,16 +657,14 @@ export function Shirt() {
                                     type: 'smooth',
                                     controlIn
                                 };
-                                const cp = { ...st.currentPath, points: [...updatedPoints, newPoint] };
-                                vectorStore.setState({ currentPath: cp });
+                                cp = { ...st.currentPath, points: [...updatedPoints, newPoint] };
+                            } else {
+                                cp = { ...st.currentPath, points: [...st.currentPath.points, newPoint] };
                             }
-                            else {
-                                const cp = { ...st.currentPath, points: [...st.currentPath.points, newPoint] };
-                                vectorStore.setState({ currentPath: cp });
-                            }
-                            // Select the new point
-                            setSelectedAnchor({ shapeId: 'current', pointIndex: st.currentPath.points.length });
-                            console.log('🎯 Pen tool - Added point to existing path, total points:', st.currentPath.points.length + 1);
+                            vectorStore.setState({ currentPath: cp });
+                            // Select the new point (it's at the last index)
+                            setSelectedAnchor({ shapeId: 'current', pointIndex: cp.points.length - 1 });
+                            console.log('🎯 Pen tool - Added point to existing path, total points:', cp.points.length);
                             // Force immediate rendering
                             renderVectorsWithAnchors();
                         }
@@ -693,6 +718,22 @@ export function Shirt() {
                         return;
                     }
                 }
+                // If clicking on an anchor in current path: select it and continue drawing from that point (switch to pen)
+                if (st.currentPath && st.currentPath.points.length > 0) {
+                    const anchorIdx = hitPoint({ x, y }, { path: { points: st.currentPath.points } });
+                    if (anchorIdx !== null) {
+                        console.log('🎯 Curvature tool - Anchor clicked, selecting and preparing to continue drawing from it:', anchorIdx);
+                        // Trim current path to the selected anchor so we continue from there
+                        const trimmed = { ...st.currentPath, points: st.currentPath.points.slice(0, anchorIdx + 1) };
+                        vectorStore.setState({ currentPath: trimmed });
+                        setSelectedAnchor({ shapeId: 'current', pointIndex: anchorIdx });
+                        // Switch to pen for drawing continuation
+                        vectorStore.setState({ tool: 'pen' });
+                        paintingActiveRef.current = false;
+                        renderVectorsWithAnchors();
+                        return;
+                    }
+                }
                 // Look for existing line segments to grab and curve
                 let targetPath = null;
                 let targetShapeId = null;
@@ -738,6 +779,15 @@ export function Shirt() {
                 console.log('🎯 Curvature tool - No line segment found to curve');
                 return;
             }
+            // Stop curvature dragging when switching to other tools
+            if (curvatureDragging && tool !== 'curvature') {
+                console.log('🎯 Curvature tool - Stopping curvature dragging due to tool switch');
+                setCurvatureDragging(false);
+                setCurvatureStartPoint(null);
+                setCurvatureCurrentPoint(null);
+                setCurvatureSegment(null);
+            }
+            
             // Selection
             if (tool === 'pathSelection' || tool === 'convertAnchor') {
                 const isCtrlPressed = e.ctrlKey || e.metaKey;
@@ -898,31 +948,20 @@ export function Shirt() {
             paintingActiveRef.current = true;
             return;
         }
-        // Handle brush, eraser, and puff print tools
-        if (activeTool === 'brush' || activeTool === 'eraser' || activeTool === 'puffPrint') {
-            console.log('🎨 Brush tool - Starting painting with tool:', activeTool, 'UV:', e.uv);
-            
-            // Ensure we have a valid layer
-            const layer = getActiveLayer();
-            if (!layer) {
-                console.log('⚠️ No active layer available for painting');
-                return;
-            }
-            
-            snapshot();
-            paintAtEvent(e);
-            try {
-                e.target.setPointerCapture(e.pointerId);
-            } catch (err) {
-                console.log('Pointer capture failed:', err);
-            }
-            setControlsEnabled(false);
-            paintingActiveRef.current = true;
-            console.log('Shirt: Set paintingActiveRef to true for tool:', activeTool);
+        if (activeTool !== 'brush' && activeTool !== 'eraser' && activeTool !== 'puffPrint')
             return;
-        }
+        e.stopPropagation();
+        snapshot();
+        paintAtEvent(e);
+        e.target.setPointerCapture(e.pointerId);
+        setControlsEnabled(false);
+        paintingActiveRef.current = true;
+        console.log('Shirt: Set paintingActiveRef to true for tool:', activeTool);
+        return;
     };
+    
     const onDoubleClick = (e) => {
+        console.log('🎯 Double-click detected!', { activeTool, vectorMode: useApp.getState().vectorMode });
         if (activeTool !== 'vectorTools')
             return;
         const uv = e.uv;
@@ -930,7 +969,13 @@ export function Shirt() {
         if (!uv || !layer)
             return;
         const st = vectorStore.getState();
-        if (st.tool === 'pen' && st.currentPath && st.currentPath.points.length >= 3) {
+        console.log('🎯 Double-click state check:', { 
+            tool: st.tool, 
+            hasCurrentPath: !!st.currentPath, 
+            pointsLength: st.currentPath?.points?.length 
+        });
+        if (st.tool === 'pen' && st.currentPath && st.currentPath.points.length >= 2) {
+            console.log('🎯 Pen tool - Double-click: Finishing path with', st.currentPath.points.length, 'points');
             const path = { ...st.currentPath, closed: true };
             const b = boundsFromPoints(path.points);
             const appState = useApp.getState();
@@ -942,7 +987,9 @@ export function Shirt() {
                 bounds: b
             };
             vectorStore.setAll({ currentPath: null, shapes: [...st.shapes, shape], selected: [shape.id] });
+            setSelectedAnchor(null);
             renderVectorsWithAnchors();
+            console.log('✅ Path finished and committed to shapes');
         }
     };
     function handleSelect(e) {
@@ -1014,18 +1061,12 @@ export function Shirt() {
     }
     const onPointerMove = (e) => {
         // Reduced logging for performance
-        if (import.meta.env.DEV && Math.random() < 0.05) {
+        if (process.env.NODE_ENV === 'development' && Math.random() < 0.05) {
             console.log('Shirt: onPointerMove called with activeTool:', activeTool, 'vectorMode:', vectorMode, 'paintingActive:', paintingActiveRef.current, 'buttons:', e.buttons);
-        }
-        
-        // Stop propagation for drawing tools to prevent camera controls
-        const drawingTools = ['brush', 'eraser', 'puffPrint', 'fill', 'smudge', 'blur', 'embroidery'];
-        if (drawingTools.includes(activeTool)) {
-            e.stopPropagation();
         }
         if (vectorMode) {
             // Reduced logging for performance
-            if (import.meta.env.DEV && Math.random() < 0.1) {
+            if (process.env.NODE_ENV === 'development' && Math.random() < 0.1) {
                 console.log('🎯 Vector tools onPointerMove - buttons:', e.buttons, 'draggingAnchor:', draggingAnchor, 'draggingControl:', draggingControl);
             }
             if (!e.buttons)
@@ -1038,12 +1079,76 @@ export function Shirt() {
             const x = Math.floor(uv.x * canvas.width);
             const y = Math.floor(uv.y * canvas.height);
             const st = vectorStore.getState();
+            // Always prioritize dragging anchors or control handles over any other pen logic
+            if (draggingAnchor || draggingControl) {
+                console.log('🎯 onPointerMove - Dragging detected, handling before other logic');
+                // Handle anchor point dragging
+                if (draggingAnchor) {
+                    console.log('🎯 Dragging anchor point:', draggingAnchor, 'Position:', x, y);
+                    if (draggingAnchor.shapeId === 'current' && st.currentPath) {
+                        // Drag current path anchor point
+                        const pts = [...st.currentPath.points];
+                        pts[draggingAnchor.pointIndex] = { ...pts[draggingAnchor.pointIndex], x, y };
+                        const updatedPath = { ...st.currentPath, points: pts };
+                        vectorStore.setState({ currentPath: updatedPath });
+                        console.log('🎯 Updated current path anchor point');
+                    } else {
+                        // Drag existing shape anchor point
+                        const shapesUpd = st.shapes.map(s => {
+                            if (s.id !== draggingAnchor.shapeId) return s;
+                            const pts = [...s.path.points];
+                            pts[draggingAnchor.pointIndex] = { ...pts[draggingAnchor.pointIndex], x, y };
+                            const path = { ...s.path, points: pts };
+                            return { ...s, path, bounds: boundsFromPoints(pts) };
+                        });
+                        vectorStore.setState({ shapes: shapesUpd });
+                        console.log('🎯 Updated shape anchor point');
+                    }
+                    renderVectorsWithAnchors();
+                    return;
+                }
+                // Handle control handle dragging
+                if (draggingControl) {
+                    console.log('🎯 Dragging control handle:', draggingControl, 'Position:', x, y);
+                    if (draggingControl.shapeId === 'current' && st.currentPath) {
+                        const pts = [...st.currentPath.points];
+                        const point = pts[draggingControl.pointIndex];
+                        const dx = x - point.x;
+                        const dy = y - point.y;
+                        if (draggingControl.type === 'in') {
+                            pts[draggingControl.pointIndex] = { ...point, controlIn: { x: dx, y: dy } };
+                        } else {
+                            pts[draggingControl.pointIndex] = { ...point, controlOut: { x: dx, y: dy } };
+                        }
+                        const updatedPath = { ...st.currentPath, points: pts };
+                        vectorStore.setState({ currentPath: updatedPath });
+                    } else {
+                        const shapesUpd = st.shapes.map(s => {
+                            if (s.id !== draggingControl.shapeId) return s;
+                            const pts = [...s.path.points];
+                            const point = pts[draggingControl.pointIndex];
+                            const dx = x - point.x;
+                            const dy = y - point.y;
+                            if (draggingControl.type === 'in') {
+                                pts[draggingControl.pointIndex] = { ...point, controlIn: { x: dx, y: dy } };
+                            } else {
+                                pts[draggingControl.pointIndex] = { ...point, controlOut: { x: dx, y: dy } };
+                            }
+                            const path = { ...s.path, points: pts };
+                            return { ...s, path, bounds: boundsFromPoints(pts) };
+                        });
+                        vectorStore.setState({ shapes: shapesUpd });
+                    }
+                    renderVectorsWithAnchors();
+                    return;
+                }
+            }
             // Pen tool continuous drawing with validation and debouncing
             if (st.tool === 'pen' && paintingActiveRef.current && st.currentPath && e.buttons === 1) {
                 console.log('🎯 Pen tool - Continuous drawing active, paintingActive:', paintingActiveRef.current, 'currentPath points:', st.currentPath.points.length, 'buttons:', e.buttons);
                 // Validate coordinates
                 if (!isFinite(x) || !isFinite(y) || x < 0 || y < 0 || x > canvas.width || y > canvas.height) {
-                    if (import.meta.env.DEV) {
+                    if (process.env.NODE_ENV === 'development') {
                         console.warn('🎯 Pen tool - Invalid coordinates:', { x, y, canvasWidth: canvas.width, canvasHeight: canvas.height });
                     }
                     return;
@@ -1061,7 +1166,7 @@ export function Shirt() {
                 }
                 // Update last point reference
                 lastPenPointRef.current = { x, y, time: now };
-                if (import.meta.env.DEV) {
+                if (process.env.NODE_ENV === 'development') {
                     console.log('🎯 Pen tool - Continuous drawing, adding point at:', x, y);
                 }
                 try {
@@ -1101,42 +1206,45 @@ export function Shirt() {
                     console.warn('Curvature tool: Target path or segment invalid during move.');
                     return;
                 }
-                // Modify the existing path segment directly instead of adding new points
-                if (pullDistance > 3) {
-                    const updatedPoints = [...targetPath.points];
-                    const p1 = updatedPoints[curvatureSegment.segmentIndex];
-                    const p2 = updatedPoints[curvatureSegment.segmentIndex + 1];
-                    // Calculate control points based on the drag vector (from grabPoint to current mouse)
-                    const controlMagnitude = Math.min(pullDistance * 0.8, 30); // Adjust control handle length - reduced for tighter curves
-                    const controlAngle = Math.atan2(pullY, pullX); // Angle of the drag
-                    // Convert both points to smooth type if they aren't already
-                    p1.type = 'smooth';
-                    p2.type = 'smooth';
-                    // Calculate control handles for both points based on the drag direction
-                    // p1's controlOut should point in the drag direction
-                    p1.controlOut = {
-                        x: Math.cos(controlAngle) * controlMagnitude,
-                        y: Math.sin(controlAngle) * controlMagnitude
-                    };
-                    // p2's controlIn should point in the opposite direction
-                    p2.controlIn = {
-                        x: -Math.cos(controlAngle) * controlMagnitude,
-                        y: -Math.sin(controlAngle) * controlMagnitude
-                    };
-                    // Update the path in the store
-                    if (curvatureSegment.shapeId === 'current') {
-                        const updatedPath = { ...targetPath, points: updatedPoints };
-                        vectorStore.setState({ currentPath: updatedPath });
-                    }
-                    else {
-                        const updatedPath = { ...targetPath, points: updatedPoints };
-                        const updatedShapes = st.shapes.map(s => s.id === curvatureSegment.shapeId
-                            ? { ...s, path: updatedPath, bounds: boundsFromPoints(updatedPoints) }
-                            : s);
-                        vectorStore.setState({ shapes: updatedShapes });
-                    }
-                    renderVectorsWithAnchors();
+                // Modify the existing path segment directly - work continuously without distance limits
+                const updatedPoints = [...targetPath.points];
+                const p1 = updatedPoints[curvatureSegment.segmentIndex];
+                const p2 = updatedPoints[curvatureSegment.segmentIndex + 1];
+                
+                // Calculate control points based on the drag vector (from grabPoint to current mouse)
+                // Remove the distance limit - work with any pull distance
+                const controlMagnitude = Math.max(pullDistance * 0.5, 5); // Minimum 5px control handle
+                const controlAngle = Math.atan2(pullY, pullX); // Angle of the drag
+                
+                // Convert both points to smooth type if they aren't already
+                p1.type = 'smooth';
+                p2.type = 'smooth';
+                
+                // Calculate control handles for both points based on the drag direction
+                // p1's controlOut should point in the drag direction
+                p1.controlOut = {
+                    x: Math.cos(controlAngle) * controlMagnitude,
+                    y: Math.sin(controlAngle) * controlMagnitude
+                };
+                // p2's controlIn should point in the opposite direction
+                p2.controlIn = {
+                    x: -Math.cos(controlAngle) * controlMagnitude,
+                    y: -Math.sin(controlAngle) * controlMagnitude
+                };
+                
+                // Update the path in the store
+                if (curvatureSegment.shapeId === 'current') {
+                    const updatedPath = { ...targetPath, points: updatedPoints };
+                    vectorStore.setState({ currentPath: updatedPath });
                 }
+                else {
+                    const updatedPath = { ...targetPath, points: updatedPoints };
+                    const updatedShapes = st.shapes.map(s => s.id === curvatureSegment.shapeId
+                        ? { ...s, path: updatedPath, bounds: boundsFromPoints(updatedPoints) }
+                        : s);
+                    vectorStore.setState({ shapes: updatedShapes });
+                }
+                renderVectorsWithAnchors();
                 return;
             }
             // Check if we're dragging anchor points or control handles first
@@ -1144,83 +1252,12 @@ export function Shirt() {
                 console.log('🎯 onPointerMove - Dragging detected, preventing other logic');
                 // Handle anchor point dragging
                 if (draggingAnchor) {
-                    console.log('🎯 Dragging anchor point:', draggingAnchor, 'Position:', x, y);
-                    if (draggingAnchor.shapeId === 'current' && st.currentPath) {
-                        // Drag current path anchor point
-                        const pts = [...st.currentPath.points];
-                        pts[draggingAnchor.pointIndex] = { ...pts[draggingAnchor.pointIndex], x, y };
-                        const updatedPath = { ...st.currentPath, points: pts };
-                        vectorStore.setState({ currentPath: updatedPath });
-                        console.log('🎯 Updated current path anchor point');
-                    }
-                    else {
-                        // Drag existing shape anchor point
-                        const shapesUpd = st.shapes.map(s => {
-                            if (s.id !== draggingAnchor.shapeId)
-                                return s;
-                            const pts = [...s.path.points];
-                            pts[draggingAnchor.pointIndex] = { ...pts[draggingAnchor.pointIndex], x, y };
-                            const path = { ...s.path, points: pts };
-                            return { ...s, path, bounds: boundsFromPoints(pts) };
-                        });
-                        vectorStore.setState({ shapes: shapesUpd });
-                        console.log('🎯 Updated shape anchor point');
-                    }
-                    renderVectorsWithAnchors();
+                    // Handled above
                     return;
                 }
                 // Handle control handle dragging
                 if (draggingControl) {
-                    console.log('🎯 Dragging control handle:', draggingControl, 'Position:', x, y);
-                    if (draggingControl.shapeId === 'current' && st.currentPath) {
-                        // Drag current path control handle
-                        const pts = [...st.currentPath.points];
-                        const point = pts[draggingControl.pointIndex];
-                        const dx = x - point.x;
-                        const dy = y - point.y;
-                        if (draggingControl.type === 'in') {
-                            pts[draggingControl.pointIndex] = {
-                                ...point,
-                                controlIn: { x: dx, y: dy }
-                            };
-                        }
-                        else {
-                            pts[draggingControl.pointIndex] = {
-                                ...point,
-                                controlOut: { x: dx, y: dy }
-                            };
-                        }
-                        const updatedPath = { ...st.currentPath, points: pts };
-                        vectorStore.setState({ currentPath: updatedPath });
-                    }
-                    else {
-                        // Drag existing shape control handle
-                        const shapesUpd = st.shapes.map(s => {
-                            if (s.id !== draggingControl.shapeId)
-                                return s;
-                            const pts = [...s.path.points];
-                            const point = pts[draggingControl.pointIndex];
-                            const dx = x - point.x;
-                            const dy = y - point.y;
-                            if (draggingControl.type === 'in') {
-                                pts[draggingControl.pointIndex] = {
-                                    ...point,
-                                    controlIn: { x: dx, y: dy }
-                                };
-                            }
-                            else {
-                                pts[draggingControl.pointIndex] = {
-                                    ...point,
-                                    controlOut: { x: dx, y: dy }
-                                };
-                            }
-                            const path = { ...s.path, points: pts };
-                            return { ...s, path, bounds: boundsFromPoints(pts) };
-                        });
-                        vectorStore.setState({ shapes: shapesUpd });
-                    }
-                    // Update visual representation for control handle dragging
-                    renderVectorsWithAnchors();
+                    // Handled above
                     return;
                 }
             }
@@ -1361,74 +1398,43 @@ export function Shirt() {
             moveTransformText(e);
             return;
         }
-        // Handle brush, eraser, and puff print tools during move
-        if (activeTool === 'brush' || activeTool === 'eraser' || activeTool === 'puffPrint') {
-            e.stopPropagation();
-            paintAtEvent(e);
+        if (activeTool !== 'brush' && activeTool !== 'eraser' && activeTool !== 'puffPrint')
             return;
-        }
+        e.stopPropagation();
+        paintAtEvent(e);
     };
     const onPointerOver = (e) => {
         const uv = e.uv;
         if (uv)
             useApp.getState().setLastHitUV({ u: uv.x, v: 1 - uv.y });
-        if (vectorMode) {
-            document.body.style.cursor = 'crosshair';
-        }
+        // Cursor appearance is handled by CursorOverlay; avoid forcing body cursor here
     };
     const onPointerUp = () => {
+        // Emit custom event to indicate clicking on model ended
+        window.dispatchEvent(new CustomEvent('modelClickEnd'));
+        
         if (shapeStartRef.current) {
             commit();
             shapeStartRef.current = null;
             shapeBeforeRef.current = null;
         }
-        
-        // Only re-enable camera controls if we're not using a drawing tool
-        const drawingTools = ['brush', 'eraser', 'puffPrint', 'fill', 'smudge', 'blur', 'embroidery'];
-        if (!drawingTools.includes(activeTool)) {
-            setControlsEnabled(true);
-        }
-        
-        // Also set a timeout to ensure controls are re-enabled even if onPointerUp doesn't fire
-        setTimeout(() => {
-            if (!drawingTools.includes(activeTool)) {
-                setControlsEnabled(true);
-            }
-        }, 100);
         if (vectorMode) {
             vectorDragRef.current = null;
-            // Commit current path if we were drawing with pen tool
+            // DON'T commit current path on mouse up - let it continue building
+            // The path should only be committed when explicitly finished (double-click, Escape, etc.)
             const st = vectorStore.getState();
-            if (st.tool === 'pen' && st.currentPath && st.currentPath.points.length > 1) {
-                console.log('🎯 Pen tool - Committing path with', st.currentPath.points.length, 'points');
-                // Add the current path to shapes with tool information
-                const appState = useApp.getState();
-                const newShape = {
-                    id: st.currentPath.id,
-                    type: 'path',
-                    path: st.currentPath,
-                    tool: appState.activeTool, // Store the tool used to create this path
-                    bounds: {
-                        x: Math.min(...st.currentPath.points.map(p => p.x)),
-                        y: Math.min(...st.currentPath.points.map(p => p.y)),
-                        width: Math.max(...st.currentPath.points.map(p => p.x)) - Math.min(...st.currentPath.points.map(p => p.x)),
-                        height: Math.max(...st.currentPath.points.map(p => p.y)) - Math.min(...st.currentPath.points.map(p => p.y))
-                    }
-                };
-                vectorStore.setState({ shapes: [...st.shapes, newShape] });
-                vectorStore.setState({ currentPath: null });
-                setSelectedAnchor(null);
-                setPreviewLine(null); // Clear preview line
-                console.log('✅ Path committed to shapes, total shapes:', st.shapes.length + 1);
+            if (st.tool === 'pen' && st.currentPath) {
+                console.log('🎯 Pen tool - Mouse up, keeping current path with', st.currentPath.points.length, 'points');
+                // Just render the current state, don't commit yet
+                renderVectorsWithAnchors();
             }
             paintingActiveRef.current = false;
-            // Stop curvature dragging
+            // Don't stop curvature dragging on mouse up - let it continue until explicitly stopped
+            // This allows infinite curvature adjustment while dragging
             if (curvatureDragging) {
-                console.log('🎯 Curvature tool - Ending curve creation');
-                setCurvatureDragging(false);
-                setCurvatureStartPoint(null);
-                setCurvatureCurrentPoint(null);
-                setCurvatureSegment(null);
+                console.log('🎯 Curvature tool - Mouse up, but keeping curvature dragging active');
+                // Keep curvature dragging active for continuous adjustment
+                // Only stop when user explicitly switches tools or clicks elsewhere
             }
             // Stop dragging anchor points and control handles
             setDraggingAnchor(null);
@@ -2111,14 +2117,36 @@ export function Shirt() {
             const isSelected = selectedAnchor &&
                 selectedAnchor.shapeId === shapeId &&
                 selectedAnchor.pointIndex === index;
+            
+            // Debug logging for selection
             if (isSelected) {
-                // Selected anchor point - larger, red color
-                ctx.fillStyle = '#FF3B30'; // Red for selected
-                ctx.strokeStyle = '#FFFFFF'; // White border
-                ctx.lineWidth = 2;
-                const size = 12;
+                console.log('🎯 Rendering selected anchor:', { shapeId, pointIndex: index, selectedAnchor });
+            }
+            
+            if (isSelected) {
+                // Selected anchor point - bright yellow with thick blue border and glow
+                const size = 14;
+                
+                // Outer glow effect
+                ctx.shadowColor = '#FFD700';
+                ctx.shadowBlur = 8;
+                ctx.shadowOffsetX = 0;
+                ctx.shadowOffsetY = 0;
+                
+                // Main selected anchor - bright yellow
+                ctx.fillStyle = '#FFD700'; // Bright yellow for selected
+                ctx.strokeStyle = '#0078FF'; // Blue border
+                ctx.lineWidth = 4;
                 ctx.fillRect(point.x - size / 2, point.y - size / 2, size, size);
                 ctx.strokeRect(point.x - size / 2, point.y - size / 2, size, size);
+                
+                // Inner highlight
+                ctx.shadowBlur = 0;
+                ctx.fillStyle = '#FFFFFF';
+                ctx.fillRect(point.x - 2, point.y - 2, 4, 4);
+                
+                // Reset shadow
+                ctx.shadowBlur = 0;
             }
             else {
                 // Regular anchor point - blue square
@@ -2131,32 +2159,54 @@ export function Shirt() {
             }
             // Draw control handles for smooth/symmetric points
             if (point.controlIn) {
+                // Check if this control handle is being dragged
+                const isControlSelected = draggingControl &&
+                    draggingControl.shapeId === shapeId &&
+                    draggingControl.pointIndex === index &&
+                    draggingControl.type === 'in';
+                
                 // Control in handle
-                ctx.strokeStyle = '#00FF00'; // Green for control in
-                ctx.lineWidth = 1;
+                ctx.strokeStyle = isControlSelected ? '#0078FF' : '#00FF00'; // Blue when selected, green otherwise
+                ctx.lineWidth = isControlSelected ? 2 : 1;
                 ctx.beginPath();
                 ctx.moveTo(point.x, point.y);
                 ctx.lineTo(point.x + point.controlIn.x, point.y + point.controlIn.y);
                 ctx.stroke();
                 // Control in handle point
-                ctx.fillStyle = '#00FF00';
+                ctx.fillStyle = isControlSelected ? '#0078FF' : '#00FF00';
+                ctx.strokeStyle = isControlSelected ? '#FFFFFF' : '#FFFFFF';
+                ctx.lineWidth = isControlSelected ? 2 : 1;
                 ctx.beginPath();
-                ctx.arc(point.x + point.controlIn.x, point.y + point.controlIn.y, 4, 0, 2 * Math.PI);
+                ctx.arc(point.x + point.controlIn.x, point.y + point.controlIn.y, isControlSelected ? 5 : 4, 0, 2 * Math.PI);
                 ctx.fill();
+                if (isControlSelected) {
+                    ctx.stroke();
+                }
             }
             if (point.controlOut) {
+                // Check if this control handle is being dragged
+                const isControlSelected = draggingControl &&
+                    draggingControl.shapeId === shapeId &&
+                    draggingControl.pointIndex === index &&
+                    draggingControl.type === 'out';
+                
                 // Control out handle
-                ctx.strokeStyle = '#FF0000'; // Red for control out
-                ctx.lineWidth = 1;
+                ctx.strokeStyle = isControlSelected ? '#0078FF' : '#FF0000'; // Blue when selected, red otherwise
+                ctx.lineWidth = isControlSelected ? 2 : 1;
                 ctx.beginPath();
                 ctx.moveTo(point.x, point.y);
                 ctx.lineTo(point.x + point.controlOut.x, point.y + point.controlOut.y);
                 ctx.stroke();
                 // Control out handle point
-                ctx.fillStyle = '#FF0000';
+                ctx.fillStyle = isControlSelected ? '#0078FF' : '#FF0000';
+                ctx.strokeStyle = isControlSelected ? '#FFFFFF' : '#FFFFFF';
+                ctx.lineWidth = isControlSelected ? 2 : 1;
                 ctx.beginPath();
-                ctx.arc(point.x + point.controlOut.x, point.y + point.controlOut.y, 4, 0, 2 * Math.PI);
+                ctx.arc(point.x + point.controlOut.x, point.y + point.controlOut.y, isControlSelected ? 5 : 4, 0, 2 * Math.PI);
                 ctx.fill();
+                if (isControlSelected) {
+                    ctx.stroke();
+                }
             }
         });
         ctx.restore();
@@ -2208,7 +2258,7 @@ export function Shirt() {
                 opacity: stitchOpacity
             };
             // Debug canvas context before stitch rendering
-            if (import.meta.env.DEV) {
+            if (process.env.NODE_ENV === 'development') {
                 console.log('🎨 Canvas context before stitch rendering:', {
                     strokeStyle: ctx.strokeStyle,
                     fillStyle: ctx.fillStyle,
@@ -2248,6 +2298,24 @@ export function Shirt() {
             return;
         }
         switch (currentTool) {
+            case 'pen':
+            case 'vectorTools':
+                // Vector pen tool - clean vector rendering without brush effects
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = appState.brushColor || '#000';
+                ctx.globalAlpha = 1.0;
+                ctx.lineJoin = 'round';
+                ctx.lineCap = 'round';
+                // No shadows or brush effects for clean vector lines
+                ctx.shadowColor = 'transparent';
+                ctx.shadowBlur = 0;
+                ctx.shadowOffsetX = 0;
+                ctx.shadowOffsetY = 0;
+                // Draw clean vector path
+                ctx.beginPath();
+                drawAdvancedBezier2D(ctx, path.points);
+                ctx.stroke();
+                break;
             case 'brush':
                 // Brush tool - apply brush texture and effects
                 ctx.lineWidth = appState.brushSize || 5;
@@ -2322,27 +2390,49 @@ export function Shirt() {
                 ctx.stroke();
                 break;
             case 'vector':
-                // Vector mode fallback - render with current active tool effects
-                console.log(`🎨 VECTOR MODE: Rendering with ${appState.activeTool} tool effects`);
-                // Apply the current active tool's effects
-                // Note: Embroidery is handled at the top of the function for vector mode
-                // Default vector rendering
-                ctx.lineWidth = appState.brushSize || 5;
+                // Vector mode fallback - clean vector rendering without brush effects
+                console.log(`🎨 VECTOR MODE: Rendering clean vector path`);
+                // Clean vector rendering without brush effects
+                ctx.lineWidth = 2;
                 ctx.strokeStyle = appState.brushColor || '#000';
-                ctx.globalAlpha = appState.brushOpacity || 1.0;
+                ctx.globalAlpha = 1.0;
                 ctx.lineJoin = 'round';
                 ctx.lineCap = 'round';
+                // No shadows or brush effects for clean vector lines
+                ctx.shadowColor = 'transparent';
+                ctx.shadowBlur = 0;
+                ctx.shadowOffsetX = 0;
+                ctx.shadowOffsetY = 0;
                 ctx.beginPath();
                 drawAdvancedBezier2D(ctx, path.points);
                 ctx.stroke();
                 break;
             default:
-                // Default brush-like rendering
-                ctx.lineWidth = appState.brushSize || 5;
-                ctx.strokeStyle = appState.brushColor || '#000';
-                ctx.globalAlpha = appState.brushOpacity || 1.0;
-                ctx.lineJoin = 'round';
-                ctx.lineCap = 'round';
+                // Default rendering - check if we're in vector mode
+                if (appState.vectorMode) {
+                    // Vector mode - clean rendering without brush effects
+                    ctx.lineWidth = 2;
+                    ctx.strokeStyle = appState.brushColor || '#000';
+                    ctx.globalAlpha = 1.0;
+                    ctx.lineJoin = 'round';
+                    ctx.lineCap = 'round';
+                    // No shadows or brush effects for clean vector lines
+                    ctx.shadowColor = 'transparent';
+                    ctx.shadowBlur = 0;
+                    ctx.shadowOffsetX = 0;
+                    ctx.shadowOffsetY = 0;
+                } else {
+                    // Non-vector mode - brush-like rendering
+                    ctx.lineWidth = appState.brushSize || 5;
+                    ctx.strokeStyle = appState.brushColor || '#000';
+                    ctx.globalAlpha = appState.brushOpacity || 1.0;
+                    ctx.lineJoin = 'round';
+                    ctx.lineCap = 'round';
+                    ctx.shadowColor = 'rgba(0,0,0,0.3)';
+                    ctx.shadowBlur = 4;
+                    ctx.shadowOffsetX = 2;
+                    ctx.shadowOffsetY = 2;
+                }
                 // Draw the path
                 ctx.beginPath();
                 drawAdvancedBezier2D(ctx, path.points);
@@ -2380,7 +2470,7 @@ export function Shirt() {
             const appState = useApp.getState();
             const toolToUse = shape.tool || appState.activeTool;
             // Debug logging
-            if (import.meta.env.DEV) {
+            if (process.env.NODE_ENV === 'development') {
                 console.log(`🎨 Rendering shape ${shape.id}: storedTool=${shape.tool}, toolToUse=${toolToUse}, activeTool=${appState.activeTool}`);
             }
             // Use direct rendering for now (vectorToolManager is placeholder)
@@ -2396,6 +2486,25 @@ export function Shirt() {
         if (st.currentPath && st.currentPath.points.length && appState.vectorMode) {
             const p = st.currentPath;
             console.log(`🎨 Rendering current path with ${p.points.length} points, tool: ${appState.activeTool}`);
+            
+            // First, draw a preview line connecting all points
+            if (p.points.length >= 2) {
+                ctx.save();
+                ctx.strokeStyle = appState.brushColor || '#3B82F6';
+                ctx.lineWidth = 2;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.globalAlpha = 0.7;
+                ctx.setLineDash([5, 5]); // Dashed line for preview
+                ctx.beginPath();
+                ctx.moveTo(p.points[0].x, p.points[0].y);
+                for (let i = 1; i < p.points.length; i++) {
+                    ctx.lineTo(p.points[i].x, p.points[i].y);
+                }
+                ctx.stroke();
+                ctx.restore();
+            }
+            
             // Apply tool-specific rendering using the current active tool (for preview)
             try {
                 renderVectorPathWithTool(ctx, p, appState.activeTool, appState);
@@ -2418,6 +2527,20 @@ export function Shirt() {
                 ctx.stroke();
                 ctx.restore();
             }
+        }
+        
+        // CRITICAL: Also render committed vector shapes permanently to the layer
+        // This ensures they persist when exiting vector mode
+        if (st.shapes && st.shapes.length > 0) {
+            console.log(`🎨 Rendering ${st.shapes.length} committed vector shapes to layer`);
+            st.shapes.forEach((shape) => {
+                if (!shape?.path) return;
+                try {
+                    renderVectorPathWithTool(ctx, shape.path, shape.tool || appState.activeTool, appState);
+                } catch (error) {
+                    console.error('Error rendering committed vector shape:', error);
+                }
+            });
         }
         // IMPORTANT: Also render existing embroidery stitches when in vector mode
         // This ensures that existing embroidery doesn't disappear when vector mode is enabled
@@ -2459,11 +2582,16 @@ export function Shirt() {
     }
     // Separate function to render anchor points and selection indicators
     function renderAnchorPointsAndSelection() {
-        // CRITICAL: Only render anchor points when in vector mode
+        // CRITICAL: Always render anchor points when in vector mode, or when showAnchorPoints is explicitly true
         const appState = useApp.getState();
-        if (!appState.vectorMode) {
-            return; // Don't render anchor points when not in vector mode
+        if (!appState.vectorMode && !appState.showAnchorPoints) {
+            return; // Don't render anchor points when not in vector mode and not showing anchor points
         }
+        
+        console.log('🎯 Rendering anchor points:', { 
+            vectorMode: appState.vectorMode, 
+            showAnchorPoints: appState.showAnchorPoints 
+        });
         // Use error prevention to validate rendering conditions
         if (!errorPrevention.checkAnchorPointsRendering()) {
             return;
@@ -2512,8 +2640,8 @@ export function Shirt() {
         // Debounce rendering to prevent excessive calls
         renderTimeoutRef.current = setTimeout(() => {
             renderVectorsToActiveLayer();
-            // Only render anchor points and selection when vector mode is active
-            if (vectorMode) {
+            // Render anchor points when vector mode is active OR when showAnchorPoints is explicitly enabled
+            if (vectorMode || showAnchorPoints) {
                 renderAnchorPointsAndSelection();
             }
             // Render preview line for pen tool (only in vector mode)
@@ -2538,14 +2666,34 @@ export function Shirt() {
         }, 16); // ~60fps
     }
     function hitPoint(pt, s) {
+        let closestIndex = -1;
+        let closestDistance = Infinity;
+        const hitRadius = 8;
+        
+        console.log('🎯 hitPoint called with:', { pt, pointsCount: s.path.points.length });
+        
         for (let i = 0; i < s.path.points.length; i++) {
             const p = s.path.points[i];
             const dx = pt.x - p.x;
             const dy = pt.y - p.y;
-            if (dx * dx + dy * dy < 8 * 8)
-                return i;
+            const distance = dx * dx + dy * dy;
+            
+            console.log(`🎯 hitPoint checking point ${i}:`, { 
+                point: p, 
+                distance: Math.sqrt(distance), 
+                hitRadius, 
+                withinRadius: distance < hitRadius * hitRadius 
+            });
+            
+            if (distance < hitRadius * hitRadius && distance < closestDistance) {
+                closestIndex = i;
+                closestDistance = distance;
+                console.log(`🎯 hitPoint found closer point at index ${i}, distance: ${Math.sqrt(distance)}`);
+            }
         }
-        return null;
+        
+        console.log('🎯 hitPoint result:', closestIndex !== -1 ? closestIndex : null);
+        return closestIndex !== -1 ? closestIndex : null;
     }
     function hitControlHandle(pt, s) {
         for (let i = 0; i < s.path.points.length; i++) {
@@ -2739,17 +2887,6 @@ export function Shirt() {
                     // Store the complete GLTF scene for proper rendering
                     // This preserves all materials, textures, normal maps, etc.
                     console.log('Shirt: Setting modelScene in store:', !!gltf.scene);
-                    
-                    // Add event listeners to all meshes in the model for proper interaction
-                    gltf.scene.traverse((child) => {
-                        if (child.isMesh) {
-                            // Enable raycasting for this mesh
-                            child.raycast = THREE.Mesh.prototype.raycast;
-                            // Make sure the mesh can receive events
-                            child.userData = { ...child.userData, interactive: true };
-                        }
-                    });
-                    
                     useApp.setState({
                         modelScene: gltf.scene
                     });
@@ -3020,6 +3157,7 @@ export function Shirt() {
                 selected: [],
                 currentPath: null
             });
+
             // Then clear the active layer and redraw everything
             const layer = getActiveLayer();
             if (layer && layer.canvas) {
@@ -3054,53 +3192,39 @@ export function Shirt() {
             window.removeEventListener('clearActiveLayer', handleClearActiveLayer);
         };
     }, [composeLayers]);
-    if (!geometry)
-        return null;
-    // Debug logging (reduced to prevent spam)
-    if (!geometry || !material) {
-        console.log('Rendering mesh with:', {
-            geometry: geometry ? 'loaded' : 'null',
-            material: material ? 'loaded' : 'null'
-        });
+
+    // Embroidery functions
+    function startEmbroidery(e) {
+        const uv = e.uv;
+        if (!uv) return;
+        e.stopPropagation();
+        setControlsEnabled(false);
+        const embroideryStartEvent = new CustomEvent('embroideryStart', { detail: { u: uv.x, v: 1 - uv.y } });
+        window.dispatchEvent(embroideryStartEvent);
+        paintingActiveRef.current = true;
     }
-    // Debug logging for model state
-    if (import.meta.env.DEV) {
-        console.log('Shirt render - modelScene:', !!modelScene, 'geometry:', !!geometry, 'material:', !!material);
+
+    function moveEmbroidery(e) {
+        if (!paintingActiveRef.current) return;
+        const uv = e.uv;
+        if (!uv) return;
+        e.stopPropagation();
+        const embroideryMoveEvent = new CustomEvent('embroideryMove', { detail: { u: uv.x, v: 1 - uv.y } });
+        window.dispatchEvent(embroideryMoveEvent);
     }
-    
-    // Create individual mesh components for better event handling
-    const ModelMeshes = () => {
-        if (!modelScene) return null;
-        
-        const meshes = [];
-        let meshIndex = 0;
-        modelScene.traverse((child) => {
-            if (child.isMesh) {
-                meshes.push(_jsx("mesh", { 
-                    key: `mesh-${meshIndex}-${child.name || 'unnamed'}`,
-                    geometry: child.geometry, 
-                    material: child.material, 
-                    position: child.position, 
-                    rotation: child.rotation, 
-                    scale: child.scale,
-                    castShadow: true, 
-                    receiveShadow: true, 
-                    onPointerDown: onPointerDown, 
-                    onPointerMove: onPointerMove, 
-                    onPointerOver: onPointerOver, 
-                    onPointerUp: onPointerUp, 
-                    onPointerLeave: onPointerLeave 
-                }));
-                meshIndex++;
-            }
-        });
-        
-        return _jsx("group", { children: meshes });
-    };
-    
-    return (_jsxs(_Fragment, { children: [modelScene ? (_jsx(ModelMeshes, {})) : (
-            /* Fallback to geometry-based rendering for basic shapes */
-            _jsx("mesh", { ref: meshRef, geometry: geometry, material: material, castShadow: true, receiveShadow: true, onPointerDown: onPointerDown, onPointerMove: onPointerMove, onPointerOver: onPointerOver, onPointerUp: onPointerUp, onPointerLeave: onPointerLeave })), loadingError && (_jsx(Html, { position: [0, 0, 0], center: true, children: _jsxs("div", { style: {
+
+    function endEmbroidery(e) {
+        if (!paintingActiveRef.current) return;
+        e.stopPropagation();
+        const embroideryEndEvent = new CustomEvent('embroideryEnd', { detail: { u: e.uv.x, v: 1 - e.uv.y } });
+        window.dispatchEvent(embroideryEndEvent);
+        paintingActiveRef.current = false;
+        setControlsEnabled(true);
+    }
+
+    // Render
+    return (_jsxs(_Fragment, { children: [modelScene ? (_jsx("group", { onPointerDown: onPointerDown, onPointerMove: onPointerMove, onPointerOver: onPointerOver, onPointerUp: onPointerUp, onPointerLeave: onPointerLeave, onDoubleClick: onDoubleClick, children: _jsx("primitive", { object: modelScene, castShadow: true, receiveShadow: true }) })) : (
+            (geometry && material ? _jsx("mesh", { ref: meshRef, geometry: geometry, material: material, castShadow: true, receiveShadow: true, onPointerDown: onPointerDown, onPointerMove: onPointerMove, onPointerOver: onPointerOver, onPointerUp: onPointerUp, onPointerLeave: onPointerLeave, onDoubleClick: onDoubleClick }) : null)), loadingError && (_jsx(Html, { position: [0, 0, 0], center: true, children: _jsxs("div", { style: {
                         background: 'rgba(0,0,0,0.8)',
                         color: 'white',
                         padding: '10px',
@@ -3109,33 +3233,8 @@ export function Shirt() {
                         maxWidth: '200px',
                         textAlign: 'center'
                     }, children: ["Model loading error: ", loadingError] }) }))] }));
-    // Embroidery functions
-    function startEmbroidery(e) {
-        const uv = e.uv;
-        if (!uv)
-            return;
-        e.stopPropagation(); // Prevent model rotation
-        setControlsEnabled(false); // Disable camera controls
-        console.log('Starting embroidery at UV:', uv.x, uv.y);
-        // Dispatch custom event for embroidery start
-        const embroideryStartEvent = new CustomEvent('embroideryStart', {
-            detail: { u: uv.x, v: 1 - uv.y }
-        });
-        window.dispatchEvent(embroideryStartEvent);
-        paintingActiveRef.current = true;
-    }
-    function moveEmbroidery(e) {
-        if (!paintingActiveRef.current)
-            return;
-        const uv = e.uv;
-        if (!uv)
-            return;
-        e.stopPropagation(); // Prevent model rotation
-        console.log('Moving embroidery at UV:', uv.x, uv.y);
-        // Dispatch custom event for embroidery move
-        const embroideryMoveEvent = new CustomEvent('embroideryMove', {
-            detail: { u: uv.x, v: 1 - uv.y }
-        });
-        window.dispatchEvent(embroideryMoveEvent);
-    }
+
 }
+
+
+export default Shirt;

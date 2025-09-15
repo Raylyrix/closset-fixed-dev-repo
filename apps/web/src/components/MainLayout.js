@@ -3,7 +3,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Navigation } from './Navigation';
 import { RightPanel } from './RightPanel';
 import { LeftPanel } from './LeftPanel';
-import { EmbroiderySidebar } from './EmbroiderySidebar';
 import { GridOverlay } from './GridOverlay';
 import VectorToolbar from './VectorToolbar';
 import { useApp } from '../App';
@@ -309,12 +308,13 @@ export function MainLayout({ children }) {
         setShowLeftPanel(next);
         setShowRightPanel(next);
     };
-    console.log('🏗️ MainLayout: Rendering layout', {
-        showNavigation,
-        showLeftPanel,
-        showRightPanel,
-        activeTool
-    });
+    // Performance optimization: Reduce console logging
+    // console.log('🏗️ MainLayout: Rendering layout', {
+    //   showNavigation,
+    //   showLeftPanel,
+    //   showRightPanel,
+    //   activeTool
+    // });
     return (_jsxs("div", { className: "main-layout", style: {
             display: 'flex',
             height: '100vh',
@@ -525,10 +525,10 @@ export function MainLayout({ children }) {
                                     background: '#0F172A',
                                     overflow: 'hidden',
                                     zIndex: 0
-                                }, children: [children, _jsx(GridOverlay, { canvasRef: canvasRef })] }), showRightPanel && (_jsx("div", { className: "right-panel-container", style: {
+                                }, children: [children, _jsx(GridOverlay, { canvasRef: canvasRef })] }), showRightPanel && activeTool !== 'embroidery' && (_jsx("div", { className: "right-panel-container", style: {
                                     width: `${rightWidth}px`,
                                     background: 'linear-gradient(135deg, #1E293B 0%, #0F172A 100%)',
                                     borderLeft: '1px solid #334155',
                                     overflowY: 'auto'
-                                }, children: _jsx(RightPanel, { activeToolSidebar: activeToolSidebar }) }))] })] }), _jsx(EmbroiderySidebar, { active: activeTool === 'embroidery' })] }));
+                                }, children: _jsx(RightPanel, { activeToolSidebar: activeToolSidebar }) }))] })] })] }));
 }

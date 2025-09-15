@@ -209,6 +209,18 @@ export class AdvancedEmbroideryEngine {
         }
     }
     /**
+     * Get the WebGL context
+     */
+    getWebGLContext() {
+        return this.gl;
+    }
+    /**
+     * Check if the engine is initialized
+     */
+    isReady() {
+        return this.isInitialized && this.gl !== null && this.program !== null;
+    }
+    /**
      * Clean up resources
      */
     dispose() {
@@ -278,7 +290,7 @@ export class AdvancedEmbroideryEngine {
       out vec3 fragPosition;
       out vec3 fragNormal;
       out vec2 fragUV;
-      out vec3 fragColor;
+      out vec3 fragColorIn;
       out vec3 lightDir;
       out vec3 viewDir;
       
@@ -287,7 +299,7 @@ export class AdvancedEmbroideryEngine {
         fragPosition = worldPosition.xyz;
         fragNormal = mat3(modelMatrix) * normal;
         fragUV = uv;
-        fragColor = color;
+        fragColorIn = color;
         
         lightDir = normalize(lightPosition - worldPosition.xyz);
         viewDir = normalize(cameraPosition - worldPosition.xyz);
@@ -303,7 +315,7 @@ export class AdvancedEmbroideryEngine {
       in vec3 fragPosition;
       in vec3 fragNormal;
       in vec2 fragUV;
-      in vec3 fragColor;
+      in vec3 fragColorIn;
       in vec3 lightDir;
       in vec3 viewDir;
       
@@ -322,10 +334,10 @@ export class AdvancedEmbroideryEngine {
       
       void main() {
         // Sample textures
-        vec3 albedo = texture(albedoTexture, fragUV).rgb * fragColor;
+        vec3 albedo = texture(albedoTexture, fragUV).rgb * fragColorIn;
         vec3 normal = normalize(texture(normalTexture, fragUV).rgb * 2.0 - 1.0);
-        float roughness = texture(roughnessTexture, fragUV).r;
-        float metallic = texture(metallicTexture, fragUV).r;
+        float roughnessValue = texture(roughnessTexture, fragUV).r;
+        float metallicValue = texture(metallicTexture, fragUV).r;
         float ao = texture(aoTexture, fragUV).r;
         
         // Calculate lighting
@@ -343,8 +355,8 @@ export class AdvancedEmbroideryEngine {
         vec3 diffuse = albedo * NdotL;
         
         // Specular (simplified)
-        float specular = pow(max(dot(N, H), 0.0), 32.0) * metallic;
-        vec3 specularColor = mix(vec3(0.04), albedo, metallic);
+        float specular = pow(max(dot(N, H), 0.0), 32.0) * metallicValue;
+        vec3 specularColor = mix(vec3(0.04), albedo, metallicValue);
         
         // Combine
         vec3 color = (diffuse + specular * specularColor) * lightColor * lightIntensity;

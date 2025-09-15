@@ -3,11 +3,12 @@ import { memo } from 'react';
 export const CursorOverlay = memo(function CursorOverlay({ x, y, visible, tool, size, shape = 'round', angle = 0 }) {
     if (!visible)
         return null;
-    const drawing = ['brush', 'eraser', 'fill', 'picker', 'smudge', 'blur', 'select', 'transform', 'move', 'puffPrint', 'line', 'rect', 'ellipse', 'gradient', 'embroidery'].includes(tool);
+    const drawing = ['brush', 'eraser', 'fill', 'picker', 'smudge', 'blur', 'select', 'transform', 'move', 'puffPrint', 'line', 'rect', 'ellipse', 'gradient', 'embroidery', 'vectorTools', 'pen', 'curvature', 'addAnchor', 'removeAnchor', 'convertAnchor', 'pathSelection'].includes(tool);
     if (!drawing)
         return null;
     const diameter = Math.max(6, Math.min(256, size));
-    const isCircle = (tool === 'brush' || tool === 'eraser' || tool === 'smudge' || tool === 'blur' || tool === 'puffPrint' || tool === 'line' || tool === 'rect' || tool === 'ellipse' || tool === 'gradient' || tool === 'embroidery') && shape !== 'square';
+    const isVectorTool = (tool === 'vectorTools' || ['pen', 'curvature', 'addAnchor', 'removeAnchor', 'convertAnchor', 'pathSelection'].includes(tool));
+    const isCircle = (tool === 'brush' || tool === 'eraser' || tool === 'smudge' || tool === 'blur' || tool === 'puffPrint' || tool === 'line' || tool === 'rect' || tool === 'ellipse' || tool === 'gradient' || tool === 'embroidery') && shape !== 'square' && !isVectorTool;
     const border = (tool === 'eraser' ? '1px dashed rgba(255,255,255,0.95)'
         : tool === 'smudge' ? '2px double rgba(147,197,253,0.9)'
             : tool === 'blur' ? '1px dotted rgba(250,204,21,0.9)'
@@ -38,7 +39,7 @@ export const CursorOverlay = memo(function CursorOverlay({ x, y, visible, tool, 
                 return null;
         }
     })();
-    return (_jsxs("div", { className: "cursor-overlay", style: { left: 0, top: 0 }, children: [isCircle ? (_jsx("div", { className: "cursor-circle", style: {
+    return (_jsxs("div", { className: "cursor-overlay", style: { left: 0, top: 0 }, children: [isVectorTool ? (_jsxs("div", { className: "cursor-plus", style: { transform: `translate(${x}px, ${y}px)` }, children: [_jsx("div", { className: "plus-h" }), _jsx("div", { className: "plus-v" })] })) : (isCircle ? (_jsx("div", { className: "cursor-circle", style: {
                     width: diameter,
                     height: diameter,
                     transform: `translate(${x - diameter / 2}px, ${y - diameter / 2}px)`,
@@ -48,5 +49,5 @@ export const CursorOverlay = memo(function CursorOverlay({ x, y, visible, tool, 
                     height: diameter,
                     transform: `translate(${x - diameter / 2}px, ${y - diameter / 2}px) rotate(${angle}rad)`,
                     border
-                } })) : (_jsxs("div", { className: "cursor-crosshair", style: { transform: `translate(${x}px, ${y}px)` }, children: [_jsx("div", { className: "ch h" }), _jsx("div", { className: "ch v" })] }))), icon] }));
+                } })) : (_jsxs("div", { className: "cursor-crosshair", style: { transform: `translate(${x}px, ${y}px)` }, children: [_jsx("div", { className: "ch h" }), _jsx("div", { className: "ch v" })] })))), !isVectorTool && icon] }));
 });

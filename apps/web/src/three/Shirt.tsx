@@ -557,12 +557,8 @@ export function Shirt() {
           return;
         }
         
-        // Only start drawing if mouse button is pressed
-        if (e.buttons === 1) {
-          // Start continuous drawing mode
-          paintingActiveRef.current = true;
-          console.log('🎯 Pen tool - Started continuous drawing mode, paintingActive:', paintingActiveRef.current);
-        } else {
+        // Only proceed on primary button; we'll enable painting mode later if needed
+        if (e.buttons !== 1) {
           console.log('🎯 Pen tool - Mouse not pressed, skipping drawing');
           return;
         }
@@ -573,7 +569,14 @@ export function Shirt() {
           console.log('🎯 Pen tool - Hit anchor point:', anchorIndex, 'at position:', x, y);
           console.log('🎯 Pen tool - Current path points:', st.currentPath.points.map((p, i) => `[${i}]: (${p.x}, ${p.y})`));
           if (anchorIndex !== null) {
+            const isAltPressed = e.altKey || altKeyPressedRef.current;
             const isCtrlPressed = e.ctrlKey || e.metaKey;
+            if (isAltPressed && selectedAnchor && selectedAnchor.shapeId === 'current' && selectedAnchor.pointIndex === anchorIndex) {
+              // Alt+click on selected anchor: start dragging anchor without entering painting mode
+              console.log('🎯 Pen tool - Alt-drag selected anchor:', anchorIndex);
+              setDraggingAnchor({shapeId: 'current', pointIndex: anchorIndex});
+              return;
+            }
             if (isCtrlPressed) {
               // Ctrl+click: Select anchor point
               console.log('🎯 Pen tool - Selecting anchor point:', anchorIndex);
@@ -584,7 +587,6 @@ export function Shirt() {
               // Regular click on selected anchor: Start dragging
               console.log('🎯 Pen tool - Starting drag for selected anchor point:', anchorIndex);
               setDraggingAnchor({shapeId: 'current', pointIndex: anchorIndex});
-              paintingActiveRef.current = true;
               return;
             } else {
               // Regular click on different anchor: Select it (clear any previous selection first)
@@ -600,10 +602,13 @@ export function Shirt() {
           if (controlHit) {
             console.log('🎯 Pen tool - Starting drag for control handle:', controlHit);
             setDraggingControl({shapeId: 'current', pointIndex: controlHit.pointIndex, type: controlHit.type});
-            paintingActiveRef.current = true;
             return;
           }
         }
+        
+        // Enable continuous drawing mode now that we're sure we're not dragging/selecting
+        paintingActiveRef.current = true;
+        console.log('🎯 Pen tool - Started continuous drawing mode, paintingActive:', paintingActiveRef.current);
         
         // Only add new points if we're not already dragging something
         if (!draggingAnchor && !draggingControl) {
@@ -659,6 +664,7 @@ export function Shirt() {
             // Add point to existing path with validation and auto-smoothing
             try {
               let newPoint: any = { x: snappedPoint.x, y: snappedPoint.y, type: 'corner' as const };
+              let cp: any;
               
               // Apply auto-smoothing if enabled
               if (autoSmooth && st.currentPath.points.length >= 2) {
@@ -687,16 +693,15 @@ export function Shirt() {
                   controlIn
                 };
                 
-                const cp = { ...st.currentPath, points: [...updatedPoints, newPoint] };
-                vectorStore.setState({ currentPath: cp });
+                cp = { ...st.currentPath, points: [...updatedPoints, newPoint] };
               } else {
-                const cp = { ...st.currentPath, points: [...st.currentPath.points, newPoint] };
-                vectorStore.setState({ currentPath: cp });
+                cp = { ...st.currentPath, points: [...st.currentPath.points, newPoint] };
               }
+              vectorStore.setState({ currentPath: cp });
               
-              // Select the new point
-              setSelectedAnchor({shapeId: 'current', pointIndex: st.currentPath.points.length});
-              console.log('🎯 Pen tool - Added point to existing path, total points:', st.currentPath.points.length + 1);
+              // Select the new point (use updated path length)
+              setSelectedAnchor({shapeId: 'current', pointIndex: cp.points.length - 1});
+              console.log('🎯 Pen tool - Added point to existing path, total points:', cp.points.length);
               
               // Force immediate rendering
               renderVectorsWithAnchors();
@@ -756,8 +761,25 @@ export function Shirt() {
           }
         }
         
+        // If clicking on an anchor in current path: select it and continue drawing from that point (switch to pen)
+        if (st.currentPath && st.currentPath.points.length > 0) {
+          const anchorIdx = hitPoint({x, y}, { path: { points: st.currentPath.points } });
+          if (anchorIdx !== null) {
+            console.log('🎯 Curvature tool - Anchor clicked, selecting and preparing to continue drawing from it:', anchorIdx);
+            // Trim current path to the selected anchor so we continue from there
+            const trimmed = { ...st.currentPath, points: st.currentPath.points.slice(0, anchorIdx + 1) };
+            vectorStore.setState({ currentPath: trimmed });
+            setSelectedAnchor({ shapeId: 'current', pointIndex: anchorIdx });
+            // Switch to pen for drawing continuation
+            vectorStore.setState({ tool: 'pen' });
+            paintingActiveRef.current = false;
+            renderVectorsWithAnchors();
+            return;
+          }
+        }
+        
         // Look for existing line segments to grab and curve
-        let targetPath = null;
+        let targetPath: any = null;
         let targetShapeId = null;
         let segmentIndex = -1;
         let grabPoint = { x, y };
@@ -1043,7 +1065,72 @@ export function Shirt() {
       if (!uv || !layer) return;
       const canvas = layer.canvas; const x = Math.floor(uv.x * canvas.width); const y = Math.floor(uv.y * canvas.height);
       const st = vectorStore.getState();
-      
+
+      // Always prioritize dragging anchors or control handles over any other pen logic
+      if (draggingAnchor || draggingControl) {
+        console.log('🎯 onPointerMove - Dragging detected, handling before other logic');
+        // Handle anchor point dragging
+        if (draggingAnchor) {
+          console.log('🎯 Dragging anchor point:', draggingAnchor, 'Position:', x, y);
+          if (draggingAnchor.shapeId === 'current' && st.currentPath) {
+            // Drag current path anchor point
+            const pts = [...st.currentPath.points];
+            pts[draggingAnchor.pointIndex] = { ...pts[draggingAnchor.pointIndex], x, y };
+            const updatedPath = { ...st.currentPath, points: pts };
+            vectorStore.setState({ currentPath: updatedPath });
+            console.log('🎯 Updated current path anchor point');
+          } else {
+            // Drag existing shape anchor point
+            const shapesUpd = st.shapes.map((s: any) => {
+              if (s.id !== draggingAnchor.shapeId) return s;
+              const pts = [...s.path.points];
+              pts[draggingAnchor.pointIndex] = { ...pts[draggingAnchor.pointIndex], x, y };
+              const path = { ...s.path, points: pts };
+              return { ...s, path, bounds: boundsFromPoints(pts) };
+            });
+            vectorStore.setState({ shapes: shapesUpd });
+            console.log('🎯 Updated shape anchor point');
+          }
+          renderVectorsWithAnchors();
+          return;
+        }
+        // Handle control handle dragging
+        if (draggingControl) {
+          console.log('🎯 Dragging control handle:', draggingControl, 'Position:', x, y);
+          if (draggingControl.shapeId === 'current' && st.currentPath) {
+            const pts = [...st.currentPath.points];
+            const point = pts[draggingControl.pointIndex];
+            const dx = x - point.x;
+            const dy = y - point.y;
+            if (draggingControl.type === 'in') {
+              pts[draggingControl.pointIndex] = { ...point, controlIn: { x: dx, y: dy } };
+            } else {
+              pts[draggingControl.pointIndex] = { ...point, controlOut: { x: dx, y: dy } };
+            }
+            const updatedPath = { ...st.currentPath, points: pts };
+            vectorStore.setState({ currentPath: updatedPath });
+          } else {
+            const shapesUpd = st.shapes.map((s: any) => {
+              if (s.id !== draggingControl.shapeId) return s;
+              const pts = [...s.path.points];
+              const point = pts[draggingControl.pointIndex];
+              const dx = x - point.x;
+              const dy = y - point.y;
+              if (draggingControl.type === 'in') {
+                pts[draggingControl.pointIndex] = { ...point, controlIn: { x: dx, y: dy } };
+              } else {
+                pts[draggingControl.pointIndex] = { ...point, controlOut: { x: dx, y: dy } };
+              }
+              const path = { ...s.path, points: pts };
+              return { ...s, path, bounds: boundsFromPoints(pts) };
+            });
+            vectorStore.setState({ shapes: shapesUpd });
+          }
+          renderVectorsWithAnchors();
+          return;
+        }
+      }
+
       // Pen tool continuous drawing with validation and debouncing
       if (st.tool === 'pen' && paintingActiveRef.current && st.currentPath && e.buttons === 1) {
         console.log('🎯 Pen tool - Continuous drawing active, paintingActive:', paintingActiveRef.current, 'currentPath points:', st.currentPath.points.length, 'buttons:', e.buttons);
@@ -1164,89 +1251,6 @@ export function Shirt() {
         return;
       }
       
-      // Check if we're dragging anchor points or control handles first
-      if (draggingAnchor || draggingControl) {
-        console.log('🎯 onPointerMove - Dragging detected, preventing other logic');
-        // Handle anchor point dragging
-        if (draggingAnchor) {
-          console.log('🎯 Dragging anchor point:', draggingAnchor, 'Position:', x, y);
-          if (draggingAnchor.shapeId === 'current' && st.currentPath) {
-            // Drag current path anchor point
-            const pts = [...st.currentPath.points];
-            pts[draggingAnchor.pointIndex] = { ...pts[draggingAnchor.pointIndex], x, y };
-            const updatedPath = { ...st.currentPath, points: pts };
-            vectorStore.setState({ currentPath: updatedPath });
-            console.log('🎯 Updated current path anchor point');
-          } else {
-            // Drag existing shape anchor point
-            const shapesUpd = st.shapes.map(s => {
-              if (s.id !== draggingAnchor.shapeId) return s;
-              const pts = [...s.path.points];
-              pts[draggingAnchor.pointIndex] = { ...pts[draggingAnchor.pointIndex], x, y };
-              const path = { ...s.path, points: pts };
-              return { ...s, path, bounds: boundsFromPoints(pts) };
-            });
-            vectorStore.setState({ shapes: shapesUpd });
-            console.log('🎯 Updated shape anchor point');
-          }
-          renderVectorsWithAnchors();
-          return;
-        }
-        
-        // Handle control handle dragging
-        if (draggingControl) {
-          console.log('🎯 Dragging control handle:', draggingControl, 'Position:', x, y);
-          if (draggingControl.shapeId === 'current' && st.currentPath) {
-            // Drag current path control handle
-            const pts = [...st.currentPath.points];
-            const point = pts[draggingControl.pointIndex];
-            const dx = x - point.x;
-            const dy = y - point.y;
-            
-            if (draggingControl.type === 'in') {
-              pts[draggingControl.pointIndex] = { 
-                ...point, 
-                controlIn: { x: dx, y: dy }
-              };
-            } else {
-              pts[draggingControl.pointIndex] = { 
-                ...point, 
-                controlOut: { x: dx, y: dy }
-              };
-            }
-            
-            const updatedPath = { ...st.currentPath, points: pts };
-            vectorStore.setState({ currentPath: updatedPath });
-          } else {
-            // Drag existing shape control handle
-            const shapesUpd = st.shapes.map(s => {
-              if (s.id !== draggingControl.shapeId) return s;
-              const pts = [...s.path.points];
-              const point = pts[draggingControl.pointIndex];
-              const dx = x - point.x;
-              const dy = y - point.y;
-              
-              if (draggingControl.type === 'in') {
-                pts[draggingControl.pointIndex] = { 
-                  ...point, 
-                  controlIn: { x: dx, y: dy }
-                };
-              } else {
-                pts[draggingControl.pointIndex] = { 
-                  ...point, 
-                  controlOut: { x: dx, y: dy }
-                };
-              }
-              
-              const path = { ...s.path, points: pts };
-              return { ...s, path, bounds: boundsFromPoints(pts) };
-            });
-            vectorStore.setState({ shapes: shapesUpd });
-          }
-          // Update visual representation for control handle dragging
-          renderVectorsWithAnchors();
-          return;
-        }
       } else {
         // Handle regular vector drag operations
         const drag = vectorDragRef.current; 
@@ -1343,9 +1347,7 @@ export function Shirt() {
   const onPointerOver = (e: any) => {
     const uv = e.uv as THREE.Vector2 | undefined;
     if (uv) useApp.getState().setLastHitUV({ u: uv.x, v: 1 - uv.y });
-    if (vectorMode) {
-      document.body.style.cursor = 'crosshair';
-    }
+    // Cursor appearance is controlled by CursorOverlay; do not force native cursor here
   };
   const onPointerUp = () => {
     if (shapeStartRef.current) {

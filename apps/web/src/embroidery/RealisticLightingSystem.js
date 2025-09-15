@@ -5,7 +5,7 @@
 import { performanceMonitor } from '../utils/PerformanceMonitor';
 import { centralizedErrorHandler, ErrorCategory, ErrorSeverity } from '../utils/CentralizedErrorHandler';
 export class RealisticLightingSystem {
-    constructor(gl) {
+    constructor(gl = null) {
         this.gl = null;
         this.shadowMaps = new Map();
         this.shadowFramebuffers = new Map();
@@ -14,7 +14,9 @@ export class RealisticLightingSystem {
         this.shadowMapSize = 2048;
         this.maxLights = 8;
         this.gl = gl;
-        this.initialize();
+        if (gl) {
+            this.initialize();
+        }
     }
     /**
      * Initialize the lighting system
@@ -190,7 +192,7 @@ export class RealisticLightingSystem {
     }
     // Private helper methods
     checkExtensions() {
-        if (!this.gl)
+        if (!this.gl || !this.gl.getExtension)
             return;
         // Check for required extensions
         const requiredExtensions = [
@@ -200,8 +202,13 @@ export class RealisticLightingSystem {
             'WEBGL_depth_texture'
         ];
         for (const extension of requiredExtensions) {
-            if (!this.gl.getExtension(extension)) {
-                console.warn(`Extension ${extension} not available`);
+            try {
+                if (!this.gl.getExtension(extension)) {
+                    console.warn(`Extension ${extension} not available`);
+                }
+            }
+            catch (error) {
+                console.warn(`Error checking extension ${extension}:`, error);
             }
         }
     }
