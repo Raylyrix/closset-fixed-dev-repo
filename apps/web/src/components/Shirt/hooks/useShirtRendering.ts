@@ -6,6 +6,7 @@
  */
 
 import { useCallback, useRef, useEffect } from 'react';
+import * as THREE from 'three';
 import { useApp } from '../../../App';
 import { vectorStore } from '../../../vector/vectorState';
 import { renderStitchType } from '../../../utils/stitchRendering';
@@ -59,25 +60,23 @@ export const useShirtRendering = () => {
       
       console.log(`🎨 Rendering ${shapes.length} vector shapes to active layer`);
       
-      // Render each shape
-      shapes.forEach((shape, index) => {
-        if (!shape || !shape.path) return;
-        
-        const path = shape.path;
-        const tool = shape.tool || activeTool;
-        
-        // Set up rendering context
+      // Render each VectorPath-like shape
+      shapes.forEach((shape: any) => {
+        if (!shape || !shape.points) return;
+
+        // Set up rendering context from global brush settings
         ctx.strokeStyle = brushColor;
         ctx.lineWidth = brushSize;
         ctx.globalAlpha = brushOpacity;
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
-        
-        // Render based on tool type
-        if (tool === 'pen' || tool === 'pencil') {
-          renderVectorPath(ctx, path);
-        } else if (tool.includes('stitch')) {
-          renderStitchPath(ctx, path, tool);
+
+        // Render as vector path
+        renderVectorPath(ctx, { points: shape.points });
+
+        // Optionally render as stitch overlay if style indicates
+        if (shape.stroke && String(activeTool).includes('stitch')) {
+          renderStitchPath(ctx, { points: shape.points }, String(activeTool));
         }
       });
       
@@ -88,7 +87,7 @@ export const useShirtRendering = () => {
       
     } catch (error) {
       console.error('❌ Error rendering vectors:', error);
-      performanceMonitor.trackError('vector_rendering', error as Error);
+      performanceMonitor.trackError(error as Error, 'useShirtRendering', 'high', { phase: 'render_vectors' });
     }
   }, [composedCanvas, getActiveLayer, composeLayers, brushColor, brushSize, brushOpacity, activeTool]);
   
@@ -121,7 +120,7 @@ export const useShirtRendering = () => {
     const config = {
       type: stitchType,
       color: brushColor,
-      size: brushSize,
+      thickness: brushSize,
       opacity: brushOpacity
     };
     
@@ -133,9 +132,9 @@ export const useShirtRendering = () => {
     if (!vectorMode) return;
     
     shapes.forEach(shape => {
-      if (!shape || !shape.path || !shape.path.points) return;
+      if (!shape || !shape.points) return;
       
-      shape.path.points.forEach((point: any) => {
+      shape.points.forEach((point: any) => {
         if (point.anchor) {
           // Draw anchor point
           ctx.fillStyle = '#ff0000';

@@ -228,4 +228,4 @@ function getBounds(points) {
     }
     return { minX, minY, maxX, maxY };
 }
-export default StitchGenerator;
+export default { generateStitch, generateStitchPattern };

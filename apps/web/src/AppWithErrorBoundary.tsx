@@ -32,14 +32,8 @@ export const AppWithErrorBoundary: React.FC = () => {
         setLoadingMessage('Setting up performance monitoring...');
         setLoadingProgress(20);
         performanceMonitor.configure({
-          enableMetrics: true,
-          enableUserTracking: true,
-          enableErrorTracking: true,
-          enableMemoryTracking: true,
-          sampleRate: 1.0,
-          maxMetricsHistory: 1000,
-          reportingInterval: 30000,
-          enableRealTimeReporting: process.env.NODE_ENV === 'production'
+          enableMonitoring: true,
+          maxMetrics: 1000
         });
 
         // Initialize accessibility features

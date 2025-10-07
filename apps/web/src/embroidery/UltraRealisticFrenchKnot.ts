@@ -579,10 +579,10 @@ export class UltraRealisticFrenchKnot {
     return stitches.map((stitch, index) => {
       // Calculate lighting for each point
       const litPoints = stitch.points.map((point: any) => {
-        const lighting = this.calculatePointLighting(point, lighting, material, properties3D);
+        const pointLighting = this.calculatePointLighting(point, lighting, material, properties3D);
         return {
           ...point,
-          lighting: lighting
+          lighting: pointLighting
         };
       });
       
@@ -889,5 +889,29 @@ export class UltraRealisticFrenchKnot {
 }
 
 export default UltraRealisticFrenchKnot;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 

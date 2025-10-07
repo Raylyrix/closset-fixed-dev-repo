@@ -196,7 +196,7 @@ export const ShirtDebugger: React.FC<ShirtDebuggerProps> = ({
                   <div><strong>ID:</strong> {shape.id}</div>
                   <div><strong>Type:</strong> {shape.type}</div>
                   <div><strong>Tool:</strong> {shape.tool || 'unknown'}</div>
-                  <div><strong>Points:</strong> {shape.path?.points?.length || 0}</div>
+                  <div><strong>Points:</strong> {(shape.points?.length) ?? (shape.path?.points?.length) ?? 0}</div>
                   <div><strong>Selected:</strong> {selectedShapes.includes(shape.id) ? 'Yes' : 'No'}</div>
                 </div>
               ))}

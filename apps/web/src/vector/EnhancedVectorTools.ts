@@ -347,7 +347,7 @@ export class EnhancedVectorTools {
   ): ToolResult {
     // Find clicked anchor point
     const hitResult = this.hitDetector.detectHit(point, shapes, {
-      tolerance: 10,
+      tolerance: this.options.precision,
       zoom: 1,
       showHitAreas: false,
       multiSelect: false,
@@ -390,7 +390,7 @@ export class EnhancedVectorTools {
   ): ToolResult {
     // Find clicked anchor point
     const hitResult = this.hitDetector.detectHit(point, shapes, {
-      tolerance: 10,
+      tolerance: this.options.precision,
       zoom: 1,
       showHitAreas: false,
       multiSelect: false,
@@ -686,7 +686,7 @@ export class EnhancedVectorTools {
    * Utility methods
    */
   private getToolCursor(tool: VectorTool): string {
-    const cursors: Record<VectorTool, string> = {
+    const cursors: Record<string, string> = {
       pen: 'crosshair',
       pathSelection: 'default',
       addAnchor: 'crosshair',

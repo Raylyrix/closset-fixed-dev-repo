@@ -2,6 +2,7 @@
  * Enhanced Embroidery Manager
  * Advanced stitch management with persistence, layering, and performance optimization
  */
+import { StitchCatalog } from '../embroidery/StitchCatalog';
 export class EnhancedEmbroideryManager {
     constructor(canvas) {
         this.stitches = [];
@@ -43,14 +44,16 @@ export class EnhancedEmbroideryManager {
     }
     // Stitch Management
     addStitch(stitch) {
-        const newStitch = {
+        let newStitch = {
             ...stitch,
             id: `stitch_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             layer: this.getCurrentLayer().id,
             createdAt: Date.now(),
             updatedAt: Date.now(),
-            metadata: this.calculateStitchMetadata(stitch)
+            metadata: undefined
         };
+        // Compute metadata using the fully constructed stitch
+        newStitch = { ...newStitch, metadata: this.calculateStitchMetadata(newStitch) };
         this.stitches.push(newStitch);
         this.getCurrentLayer().stitches.push(newStitch);
         // Add to render queue
@@ -425,13 +428,21 @@ export class EnhancedEmbroideryManager {
             }
             area = Math.abs(area) / 2;
         }
-        return {
+        const baseMeta = {
             stitchCount: points.length,
             length,
             area,
             complexity: this.calculateComplexity(stitch),
             quality: this.calculateQuality(stitch)
         };
+        // Enrich with catalog defaults if available
+        const def = StitchCatalog[stitch.type];
+        if (def) {
+            baseMeta.catalogId = def.id;
+            baseMeta.appearance = { ...def.appearance };
+            baseMeta.behavior = { ...def.behavior };
+        }
+        return baseMeta;
     }
     calculateComplexity(stitch) {
         // Simple complexity calculation based on stitch type and point count
@@ -463,7 +474,8 @@ export class EnhancedEmbroideryManager {
         }
         // Reward good point density
         if (stitch.points.length > 2) {
-            const avgDistance = this.calculateStitchMetadata(stitch).length / stitch.points.length;
+            const meta = this.calculateStitchMetadata(stitch) || {};
+            const avgDistance = (meta.length ?? 0) / stitch.points.length;
             if (avgDistance > 0.1 && avgDistance < 5) {
                 quality *= 1.1;
             }

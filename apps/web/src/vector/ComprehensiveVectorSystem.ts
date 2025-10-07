@@ -56,14 +56,14 @@ export interface SystemConfig {
 export class ComprehensiveVectorSystem {
   private static instance: ComprehensiveVectorSystem;
   
-  private state: SystemState;
-  private config: SystemConfig;
+  private state!: SystemState;
+  private config!: SystemConfig;
   
   // Core systems
-  private vectorTools: AdvancedVectorTools;
-  private mediaIntegration: UniversalMediaIntegration;
-  private embroideryIntegration: VectorEmbroideryIntegration;
-  private toolSet: ProfessionalToolSet;
+  private vectorTools!: AdvancedVectorTools;
+  private mediaIntegration!: UniversalMediaIntegration;
+  private embroideryIntegration!: VectorEmbroideryIntegration;
+  private toolSet!: ProfessionalToolSet;
   
   // Event system
   private eventListeners: Map<string, Function[]> = new Map();
@@ -140,19 +140,19 @@ export class ComprehensiveVectorSystem {
   
   private setupEventHandlers(): void {
     // Vector tools events
-    this.vectorTools.on('tool:changed', (data) => {
+    this.vectorTools.on('tool:changed', (data: any) => {
       this.state.currentTool = data.tool;
       this.emit('tool:changed', data);
     });
     
     // Media integration events
-    this.mediaIntegration.on('mediaType:changed', (data) => {
+    this.mediaIntegration.on('mediaType:changed', (data: any) => {
       this.state.currentMediaType = data.mediaType.id;
       this.emit('mediaType:changed', data);
     });
     
     // Embroidery integration events
-    this.embroideryIntegration.on('mode:changed', (data) => {
+    this.embroideryIntegration.on('mode:changed', (data: any) => {
       this.state.currentMode = data.mode as 'vector' | 'embroidery' | 'mixed';
       this.emit('mode:changed', data);
     });
@@ -352,7 +352,16 @@ export class ComprehensiveVectorSystem {
       if (this.config.enableRealTimePreview && result.requiresRedraw) {
         this.queueRenderTask({
           type: 'render',
-          context: event.target as CanvasRenderingContext2D,
+          context: (() => {
+            const tgt = event.target as unknown;
+            if (tgt && (tgt as HTMLElement).tagName === 'CANVAS') {
+              const ctx = (tgt as HTMLCanvasElement).getContext('2d');
+              if (ctx) {
+                return ctx;
+              }
+            }
+            return undefined as unknown as CanvasRenderingContext2D;
+          })(),
           data: result.data,
           mediaType: this.state.currentMediaType
         });
@@ -498,8 +507,9 @@ export class ComprehensiveVectorSystem {
     const gridSize = this.config.gridSize;
     return {
       x: Math.round(point.x / gridSize) * gridSize,
-      y: Math.round(point.y / gridSize) * gridSize
-    };
+      y: Math.round(point.y / gridSize) * gridSize,
+      type: point.type ?? 'corner'
+    } as VectorPoint;
   }
   
   // ============================================================================
@@ -510,8 +520,9 @@ export class ComprehensiveVectorSystem {
     this.renderQueue.push(task);
   }
   
-  private renderToCanvas(context: CanvasRenderingContext2D, data: any, mediaType: string): void {
-    this.mediaIntegration.render(context, data, mediaType);
+  public renderToCanvas(context: CanvasRenderingContext2D, data: any, mediaType: string): boolean {
+    if (!context || !mediaType) return false;
+    return this.mediaIntegration.render(context, data, mediaType);
   }
   
   private updateDisplay(data: any): void {

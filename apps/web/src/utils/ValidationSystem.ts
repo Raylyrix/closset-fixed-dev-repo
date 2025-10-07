@@ -1,3 +1,5 @@
+import React from 'react';
+
 /**
  * ✅ Validation System - Production Input Validation
  * 

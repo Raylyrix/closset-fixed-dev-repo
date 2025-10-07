@@ -32,7 +32,7 @@ export class AdvancedMemoryManager {
   private gcThreshold = 0.8; // 80% memory usage triggers GC
   private gcCount = 0;
   private lastGcTime = 0;
-  private cleanupInterval: NodeJS.Timeout | null = null;
+  private cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
   private constructor() {
     this.startCleanupInterval();
@@ -298,4 +298,28 @@ export class AdvancedMemoryManager {
 
 // Export singleton instance
 export const advancedMemoryManager = AdvancedMemoryManager.getInstance();
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

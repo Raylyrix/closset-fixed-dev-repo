@@ -771,7 +771,9 @@ export class UltraRealisticStitchRenderer {
     // Limit cache size
     if (this.noiseCache.size > 1000) {
       const firstKey = this.noiseCache.keys().next().value;
-      this.noiseCache.delete(firstKey);
+      if (typeof firstKey === 'string') {
+        this.noiseCache.delete(firstKey);
+      }
     }
     
     return noise;

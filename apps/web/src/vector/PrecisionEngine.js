@@ -20,6 +20,10 @@ export class PrecisionEngine {
         this.snapThrottle = 16; // 60fps
         this.initializeSettings();
     }
+    // Lightweight event API for compatibility with callers that subscribe to changes
+    on(_event, _callback) {
+        // No-op in this implementation; retained for interface compatibility
+    }
     static getInstance() {
         if (!PrecisionEngine.instance) {
             PrecisionEngine.instance = new PrecisionEngine();
@@ -83,31 +87,31 @@ export class PrecisionEngine {
         // Apply snapping in order of priority
         if (settings.snapToGrid) {
             const gridSnap = this.snapToGrid(snappedPoint, settings);
-            if (gridSnap && (!bestSnap || gridSnap.distance < bestSnap.distance)) {
+            if (gridSnap && gridSnap.distance < (bestSnap ? bestSnap.distance : Infinity)) {
                 bestSnap = gridSnap;
             }
         }
         if (settings.snapToGuides) {
             const guideSnap = this.snapToGuides(snappedPoint, settings);
-            if (guideSnap && (!bestSnap || guideSnap.distance < bestSnap.distance)) {
+            if (guideSnap && guideSnap.distance < (bestSnap ? bestSnap.distance : Infinity)) {
                 bestSnap = guideSnap;
             }
         }
         if (settings.snapToObjects) {
             const objectSnap = this.snapToObjects(snappedPoint, settings);
-            if (objectSnap && (!bestSnap || objectSnap.distance < bestSnap.distance)) {
+            if (objectSnap && objectSnap.distance < (bestSnap ? bestSnap.distance : Infinity)) {
                 bestSnap = objectSnap;
             }
         }
         if (settings.snapToAngles) {
             const angleSnap = this.snapToAngles(snappedPoint, settings);
-            if (angleSnap && (!bestSnap || angleSnap.distance < bestSnap.distance)) {
+            if (angleSnap && angleSnap.distance < (bestSnap ? bestSnap.distance : Infinity)) {
                 bestSnap = angleSnap;
             }
         }
         if (settings.snapToDistances) {
             const distanceSnap = this.snapToDistances(snappedPoint, settings);
-            if (distanceSnap && (!bestSnap || distanceSnap.distance < bestSnap.distance)) {
+            if (distanceSnap && distanceSnap.distance < (bestSnap ? bestSnap.distance : Infinity)) {
                 bestSnap = distanceSnap;
             }
         }

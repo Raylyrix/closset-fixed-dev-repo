@@ -74,7 +74,7 @@ export function CloudSync({ active }: CloudSyncProps) {
   const [downloadProgress, setDownloadProgress] = useState(0);
 
   // Refs
-  const syncIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const syncIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastSaveRef = useRef<number>(0);
 
   // Initialize cloud sync

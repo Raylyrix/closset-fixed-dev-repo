@@ -205,13 +205,23 @@ export class VectorEmbroideryIntegration {
                 points: [embroideryPoint],
                 type: 'embroidery',
                 closed: false,
+                // Required rendering attributes for VectorPath
+                fill: false,
+                stroke: true,
+                fillColor: '#000000',
+                strokeColor: '#ff69b4',
+                strokeWidth: 3,
+                fillOpacity: 1,
+                strokeOpacity: 1,
+                strokeJoin: 'round',
+                strokeCap: 'round',
+                bounds: { x: embroideryPoint.x, y: embroideryPoint.y, width: 0, height: 0 },
                 style: {
                     stroke: '#ff69b4',
                     strokeWidth: 3,
                     fill: 'none',
                     opacity: 1
-                },
-                embroideryType: this.state.currentMediaType
+                }
             };
             this.state.dragState.dragType = 'draw';
             this.state.dragState.targetId = newPath.id;
@@ -271,7 +281,7 @@ export class VectorEmbroideryIntegration {
     // ============================================================================
     convertPointToEmbroidery(point) {
         // Apply precision and snapping for embroidery
-        let convertedPoint = { ...point };
+        let convertedPoint = { ...point, type: point.type ?? 'corner' };
         if (this.config.enablePreciseAnchors) {
             convertedPoint = this.applyPrecision(convertedPoint);
         }
@@ -282,7 +292,8 @@ export class VectorEmbroideryIntegration {
         const precision = this.config.precision;
         return {
             x: Math.round(point.x / precision) * precision,
-            y: Math.round(point.y / precision) * precision
+            y: Math.round(point.y / precision) * precision,
+            type: point.type ?? 'corner'
         };
     }
     // ============================================================================

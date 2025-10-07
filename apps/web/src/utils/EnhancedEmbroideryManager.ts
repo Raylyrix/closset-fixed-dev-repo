@@ -3,6 +3,9 @@
  * Advanced stitch management with persistence, layering, and performance optimization
  */
 
+import { StitchCatalog } from '../embroidery/StitchCatalog';
+import { isFeatureEnabled } from '../config/featureFlags';
+
 export interface StitchPoint {
   x: number;
   y: number;
@@ -18,7 +21,7 @@ export interface EmbroideryStitch {
   threadType: string;
   thickness: number;
   opacity: number;
-  layer: number;
+  layer: string;
   visible: boolean;
   locked: boolean;
   createdAt: number;
@@ -29,6 +32,9 @@ export interface EmbroideryStitch {
     area?: number;
     complexity?: number;
     quality?: number;
+    catalogId?: string;
+    appearance?: { heightMm?: number; widthMm?: number; twist?: number; roughness?: number; metallic?: number; scattering?: number };
+    behavior?: { spacingMm?: number; tension?: number; density?: number; randomness?: number };
   };
 }
 
@@ -103,14 +109,16 @@ export class EnhancedEmbroideryManager {
 
   // Stitch Management
   addStitch(stitch: Omit<EmbroideryStitch, 'id' | 'layer' | 'createdAt' | 'updatedAt' | 'metadata'>): string {
-    const newStitch: EmbroideryStitch = {
-      ...stitch,
+    let newStitch: EmbroideryStitch = {
+      ...stitch as any,
       id: `stitch_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       layer: this.getCurrentLayer().id,
       createdAt: Date.now(),
       updatedAt: Date.now(),
-      metadata: this.calculateStitchMetadata(stitch)
-    };
+      metadata: undefined
+    } as EmbroideryStitch;
+    // Compute metadata using the fully constructed stitch
+    newStitch = { ...newStitch, metadata: this.calculateStitchMetadata(newStitch) };
 
     this.stitches.push(newStitch);
     this.getCurrentLayer().stitches.push(newStitch);
@@ -315,6 +323,19 @@ export class EnhancedEmbroideryManager {
     // Apply thread type effects
     this.applyThreadTypeEffects(stitch);
 
+    // Optional 3D-like gradient shading (non-breaking). Applies a subtle highlight/shadow along stitch direction.
+    if (isFeatureEnabled('embroidery3D')) {
+      const grad = this.createThreadGradient(this.ctx, stitch.points, stitch.color);
+      if (grad) {
+        this.ctx.strokeStyle = grad;
+        // Light embossing using shadow for subtle relief
+        this.ctx.shadowColor = this.adjustBrightness(stitch.color, 30);
+        this.ctx.shadowBlur = Math.max(0, Math.min(6, stitch.thickness * 0.6));
+        this.ctx.shadowOffsetX = Math.max(0.5, stitch.thickness * 0.15);
+        this.ctx.shadowOffsetY = Math.max(0.5, stitch.thickness * 0.15);
+      }
+    }
+
     // Render based on stitch type
     this.renderStitchByType(stitch);
 
@@ -510,6 +531,28 @@ export class EnhancedEmbroideryManager {
     this.ctx!.stroke();
   }
 
+  // Create a subtle thread gradient along the main direction of a stitch
+  private createThreadGradient(ctx: CanvasRenderingContext2D, points: StitchPoint[], baseColor: string): CanvasGradient | null {
+    if (!points || points.length < 2) return null;
+    const p0 = points[0];
+    const p1 = points[points.length - 1];
+    const dx = p1.x - p0.x;
+    const dy = p1.y - p0.y;
+    const len = Math.max(1, Math.hypot(dx, dy));
+    // Offset the gradient slightly to fake directional lighting
+    const nx = -dy / len; // normal x
+    const ny = dx / len;  // normal y
+    const offset = 4;
+    const g = ctx.createLinearGradient(p0.x + nx * offset, p0.y + ny * offset, p1.x + nx * offset, p1.y + ny * offset);
+    const c1 = this.adjustBrightness(baseColor, 35);
+    const c2 = baseColor;
+    const c3 = this.adjustBrightness(baseColor, -35);
+    g.addColorStop(0, c1);
+    g.addColorStop(0.5, c2);
+    g.addColorStop(1, c3);
+    return g;
+  }
+
   private applyThreadTypeEffects(stitch: EmbroideryStitch) {
     switch (stitch.threadType) {
       case 'metallic':
@@ -562,13 +605,23 @@ export class EnhancedEmbroideryManager {
       area = Math.abs(area) / 2;
     }
 
-    return {
+    const baseMeta: NonNullable<EmbroideryStitch['metadata']> = {
       stitchCount: points.length,
       length,
       area,
       complexity: this.calculateComplexity(stitch),
       quality: this.calculateQuality(stitch)
     };
+
+    // Enrich with catalog defaults if available
+    const def = (StitchCatalog as any)[stitch.type as any];
+    if (def) {
+      baseMeta.catalogId = def.id;
+      baseMeta.appearance = { ...def.appearance };
+      baseMeta.behavior = { ...def.behavior };
+    }
+
+    return baseMeta;
   }
 
   private calculateComplexity(stitch: EmbroideryStitch): number {
@@ -607,7 +660,8 @@ export class EnhancedEmbroideryManager {
     
     // Reward good point density
     if (stitch.points.length > 2) {
-      const avgDistance = this.calculateStitchMetadata(stitch).length! / stitch.points.length;
+      const meta = this.calculateStitchMetadata(stitch) || {} as { length?: number };
+      const avgDistance = (meta.length ?? 0) / stitch.points.length;
       if (avgDistance > 0.1 && avgDistance < 5) {
         quality *= 1.1;
       }
@@ -713,4 +767,28 @@ export class EnhancedEmbroideryManager {
 }
 
 export default EnhancedEmbroideryManager;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

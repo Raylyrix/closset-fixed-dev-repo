@@ -4,6 +4,7 @@
  */
 
 import { StitchPoint, EmbroideryStitch } from './EnhancedEmbroideryManager';
+import { StitchCatalog } from '../embroidery/StitchCatalog';
 
 export interface StitchGenerationConfig {
   type: string;
@@ -87,20 +88,39 @@ export class EnhancedStitchGenerator {
     ];
   }
 
+  // Pull gentle defaults from the typed stitch catalog
+  private getDefaultsForType(type: string): Partial<StitchGenerationConfig> {
+    try {
+      if (type && (StitchCatalog as any)[type]) {
+        const def = (StitchCatalog as any)[type];
+        return {
+          density: def.behavior?.density,
+          // Map appearance width/height heuristically to thread thickness if caller didn't set it
+          // Note: we do not force thickness here since it's required in config when generating.
+          // quality hint: promote satin/fill-like stitches by default
+          quality: (def.id === 'satin' || def.id === 'fill_tatami') ? 'high' : 'medium'
+        } as Partial<StitchGenerationConfig>;
+      }
+    } catch {}
+    return {};
+  }
+
   // Generate stitches from user input
   generateStitchFromInput(
     points: StitchPoint[],
     config: StitchGenerationConfig
   ): EmbroideryStitch {
+    const defaults = this.getDefaultsForType(config.type);
+    const cfg: StitchGenerationConfig = { ...defaults, ...config } as StitchGenerationConfig;
     const stitch: EmbroideryStitch = {
       id: `stitch_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      type: config.type,
-      points: this.optimizePoints(points, config),
-      color: config.color,
-      threadType: config.threadType,
-      thickness: config.thickness,
-      opacity: config.opacity,
-      layer: 0,
+      type: cfg.type,
+      points: this.optimizePoints(points, cfg),
+      color: cfg.color,
+      threadType: cfg.threadType,
+      thickness: cfg.thickness,
+      opacity: cfg.opacity,
+      layer: 'default',
       visible: true,
       locked: false,
       createdAt: Date.now(),
@@ -109,8 +129,8 @@ export class EnhancedStitchGenerator {
         stitchCount: points.length,
         length: this.calculateLength(points),
         area: this.calculateArea(points),
-        complexity: config.complexity || this.calculateComplexity(points),
-        quality: this.calculateQuality(config)
+        complexity: cfg.complexity || this.calculateComplexity(points),
+        quality: this.calculateQuality(cfg)
       }
     };
 
@@ -526,7 +546,7 @@ export class EnhancedStitchGenerator {
       // Add intermediate points for smoother curves
       const midX = (prev.x + curr.x) / 2;
       const midY = (prev.y + curr.y) / 2;
-      const midPressure = (prev.pressure + curr.pressure) / 2;
+      const midPressure = (((prev.pressure ?? 0.5) + (curr.pressure ?? 0.5)) / 2);
       
       enhanced.push({
         x: midX,
@@ -637,4 +657,28 @@ export class EnhancedStitchGenerator {
 }
 
 export default EnhancedStitchGenerator;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

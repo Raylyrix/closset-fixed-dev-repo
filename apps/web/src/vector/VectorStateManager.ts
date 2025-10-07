@@ -28,6 +28,11 @@ export interface VectorPath {
   id: string;
   points: VectorPoint[];
   closed: boolean;
+  // Optional semantic type/style for richer tools
+  type?: string;
+  style?: any;
+
+  // Rendering attributes
   fill: boolean;
   stroke: boolean;
   fillColor: string;
@@ -38,6 +43,8 @@ export interface VectorPath {
   strokeJoin: CanvasLineJoin;
   strokeCap: CanvasLineCap;
   bounds: BoundingBox;
+  // Optional text payload for text paths
+  text?: string;
 }
 
 export interface BoundingBox {
@@ -57,7 +64,33 @@ export interface VectorState {
   maxHistorySize: number;
 }
 
-export type VectorTool = 'pen' | 'pathSelection' | 'addAnchor' | 'removeAnchor' | 'convertAnchor' | 'curvature' | 'pathOperations' | 'shapeBuilder';
+export type VectorTool =
+  | 'pen'
+  | 'pathSelection'
+  | 'addAnchor'
+  | 'removeAnchor'
+  | 'convertAnchor'
+  | 'curvature'
+  | 'pathOperations'
+  | 'shapeBuilder'
+  // Commonly used across other modules
+  | 'select'
+  | 'rectangle'
+  | 'ellipse'
+  | 'line'
+  | 'text'
+  | 'marqueeRect'
+  // Additional tools used by UI panels
+  | 'marqueeEllipse'
+  | 'lasso'
+  | 'polygonLasso'
+  | 'magneticLasso'
+  | 'magicWand'
+  | 'transform'
+  | 'scale'
+  | 'rotate'
+  | 'skew'
+  | 'perspective';
 
 // Action types for state updates
 export type VectorAction = 
@@ -284,7 +317,12 @@ export class VectorStateManager extends EventEmitter {
         break;
 
       case 'SET_TOOL':
-        const validTools: VectorTool[] = ['pen', 'pathSelection', 'addAnchor', 'removeAnchor', 'convertAnchor', 'curvature', 'pathOperations', 'shapeBuilder'];
+        const validTools: VectorTool[] = [
+          'pen', 'pathSelection', 'addAnchor', 'removeAnchor', 'convertAnchor', 'curvature', 'pathOperations', 'shapeBuilder',
+          'select', 'rectangle', 'ellipse', 'line', 'text', 'marqueeRect',
+          'marqueeEllipse', 'lasso', 'polygonLasso', 'magneticLasso', 'magicWand',
+          'transform', 'scale', 'rotate', 'skew', 'perspective'
+        ];
         if (!validTools.includes(action.payload)) {
           errors.push('Invalid tool type');
         }
@@ -458,5 +496,4 @@ export class VectorStateManager extends EventEmitter {
 // Export singleton instance
 export const vectorStateManager = VectorStateManager.getInstance();
 
-// Export types for external use
-export type { VectorState, VectorAction, VectorPoint, VectorPath, BoundingBox, VectorTool };
+// (Removed duplicate type re-exports to avoid conflicts with the above declarations)

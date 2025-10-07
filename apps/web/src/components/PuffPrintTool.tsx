@@ -82,6 +82,10 @@ export function PuffPrintTool({ active }: PuffPrintToolProps) {
   const modifiedGeometryCache = useRef<Map<string, THREE.BufferGeometry>>(new Map());
   const originalMaterialCache = useRef<Map<string, THREE.Material>>(new Map());
   const originalModelState = useRef<Map<string, { material: THREE.Material | THREE.Material[], geometry: THREE.BufferGeometry }>>(new Map());
+  const compositeCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const compositeCtxRef = useRef<CanvasRenderingContext2D | null>(null);
+  const colorTextureRef = useRef<THREE.CanvasTexture | null>(null);
+  const displacementTextureRef = useRef<THREE.CanvasTexture | null>(null);
 
   // Function to safely subdivide geometry for smoother puff effects
   const subdivideGeometry = (geometry: THREE.BufferGeometry, subdivisions: number): THREE.BufferGeometry => {
@@ -489,29 +493,94 @@ export function PuffPrintTool({ active }: PuffPrintToolProps) {
     // Store original model state before any puff effects
     storeOriginalModelState();
 
-    // Create puff canvas for color/texture
-    const puffCanvas = document.createElement('canvas');
-    puffCanvas.width = composedCanvas.width;
-    puffCanvas.height = composedCanvas.height;
+    // Check if puff maps already exist in global state (created at model load)
+    const globalState = useApp.getState();
+    let puffCanvas = globalState.puffCanvas;
+    let displacementCanvas = globalState.displacementCanvas;
     
-    const puffCtx = puffCanvas.getContext('2d', { willReadFrequently: true })!;
-    puffCtx.fillStyle = 'rgba(0, 0, 0, 0)';
-    puffCtx.fillRect(0, 0, puffCanvas.width, puffCanvas.height);
+    // If maps don't exist, create them (fallback)
+    if (!puffCanvas) {
+      console.log('🎨 Creating new puff canvas (maps not pre-created)');
+      puffCanvas = document.createElement('canvas');
+      puffCanvas.width = composedCanvas.width;
+      puffCanvas.height = composedCanvas.height;
+      
+      const puffCtx = puffCanvas.getContext('2d', { willReadFrequently: true })!;
+      puffCtx.fillStyle = 'rgba(0, 0, 0, 0)';
+      puffCtx.fillRect(0, 0, puffCanvas.width, puffCanvas.height);
+      
+      useApp.setState({ puffCanvas });
+    } else {
+      console.log('✅ Reusing existing puff canvas from global state');
+    }
     
     setPuffCanvas(puffCanvas);
-    ctxRef.current = puffCtx;
+    ctxRef.current = puffCanvas.getContext('2d', { willReadFrequently: true })!;
 
-    // Create displacement canvas for height/bump mapping
-    const displacementCanvas = document.createElement('canvas');
-    displacementCanvas.width = composedCanvas.width;
-    displacementCanvas.height = composedCanvas.height;
-    
-    const displacementCtx = displacementCanvas.getContext('2d', { willReadFrequently: true })!;
-    displacementCtx.fillStyle = 'rgba(0, 0, 0, 0)';
-    displacementCtx.fillRect(0, 0, displacementCanvas.width, displacementCanvas.height);
+    // Reuse or create displacement canvas
+    if (!displacementCanvas) {
+      console.log('🎨 Creating new displacement canvas (maps not pre-created)');
+      displacementCanvas = document.createElement('canvas');
+      displacementCanvas.width = composedCanvas.width;
+      displacementCanvas.height = composedCanvas.height;
+      
+      const displacementCtx = displacementCanvas.getContext('2d', { willReadFrequently: true })!;
+      displacementCtx.fillStyle = 'rgba(128, 128, 128, 1)'; // Neutral gray for no displacement
+      displacementCtx.fillRect(0, 0, displacementCanvas.width, displacementCanvas.height);
+      
+      useApp.setState({ displacementCanvas });
+    } else {
+      console.log('✅ Reusing existing displacement canvas from global state');
+    }
     
     setDisplacementCanvas(displacementCanvas);
-    displacementCtxRef.current = displacementCtx;
+    displacementCtxRef.current = displacementCanvas.getContext('2d', { willReadFrequently: true })!;
+
+    // Create or reuse composite canvas
+    let compositeCanvas = compositeCanvasRef.current;
+    if (!compositeCanvas) {
+      compositeCanvas = document.createElement('canvas');
+      compositeCanvas.width = composedCanvas.width;
+      compositeCanvas.height = composedCanvas.height;
+      compositeCanvasRef.current = compositeCanvas;
+      compositeCtxRef.current = compositeCanvas.getContext('2d', { willReadFrequently: true });
+    }
+
+    // Reuse existing textures or create new ones
+    if (!colorTextureRef.current) {
+      const compositeTexture = new THREE.CanvasTexture(compositeCanvas);
+      colorTextureRef.current = compositeTexture;
+    }
+    
+    if (!displacementTextureRef.current) {
+      const displacementTexture = new THREE.CanvasTexture(displacementCanvas);
+      displacementTextureRef.current = displacementTexture;
+    }
+    
+    const compositeTexture = colorTextureRef.current;
+    const displacementTexture = displacementTextureRef.current;
+    
+    if (compositeTexture) {
+      compositeTexture.generateMipmaps = true;
+      compositeTexture.minFilter = THREE.LinearMipmapLinearFilter;
+      compositeTexture.magFilter = THREE.LinearFilter;
+      compositeTexture.anisotropy = 16;  // Higher quality anisotropic filtering
+      compositeTexture.format = THREE.RGBAFormat;  // Support alpha channel
+      compositeTexture.premultiplyAlpha = false;   // Correct alpha handling
+      (compositeTexture as any).colorSpace = THREE.SRGBColorSpace;  // Proper color space
+      compositeTexture.needsUpdate = true;
+    }
+
+    if (displacementTexture) {
+      displacementTexture.generateMipmaps = false;
+      displacementTexture.minFilter = THREE.LinearFilter;
+      displacementTexture.magFilter = THREE.LinearFilter;
+      displacementTexture.wrapS = THREE.ClampToEdgeWrapping;
+      displacementTexture.wrapT = THREE.ClampToEdgeWrapping;
+      displacementTexture.anisotropy = 2;
+      (displacementTexture as any).colorSpace = (THREE as any).NoColorSpace || (THREE as any).LinearSRGBColorSpace;
+      displacementTexture.needsUpdate = true;
+    }
 
     // Create initial layer
     const initialLayer = {
@@ -529,148 +598,191 @@ export function PuffPrintTool({ active }: PuffPrintToolProps) {
   }, [composedCanvas]);
 
   // Apply puff effects to the model with displacement mapping (optimized to prevent context loss)
-  const applyPuffToModel = () => {
-    if (!puffCanvas || !displacementCanvas || !composedCanvas || !modelScene) {
-      console.log('PuffPrintTool: Missing required data for applyPuffToModel', {
-        puffCanvas: !!puffCanvas,
-        displacementCanvas: !!displacementCanvas,
-        composedCanvas: !!composedCanvas,
-        modelScene: !!modelScene
-      });
-      return;
-    }
+const applyPuffToModel = () => {
+  if (!puffCanvas || !displacementCanvas || !composedCanvas || !modelScene) {
+    console.log('PuffPrintTool: Missing required data for applyPuffToModel', {
+      puffCanvas: !!puffCanvas,
+      displacementCanvas: !!displacementCanvas,
+      composedCanvas: !!composedCanvas,
+      modelScene: !!modelScene
+    });
+    return;
+  }
 
-    // Console log removed
+  const compositeCanvas = compositeCanvasRef.current;
+  const compositeCtx = compositeCtxRef.current;
+  if (!compositeCanvas || !compositeCtx) {
+    console.warn('PuffPrintTool: Composite canvas/context not initialised');
+    return;
+  }
 
-    // Create a temporary canvas to blend the puff effects
-    const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = composedCanvas.width;
-    tempCanvas.height = composedCanvas.height;
-    const tempCtx = tempCanvas.getContext('2d')!;
+  // Check if composedCanvas has content before compositing
+  if (!composedCanvas || composedCanvas.width === 0 || composedCanvas.height === 0) {
+    console.warn('PuffPrintTool: Composed canvas is empty, skipping composite');
+    return;
+  }
 
-    // Draw the base composed canvas
-    tempCtx.drawImage(composedCanvas, 0, 0);
-
-    // Blend the puff effects on top with a more realistic puff appearance
-    tempCtx.globalCompositeOperation = 'multiply';
-    tempCtx.drawImage(puffCanvas, 0, 0);
-
-    // Create displacement texture
-    const displacementTexture = new THREE.CanvasTexture(displacementCanvas);
-    displacementTexture.needsUpdate = true;
-    
-    // Check if there's any displacement data (non-transparent pixels)
-    const displacementData = displacementCtxRef.current?.getImageData(0, 0, displacementCanvas.width, displacementCanvas.height);
-    let hasDisplacement = false;
-    
-    if (displacementData) {
-      // Check for any non-transparent pixels in the displacement map
-      // Only consider pixels with alpha > 0 as valid displacement data
-      for (let i = 0; i < displacementData.data.length; i += 4) {
-        const a = displacementData.data[i + 3];
-        
-        // Only check alpha channel - if alpha is 0, the pixel is transparent (erased)
-        if (a > 0) {
-          hasDisplacement = true;
-          break;
-        }
+  compositeCtx.save();
+  compositeCtx.setTransform(1, 0, 0, 1, 0, 0);
+  compositeCtx.globalCompositeOperation = 'source-over';
+  compositeCtx.globalAlpha = 1;
+  
+  // Draw the base composed texture first
+  compositeCtx.clearRect(0, 0, compositeCanvas.width, compositeCanvas.height);
+  compositeCtx.drawImage(composedCanvas, 0, 0);
+  
+  // Only draw puff layer if it has content
+  const puffCtx = puffCanvas.getContext('2d');
+  if (puffCtx) {
+    const puffImageData = puffCtx.getImageData(0, 0, puffCanvas.width, puffCanvas.height);
+    let hasPuffContent = false;
+    for (let i = 3; i < puffImageData.data.length; i += 4) {
+      if (puffImageData.data[i] > 0) {
+        hasPuffContent = true;
+        break;
       }
     }
     
-    // Console log removed
-
-    // If no displacement data, restore original model state
-    if (!hasDisplacement) {
-      // Console log removed
-      restoreOriginalModelState();
-      return;
+    if (hasPuffContent) {
+      compositeCtx.globalCompositeOperation = 'source-over';
+      compositeCtx.globalAlpha = 0.8;
+      compositeCtx.drawImage(puffCanvas, 0, 0);
     }
+  }
+  
+  compositeCtx.restore();
 
-    // Apply the blended result to the model with subdivision and smoothing
-    let meshCount = 0;
+  if (!colorTextureRef.current) {
+    const tex = new THREE.CanvasTexture(compositeCanvas);
+    tex.generateMipmaps = true;
+    tex.minFilter = THREE.LinearMipmapLinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.anisotropy = 4;
+    (tex as any).colorSpace = (THREE as any).LinearSRGBColorSpace || (THREE as any).SRGBColorSpace || (THREE as any).NoColorSpace;
+    colorTextureRef.current = tex;
+  }
+
+  if (!displacementTextureRef.current) {
+    const tex = new THREE.CanvasTexture(displacementCanvas);
+    tex.generateMipmaps = false;
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.wrapS = THREE.ClampToEdgeWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.anisotropy = 2;
+    (tex as any).colorSpace = (THREE as any).NoColorSpace || (THREE as any).LinearSRGBColorSpace;
+    displacementTextureRef.current = tex;
+  }
+
+  colorTextureRef.current.image = compositeCanvas;
+  colorTextureRef.current.needsUpdate = true;
+
+  displacementTextureRef.current.image = displacementCanvas;
+  displacementTextureRef.current.needsUpdate = true;
+
+  const displacementData = displacementCtxRef.current?.getImageData(0, 0, displacementCanvas.width, displacementCanvas.height);
+  let hasDisplacement = false;
+
+  if (displacementData) {
+    // Check if any pixel is NOT neutral gray (128, 128, 128)
+    // Neutral gray means no displacement, so we only have displacement if pixels deviate from neutral
+    for (let i = 0; i < displacementData.data.length; i += 4) {
+      const r = displacementData.data[i];
+      const g = displacementData.data[i + 1];
+      const b = displacementData.data[i + 2];
+      const a = displacementData.data[i + 3];
+      
+      // Only consider it displacement if alpha > 0 AND the color is not neutral gray (128)
+      // Allow a small tolerance for rounding errors
+      const isNeutral = Math.abs(r - 128) < 5 && Math.abs(g - 128) < 5 && Math.abs(b - 128) < 5;
+      
+      if (a > 0 && !isNeutral) {
+        hasDisplacement = true;
+        break;
+      }
+    }
+  }
+
+  if (!hasDisplacement) {
+    // No displacement found (all pixels are neutral or transparent)
+    // Remove displacement from the model
+    console.log('🎨 No puff displacement found - removing displacement from model');
+    
     modelScene.traverse((child: any) => {
-      if (child.isMesh && child.material) {
-        meshCount++;
-        const meshId = child.uuid || child.name || 'unknown';
+      if (!child.isMesh || !child.material) return;
 
-        // Disable geometry modifications to prevent holes and broken vertices
-        // Use only displacement maps for smooth puff effects
-        // Keep original geometry intact to avoid mesh issues
-
-        if (Array.isArray(child.material)) {
-          child.material.forEach((mat: any, index: number) => {
-            const materialId = `${meshId}_${index}`;
-            
-            // Check if we have a cached material for this mesh
-            let cachedMaterial = materialCacheRef.current.get(materialId);
-            
-            if (!cachedMaterial) {
-              // Create new material only if not cached
-              cachedMaterial = new THREE.MeshStandardMaterial({
-                map: new THREE.CanvasTexture(tempCanvas),
-                displacementMap: hasDisplacement ? displacementTexture : null,
-                displacementScale: hasDisplacement ? puffHeight * 2.0 : 0, // Only apply displacement if there's data
-                displacementBias: 0,
-                roughness: puffCurvature,
-                metalness: 0.2,
-                side: THREE.DoubleSide
-              });
-              materialCacheRef.current.set(materialId, cachedMaterial);
-              // Console log removed
-            } else {
-              // Update existing cached material
-              cachedMaterial.map = new THREE.CanvasTexture(tempCanvas);
-              cachedMaterial.displacementMap = hasDisplacement ? displacementTexture : null;
-              cachedMaterial.displacementScale = hasDisplacement ? puffHeight * 2.0 : 0;
-              cachedMaterial.roughness = puffCurvature;
-              cachedMaterial.needsUpdate = true;
-              // Console log removed
-            }
-
-            // Replace the material
-            child.material[index] = cachedMaterial;
-          });
-        } else {
-          // Check if we have a cached material for this mesh
-          let cachedMaterial = materialCacheRef.current.get(meshId);
-          
-          if (!cachedMaterial) {
-            // Create new material only if not cached
-            cachedMaterial = new THREE.MeshStandardMaterial({
-              map: new THREE.CanvasTexture(tempCanvas),
-              displacementMap: hasDisplacement ? displacementTexture : null,
-              displacementScale: hasDisplacement ? puffHeight * 2.0 : 0, // Only apply displacement if there's data
-              displacementBias: 0,
-              roughness: puffCurvature,
-              metalness: 0.2,
-              side: THREE.DoubleSide
-            });
-            materialCacheRef.current.set(meshId, cachedMaterial);
-            // Console log removed
-          } else {
-            // Update existing cached material
-            cachedMaterial.map = new THREE.CanvasTexture(tempCanvas);
-            cachedMaterial.displacementMap = hasDisplacement ? displacementTexture : null;
-            cachedMaterial.displacementScale = hasDisplacement ? puffHeight * 2.0 : 0;
-            cachedMaterial.roughness = puffCurvature;
-            cachedMaterial.needsUpdate = true;
-            // Console log removed
-          }
-
-          // Replace the material
-          child.material = cachedMaterial;
+      const updateMaterial = (mat: any) => {
+        if (mat) {
+          mat.displacementMap = null;
+          mat.displacementScale = 0;
+          mat.needsUpdate = true;
         }
+        return mat;
+      };
+
+      if (Array.isArray(child.material)) {
+        child.material = child.material.map(updateMaterial);
+      } else {
+        child.material = updateMaterial(child.material);
       }
     });
+    
+    return;
+  }
 
-    // Console log removed
+  const colorTexture = colorTextureRef.current;
+  const displacementTexture = displacementTextureRef.current;
+  const displacementScale = hasDisplacement ? puffHeight * (0.6 + 0.4 * puffCurvature) : 0;
+  const surfaceRoughness = THREE.MathUtils.clamp(1 - puffCurvature * 0.7, 0.12, 0.75);
 
-    // Commit the changes to the main canvas
-    if (commit) {
-      // Console log removed
-      commit();
+  modelScene.traverse((child: any) => {
+    if (!child.isMesh || !child.material) return;
+
+    const meshId = child.uuid || child.name || 'unknown';
+
+    const updateMaterial = (materialKey: string | null, currentMaterial: THREE.MeshStandardMaterial | undefined) => {
+      let cachedMaterial = materialKey ? materialCacheRef.current.get(materialKey) : currentMaterial;
+
+      if (!cachedMaterial) {
+        cachedMaterial = new THREE.MeshStandardMaterial({
+          map: colorTexture || null,
+          displacementMap: hasDisplacement ? displacementTexture || null : null,
+          displacementScale,
+          displacementBias: 0,
+          roughness: surfaceRoughness,
+          metalness: 0.18,
+          side: THREE.DoubleSide
+        });
+        if (materialKey) {
+          materialCacheRef.current.set(materialKey, cachedMaterial);
+        }
+      } else {
+        cachedMaterial.map = colorTexture || null;
+        cachedMaterial.displacementMap = hasDisplacement ? displacementTexture || null : null;
+        cachedMaterial.displacementScale = displacementScale;
+        cachedMaterial.roughness = surfaceRoughness;
+        cachedMaterial.needsUpdate = true;
+      }
+
+      if (cachedMaterial.map) cachedMaterial.map.needsUpdate = true;
+      if (cachedMaterial.displacementMap) cachedMaterial.displacementMap.needsUpdate = true;
+
+      return cachedMaterial;
+    };
+
+    if (Array.isArray(child.material)) {
+      child.material = child.material.map((mat: any, index: number) =>
+        updateMaterial(`${meshId}_${index}`, mat) ?? mat
+      );
+    } else {
+      child.material = updateMaterial(meshId, child.material) ?? child.material;
     }
-  };
+  });
+
+  if (commit) {
+    commit();
+  }
+};
 
   // Create puff texture with shape-based appearance
   const createPuffTexture = (x: number, y: number, size: number, opacity: number) => {
@@ -678,6 +790,7 @@ export function PuffPrintTool({ active }: PuffPrintToolProps) {
       // Console log removed
       return;
     }
+    
 
     const ctx = ctxRef.current;
     const puffSize = size * 2;
@@ -702,7 +815,8 @@ export function PuffPrintTool({ active }: PuffPrintToolProps) {
         
       case 'sphere':
         // Circular shape with radial gradient
-        const gradient = ctx.createRadialGradient(x, y, 0, x, y, puffSize / 2);
+        const sphereRadius = (puffSize / 2) * THREE.MathUtils.lerp(0.65, 1.1, THREE.MathUtils.clamp(puffCurvature, 0.05, 1));
+        const gradient = ctx.createRadialGradient(x, y, 0, x, y, sphereRadius);
         gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${opacity})`);
         gradient.addColorStop(0.3, `rgba(${r}, ${g}, ${b}, ${opacity * 0.8})`);
         gradient.addColorStop(0.6, `rgba(${r}, ${g}, ${b}, ${opacity * 0.5})`);
@@ -743,8 +857,47 @@ export function PuffPrintTool({ active }: PuffPrintToolProps) {
         break;
     }
 
+    // Add directional lighting accent for 3D shading
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    const highlightGradient = ctx.createRadialGradient(
+      x - puffSize * 0.25,
+      y - puffSize * 0.25,
+      puffSize * 0.05,
+      x - puffSize * 0.25,
+      y - puffSize * 0.25,
+      puffSize
+    );
+    highlightGradient.addColorStop(0, `rgba(255, 255, 255, ${Math.min(0.6, opacity * 0.6)})`);
+    highlightGradient.addColorStop(1, 'rgb(0, 0, 0)');
+    ctx.fillStyle = highlightGradient;
+    ctx.beginPath();
+    ctx.arc(x, y, puffSize / 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'multiply';
+    const shadowGradient = ctx.createRadialGradient(
+      x + puffSize * 0.3,
+      y + puffSize * 0.3,
+      puffSize * 0.1,
+      x + puffSize * 0.3,
+      y + puffSize * 0.3,
+      puffSize
+    );
+    shadowGradient.addColorStop(0, `rgba(0, 0, 0, ${Math.min(0.55, opacity * 0.55)})`);
+    shadowGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = shadowGradient;
+    ctx.beginPath();
+    ctx.arc(x, y, puffSize / 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
     // Console log removed
   };
+
+  
 
   // Create displacement map for height effect with shape-based top surface
   const createDisplacementMap = (x: number, y: number, size: number, opacity: number) => {
@@ -759,7 +912,7 @@ export function PuffPrintTool({ active }: PuffPrintToolProps) {
     // Console log removed
 
     // Use shape-based displacement to create proper top surface
-    const maxHeight = Math.floor(opacity * 255);
+    const maxHeight = Math.floor(Math.min(1, puffHeight) * opacity * 255);
     
     // Create shape-based displacement maps for realistic top surfaces
     switch (puffShape) {
@@ -771,7 +924,8 @@ export function PuffPrintTool({ active }: PuffPrintToolProps) {
         
       case 'sphere':
         // Spherical shape with curved top surface
-        const sphereGradient = ctx.createRadialGradient(x, y, 0, x, y, puffSize / 2);
+        const sphereRadius = (puffSize / 2) * THREE.MathUtils.lerp(0.65, 1.1, THREE.MathUtils.clamp(puffCurvature, 0.05, 1));
+        const sphereGradient = ctx.createRadialGradient(x, y, 0, x, y, sphereRadius);
         sphereGradient.addColorStop(0, `rgba(${maxHeight}, ${maxHeight}, ${maxHeight}, ${opacity})`);
         sphereGradient.addColorStop(0.3, `rgba(${Math.floor(maxHeight * 0.95)}, ${Math.floor(maxHeight * 0.95)}, ${Math.floor(maxHeight * 0.95)}, ${opacity * 0.95})`);
         sphereGradient.addColorStop(0.6, `rgba(${Math.floor(maxHeight * 0.8)}, ${Math.floor(maxHeight * 0.8)}, ${Math.floor(maxHeight * 0.8)}, ${opacity * 0.8})`);
@@ -786,7 +940,8 @@ export function PuffPrintTool({ active }: PuffPrintToolProps) {
         
       case 'cylinder':
         // Cylindrical shape with flat top and curved sides
-        const cylinderGradient = ctx.createRadialGradient(x, y, 0, x, y, puffSize / 2);
+        const cylinderRadius = (puffSize / 2) * THREE.MathUtils.lerp(0.7, 1.05, THREE.MathUtils.clamp(puffCurvature, 0.05, 1));
+        const cylinderGradient = ctx.createRadialGradient(x, y, 0, x, y, cylinderRadius);
         cylinderGradient.addColorStop(0, `rgba(${maxHeight}, ${maxHeight}, ${maxHeight}, ${opacity})`);
         cylinderGradient.addColorStop(0.2, `rgba(${maxHeight}, ${maxHeight}, ${maxHeight}, ${opacity})`);
         cylinderGradient.addColorStop(0.4, `rgba(${Math.floor(maxHeight * 0.9)}, ${Math.floor(maxHeight * 0.9)}, ${Math.floor(maxHeight * 0.9)}, ${opacity * 0.9})`);
@@ -801,7 +956,9 @@ export function PuffPrintTool({ active }: PuffPrintToolProps) {
         
       case 'pipe':
         // Ring shape with flat top and curved edges
-        const pipeGradient = ctx.createRadialGradient(x, y, puffSize / 4, x, y, puffSize / 2);
+        const innerRadius = (puffSize / 4) * THREE.MathUtils.lerp(0.4, 0.8, THREE.MathUtils.clamp(puffCurvature, 0.05, 1));
+        const outerRadius = (puffSize / 2) * THREE.MathUtils.lerp(0.8, 1.1, THREE.MathUtils.clamp(puffCurvature, 0.05, 1));
+        const pipeGradient = ctx.createRadialGradient(x, y, innerRadius, x, y, outerRadius);
         pipeGradient.addColorStop(0, `rgba(0, 0, 0, 0)`);
         pipeGradient.addColorStop(0.1, `rgba(${Math.floor(maxHeight * 0.3)}, ${Math.floor(maxHeight * 0.3)}, ${Math.floor(maxHeight * 0.3)}, ${opacity * 0.3})`);
         pipeGradient.addColorStop(0.3, `rgba(${maxHeight}, ${maxHeight}, ${maxHeight}, ${opacity})`);
@@ -975,16 +1132,18 @@ export function PuffPrintTool({ active }: PuffPrintToolProps) {
       ctx.restore();
     }
 
-    // Erase from displacement canvas
+    // Erase from displacement canvas by setting to neutral displacement values (128)
     if (displacementCtxRef.current) {
       const ctx = displacementCtxRef.current;
       ctx.save();
-      ctx.globalCompositeOperation = 'destination-out'; // Erase mode
+      ctx.globalCompositeOperation = 'source-over'; // Use source-over to set neutral values
       ctx.globalAlpha = opacity;
+      ctx.fillStyle = '#808080'; // Neutral gray (128) for displacement map
       ctx.beginPath();
       ctx.arc(x, y, size / 2, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
+      console.log('🧽 Set displacement to neutral values at position:', { x, y });
     }
 
     // Apply symmetry for erasing
@@ -1006,12 +1165,14 @@ export function PuffPrintTool({ active }: PuffPrintToolProps) {
       if (displacementCtxRef.current) {
         const ctx = displacementCtxRef.current;
         ctx.save();
-        ctx.globalCompositeOperation = 'destination-out';
+        ctx.globalCompositeOperation = 'source-over';
         ctx.globalAlpha = opacity;
+        ctx.fillStyle = '#808080'; // Neutral gray (128) for displacement map
         ctx.beginPath();
         ctx.arc(symX, y, size / 2, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
+        console.log('🧽 Set displacement to neutral values (symmetry Y) at position:', { symX, y });
       }
     }
 
@@ -1033,12 +1194,14 @@ export function PuffPrintTool({ active }: PuffPrintToolProps) {
       if (displacementCtxRef.current) {
         const ctx = displacementCtxRef.current;
         ctx.save();
-        ctx.globalCompositeOperation = 'destination-out';
+        ctx.globalCompositeOperation = 'source-over';
         ctx.globalAlpha = opacity;
+        ctx.fillStyle = '#808080'; // Neutral gray (128) for displacement map
         ctx.beginPath();
         ctx.arc(x, symY, size / 2, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
+        console.log('🧽 Set displacement to neutral values (symmetry Z) at position:', { x, symY });
       }
     }
 
@@ -1063,15 +1226,42 @@ export function PuffPrintTool({ active }: PuffPrintToolProps) {
 
   // Listen for painting events from the main system
   useEffect(() => {
-    if (!puffCanvas) return;
+    if (!puffCanvas) {
+      console.log('⚠️ PuffPrintTool: No puffCanvas, event listeners not registered');
+      return;
+    }
 
-    // Console log removed
+    console.log('✅ PuffPrintTool: Registering puffPaint event listener', { 
+      hasPuffCanvas: !!puffCanvas, 
+      hasDisplacementCanvas: !!displacementCanvas 
+    });
 
     // Create a custom event listener for puff print painting
     const handlePuffPaint = (e: CustomEvent) => {
-      const { uv, pressure = 1.0 } = e.detail;
-      if (uv && activeTool === 'puffPrint') {
-        // Console log removed
+      const { uv, pressure = 1.0, fromApplyTool = false } = e.detail;
+      
+      console.log('🎨 PuffPrintTool: Received puffPaint event', { 
+        hasUV: !!uv, 
+        activeTool, 
+        fromApplyTool,
+        uvCoords: uv 
+      });
+      
+      if (uv) {
+        // In vector mode, check if this is from "Apply Tool" button or direct painting
+        const vectorMode = useApp.getState().vectorMode;
+        
+        console.log('🎨 PuffPrintTool: Vector mode check', { vectorMode, fromApplyTool });
+        
+        if (vectorMode && !fromApplyTool) {
+          console.log('🎨 Vector mode active for puff print - acts as vector path creator');
+          console.log('🎨 Use "Apply Tool" button to apply puff print along created paths');
+          // Don't paint directly, let the vector tool create paths instead
+          return;
+        }
+        
+        // Apply puff paint - either from Apply Tool or regular painting (not in vector mode)
+        console.log('🎨 PuffPrintTool: Applying puff paint at UV', uv);
         handlePaint(uv, pressure);
       }
     };
@@ -1092,11 +1282,51 @@ export function PuffPrintTool({ active }: PuffPrintToolProps) {
     document.addEventListener('puffPaint', handlePuffPaint as EventListener);
     document.addEventListener('puffErase', handlePuffErase as EventListener);
 
+    // Listen for Apply Tool events
+    const handleApplyPuffEffects = () => {
+      console.log('🎨 PuffPrintTool: Apply Tool - Applying puff effects');
+      if (modelScene && puffCanvas && displacementCanvas) {
+        applyPuffToModel();
+      }
+    };
+
+    const handleForceModelTextureUpdate = () => {
+      console.log('🎨 PuffPrintTool: Apply Tool - Force model texture update');
+      if (modelScene && puffCanvas && displacementCanvas) {
+        applyPuffToModel();
+      }
+    };
+
+    document.addEventListener('applyPuffEffects', handleApplyPuffEffects);
+    document.addEventListener('forceModelTextureUpdate', handleForceModelTextureUpdate);
+
     return () => {
       document.removeEventListener('puffPaint', handlePuffPaint as EventListener);
       document.removeEventListener('puffErase', handlePuffErase as EventListener);
+      document.removeEventListener('applyPuffEffects', handleApplyPuffEffects);
+      document.removeEventListener('forceModelTextureUpdate', handleForceModelTextureUpdate);
     };
-  }, [activeTool, puffCanvas, puffColor, puffHeight, puffCurvature, puffShape, subdivisionLevel, autoSmooth, smoothingLevel]);
+  }, [
+    activeTool,
+    puffCanvas,
+    puffColor,
+    puffHeight,
+    puffCurvature,
+    puffShape,
+    puffBrushSize,
+    puffBrushOpacity,
+    usePressureSize,
+    usePressureOpacity,
+    symmetryY,
+    symmetryZ,
+    subdivisionLevel,
+    autoSmooth,
+    smoothingLevel,
+    selectedPattern,
+    isPatternMode,
+    patternScale,
+    patternRotation
+  ]);
 
   // Restore original model state only when switching to tools that don't interact with puff prints
   useEffect(() => {
@@ -1106,11 +1336,12 @@ export function PuffPrintTool({ active }: PuffPrintToolProps) {
     }
   }, [active, modelScene, activeTool]);
 
-  // Keep puff effects visible when eraser is active
+  // Remove the eraser reapplication - let the eraser work properly
+  // The puff effects will be reapplied when switching back to puff tool
   useEffect(() => {
-    if (activeTool === 'eraser' && modelScene && puffCanvas && displacementCanvas) {
-      // Console log removed
-      // Reapply puff effects to keep them visible during erasing
+    // Only reapply when switching TO puff tool, not when eraser is active
+    if (activeTool === 'puffPrint' && modelScene && puffCanvas && displacementCanvas) {
+      // Reapply puff effects when switching to puff tool
       applyPuffToModel();
     }
   }, [activeTool, modelScene, puffCanvas, displacementCanvas]);

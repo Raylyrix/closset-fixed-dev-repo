@@ -169,7 +169,12 @@ export class VectorStateManager extends EventEmitter {
                 }
                 break;
             case 'SET_TOOL':
-                const validTools = ['pen', 'pathSelection', 'addAnchor', 'removeAnchor', 'convertAnchor', 'curvature', 'pathOperations', 'shapeBuilder'];
+                const validTools = [
+                    'pen', 'pathSelection', 'addAnchor', 'removeAnchor', 'convertAnchor', 'curvature', 'pathOperations', 'shapeBuilder',
+                    'select', 'rectangle', 'ellipse', 'line', 'text', 'marqueeRect',
+                    'marqueeEllipse', 'lasso', 'polygonLasso', 'magneticLasso', 'magicWand',
+                    'transform', 'scale', 'rotate', 'skew', 'perspective'
+                ];
                 if (!validTools.includes(action.payload)) {
                     errors.push('Invalid tool type');
                 }
@@ -314,3 +319,4 @@ export class VectorStateManager extends EventEmitter {
 }
 // Export singleton instance
 export const vectorStateManager = VectorStateManager.getInstance();
+// (Removed duplicate type re-exports to avoid conflicts with the above declarations)

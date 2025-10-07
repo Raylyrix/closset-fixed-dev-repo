@@ -56,8 +56,10 @@ export const BackgroundManager: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchCustomScenes();
-  }, []);
+    if (backgroundManagerOpen) {
+      fetchCustomScenes();
+    }
+  }, [backgroundManagerOpen]);
 
   const fetchCustomScenes = async () => {
     try {
@@ -117,7 +119,10 @@ export const BackgroundManager: React.FC = () => {
   };
 
   const handleSceneSelect = (scene: BackgroundScene) => {
-    setBackgroundScene(scene.url);
+    // Map incoming scene.url to allowed union in app state
+    const allowed = new Set(['studio', 'gradient', 'sky', 'city', 'forest', 'space']);
+    const target = allowed.has(scene.url) ? (scene.url as any) : 'studio';
+    setBackgroundScene(target as any);
     closeBackgroundManager();
   };
 

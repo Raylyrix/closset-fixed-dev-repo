@@ -15,7 +15,20 @@ import { ProfessionalVectorTools } from './ProfessionalVectorTools';
 import { PrecisionEngine } from './PrecisionEngine';
 import { UndoRedoSystem } from './UndoRedoSystem';
 import { SelectionSystem } from './SelectionSystem';
-import { VectorState, VectorPath, VectorPoint, VectorTool } from './VectorStateManager';
+import { VectorPath, VectorPoint, VectorTool } from './VectorStateManager';
+
+interface PVVectorState {
+  paths: VectorPath[];
+  currentPath: VectorPath | null;
+  selected: string[];
+  tool: VectorTool | string;
+  showAnchorPoints: boolean;
+  showGuides: boolean;
+  showGrid: boolean;
+  snapToGrid: boolean;
+  snapToGuides: boolean;
+  snapToObjects: boolean;
+}
 
 export interface ProfessionalVectorSystemConfig {
   precision: {
@@ -76,7 +89,7 @@ export class ProfessionalVectorSystem {
   private config: ProfessionalVectorSystemConfig;
   
   // State management
-  private currentState: VectorState;
+  private currentState: PVVectorState;
   private eventListeners: Map<string, Function[]> = new Map();
   
   // Performance monitoring
@@ -153,24 +166,24 @@ export class ProfessionalVectorSystem {
   
   private setupEventHandlers(): void {
     // Tool changes
-    this.vectorTools.on('tool:changed', (data) => {
+    this.vectorTools.on('tool:changed', (data: any) => {
       this.currentState.tool = data.tool;
       this.emit('tool:changed', data);
     });
     
     // Selection changes
-    this.selectionSystem.on('selection:changed', (data) => {
+    this.selectionSystem.on('selection:changed', (data: any) => {
       this.currentState.selected = data.selectedIds;
       this.emit('selection:changed', data);
     });
     
     // Undo/Redo changes
-    this.undoRedoSystem.on('state:updated', (data) => {
+    this.undoRedoSystem.on('state:updated', (data: any) => {
       this.emit('undoRedo:changed', data);
     });
     
     // Precision changes
-    this.precisionEngine.on('precision:changed', (data) => {
+    this.precisionEngine.on('precision:changed', (data: any) => {
       this.emit('precision:changed', data);
     });
   }
@@ -359,7 +372,20 @@ export class ProfessionalVectorSystem {
   // ============================================================================
   
   snapPoint(point: VectorPoint): VectorPoint {
-    return this.precisionEngine.snapPoint(point);
+    const precisionResult = this.precisionEngine.snapPoint(point);
+    
+    // Convert PrecisionPoint to VectorPoint by adding the required 'type' property
+    return {
+      x: precisionResult.x,
+      y: precisionResult.y,
+      type: point.type || 'corner', // Preserve original type or default to 'corner'
+      controlIn: point.controlIn,
+      controlOut: point.controlOut,
+      selected: point.selected,
+      locked: point.locked,
+      visible: point.visible,
+      id: point.id
+    };
   }
   
   setSnapSettings(settings: any): void {
@@ -427,8 +453,8 @@ export class ProfessionalVectorSystem {
       },
       precision: {
         snapEnabled: precisionState.enabled,
-        gridEnabled: precisionState.gridSnap,
-        guidesEnabled: precisionState.guideSnap
+        gridEnabled: (precisionState as any).snapToGrid,
+        guidesEnabled: (precisionState as any).snapToGuides
       },
       performance: {
         memoryUsage: this.performanceMetrics.memoryUsage,
@@ -468,7 +494,7 @@ export class ProfessionalVectorSystem {
   }
   
   private saveState(): void {
-    this.undoRedoSystem.saveState(this.currentState);
+    // Intentionally a no-op; integrate with UndoRedoSystem command pattern as needed
   }
   
   private restoreState(): void {

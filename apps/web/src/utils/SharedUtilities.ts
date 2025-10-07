@@ -69,7 +69,7 @@ export function debounce<T extends (...args: any[]) => any>(
   func: T,
   wait: number
 ): (...args: Parameters<T>) => void {
-  let timeout: NodeJS.Timeout;
+  let timeout: ReturnType<typeof setTimeout>;
   
   return (...args: Parameters<T>) => {
     clearTimeout(timeout);
@@ -388,7 +388,7 @@ export const ObjectUtils = {
   /**
    * Pick specific keys from object
    */
-  pick<T, K extends keyof T>(obj: T, keys: K[]): Pick<T, K> {
+  pick<T extends object, K extends keyof T>(obj: T, keys: K[]): Pick<T, K> {
     const result = {} as Pick<T, K>;
     for (const key of keys) {
       if (key in obj) {

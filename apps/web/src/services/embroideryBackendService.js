@@ -31,6 +31,7 @@ class EmbroideryBackendService {
         }
         catch (error) {
             clearTimeout(timeoutId);
+            console.error('Embroidery backend request failed:', error);
             if (error instanceof Error && error.name === 'AbortError') {
                 throw new Error('Request timeout - backend service may be unavailable');
             }
@@ -54,7 +55,17 @@ class EmbroideryBackendService {
      * Check InkStitch/letink availability
      */
     async checkInkStitchHealth() {
-        return this.makeRequest('/embroidery/inkstitch/health');
+        try {
+            return await this.makeRequest('/embroidery/inkstitch/health');
+        }
+        catch (err) {
+            console.warn('InkStitch health unavailable, returning stub status');
+            return {
+                inkscape: { found: false },
+                pyembroidery: false,
+                message: 'Backend not running (stubbed)'
+            };
+        }
     }
     /**
      * Generate embroidery plan from freehand points
@@ -214,3 +225,4 @@ class EmbroideryBackendService {
 }
 // Export singleton instance
 export const embroideryBackend = new EmbroideryBackendService();
+// Types are already exported above via interfaces; no need to re-export here

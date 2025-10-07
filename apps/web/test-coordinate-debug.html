@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Coordinate System Debug Test</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; background: #eee; border: 1px solid #ccc; }
+        .info { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.8); color: white; padding: 10px; font-family: monospace; }
+    </style>
+</head>
+<body>
+    <canvas id="testCanvas" width="500" height="500"></canvas>
+    <div class="info" id="info">Click on canvas to test coordinates</div>
+    
+    <script type="module">
+        import coordinateSystem from './src/utils/CoordinateSystem.js';
+
+        const canvas = document.getElementById('testCanvas');
+        const ctx = canvas.getContext('2d');
+        const info = document.getElementById('info');
+        const canvasSize = { width: canvas.width, height: canvas.height };
+
+        // Initialize coordinate system
+        coordinateSystem.initialize();
+        coordinateSystem.setDebugMode(true);
+
+        function drawPoint(x, y, color = 'red', radius = 5) {
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fillStyle = color;
+            ctx.fill();
+        }
+
+        function drawGrid() {
+            ctx.strokeStyle = '#ddd';
+            ctx.lineWidth = 1;
+            
+            // Draw grid lines every 50 pixels
+            for (let i = 0; i <= canvas.width; i += 50) {
+                ctx.beginPath();
+                ctx.moveTo(i, 0);
+                ctx.lineTo(i, canvas.height);
+                ctx.stroke();
+            }
+            
+            for (let i = 0; i <= canvas.height; i += 50) {
+                ctx.beginPath();
+                ctx.moveTo(0, i);
+                ctx.lineTo(canvas.width, i);
+                ctx.stroke();
+            }
+        }
+
+        function testCoordinateConversion() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawGrid();
+
+            // Test various UV coordinates
+            const testPoints = [
+                { uv: { x: 0.1, y: 0.1 }, color: 'blue', label: 'Top-left (0.1, 0.1)' },
+                { uv: { x: 0.9, y: 0.1 }, color: 'green', label: 'Top-right (0.9, 0.1)' },
+                { uv: { x: 0.1, y: 0.9 }, color: 'orange', label: 'Bottom-left (0.1, 0.9)' },
+                { uv: { x: 0.9, y: 0.9 }, color: 'purple', label: 'Bottom-right (0.9, 0.9)' },
+                { uv: { x: 0.5, y: 0.5 }, color: 'red', label: 'Center (0.5, 0.5)' }
+            ];
+
+            testPoints.forEach(({ uv, color, label }) => {
+                const canvasCoords = coordinateSystem.convertUVToCanvas(uv, canvasSize);
+                drawPoint(canvasCoords.x, canvasCoords.y, color, 8);
+                
+                // Draw label
+                ctx.fillStyle = 'black';
+                ctx.font = '12px Arial';
+                ctx.fillText(`${label}: (${canvasCoords.x}, ${canvasCoords.y})`, 10, 20 + testPoints.indexOf({ uv, color, label }) * 20);
+            });
+
+            info.innerHTML = `Canvas size: ${canvas.width}x${canvas.height}<br>Coordinate system: ${coordinateSystem.getCoordinateSystem()}`;
+        }
+
+        canvas.addEventListener('click', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const clientX = e.clientX - rect.left;
+            const clientY = e.clientY - rect.top;
+
+            // Convert client coordinates to UV
+            const uv = coordinateSystem.convertCanvasToUV({ x: clientX, y: clientY }, canvasSize);
+            
+            // Convert back to canvas coordinates
+            const convertedCanvasCoords = coordinateSystem.convertUVToCanvas(uv, canvasSize);
+
+            // Clear and redraw
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawGrid();
+            
+            // Draw original click
+            drawPoint(clientX, clientY, 'red', 10);
+            
+            // Draw converted point
+            drawPoint(convertedCanvasCoords.x, convertedCanvasCoords.y, 'blue', 6);
+
+            // Draw line between them
+            ctx.strokeStyle = 'red';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(clientX, clientY);
+            ctx.lineTo(convertedCanvasCoords.x, convertedCanvasCoords.y);
+            ctx.stroke();
+
+            info.innerHTML = `
+                Clicked at: (${clientX}, ${clientY})<br>
+                UV: (${uv.x.toFixed(3)}, ${uv.y.toFixed(3)})<br>
+                Converted back: (${convertedCanvasCoords.x}, ${convertedCanvasCoords.y})<br>
+                Difference: (${Math.abs(clientX - convertedCanvasCoords.x)}, ${Math.abs(clientY - convertedCanvasCoords.y)})<br>
+                System: ${coordinateSystem.getCoordinateSystem()}
+            `;
+        });
+
+        // Initial test
+        testCoordinateConversion();
+    </script>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

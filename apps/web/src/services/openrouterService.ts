@@ -3,7 +3,7 @@
 
 export type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string };
 
-const SERVER_BASE = import.meta.env.VITE_SERVER_URL || 'http://localhost:4000';
+const SERVER_BASE = (import.meta as any).env?.VITE_SERVER_URL || 'http://localhost:4000';
 
 export async function chatOpenRouter(params: {
   messages: ChatMessage[];

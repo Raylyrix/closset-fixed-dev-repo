@@ -988,3 +988,27 @@ export class EnhancedStitchRenderer {
 // Export singleton instance
 export const enhancedStitchRenderer = EnhancedStitchRenderer.getInstance();
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

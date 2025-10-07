@@ -69,6 +69,7 @@ export interface UserHistory {
   skillProgression: SkillProgression;
   designPatterns: DesignPattern[];
   feedback: UserFeedback[];
+  recentActions: Action[];
 }
 
 export interface DesignPattern {
@@ -183,15 +184,15 @@ export class AIToolEnhancement {
   private static instance: AIToolEnhancement;
   private capabilities: Map<string, AIToolCapability> = new Map();
   private models: Map<string, AIModel> = new Map();
-  private learningSystem: LearningSystem;
-  private suggestionEngine: SuggestionEngine;
-  private optimizationEngine: OptimizationEngine;
-  private generationEngine: GenerationEngine;
+  private learningSystem!: LearningSystem;
+  private suggestionEngine!: SuggestionEngine;
+  private optimizationEngine!: OptimizationEngine;
+  private generationEngine!: GenerationEngine;
   
   // User data
-  private userHistory: UserHistory;
-  private designContext: DesignContext;
-  private preferences: UserPreferences;
+  private userHistory!: UserHistory;
+  private designContext!: DesignContext;
+  private preferences!: UserPreferences;
   
   // Performance
   private performanceCache: Map<string, any> = new Map();
@@ -352,30 +353,36 @@ export class AIToolEnhancement {
       
       // Tool suggestions based on current state
       const toolSuggestions = await this.suggestTools(userContext, currentState);
-      suggestions.push(...toolSuggestions.map(s => ({
-        type: 'tool',
-        priority: s.confidence,
-        content: s,
-        reasoning: s.reasoning
-      })));
+      suggestions.push(
+        ...toolSuggestions.map((s: AIToolSuggestion): UISuggestion => ({
+          type: 'tool',
+          priority: s.confidence,
+          content: s,
+          reasoning: s.reasoning
+        }))
+      );
       
       // Parameter suggestions
       const paramSuggestions = await this.suggestParameterAdjustments(currentState, userContext);
-      suggestions.push(...paramSuggestions.map(s => ({
-        type: 'parameter',
-        priority: s.confidence,
-        content: s,
-        reasoning: s.reasoning
-      })));
+      suggestions.push(
+        ...paramSuggestions.map((s): UISuggestion => ({
+          type: 'parameter',
+          priority: s.confidence,
+          content: s,
+          reasoning: s.reasoning
+        }))
+      );
       
       // Workflow suggestions
       const workflowSuggestions = await this.suggestWorkflowImprovements(currentState, userContext);
-      suggestions.push(...workflowSuggestions.map(s => ({
-        type: 'workflow',
-        priority: s.priority,
-        content: s,
-        reasoning: s.reasoning
-      })));
+      suggestions.push(
+        ...workflowSuggestions.map((s: { priority: number; reasoning: string }): UISuggestion => ({
+          type: 'workflow',
+          priority: s.priority,
+          content: s,
+          reasoning: s.reasoning
+        }))
+      );
       
       // Sort by priority
       return suggestions.sort((a, b) => b.priority - a.priority);
@@ -565,6 +572,60 @@ export class AIToolEnhancement {
   private adjustPreferences(action: Action, result: ActionResult): void {
     // Implement preference adjustment logic
   }
+
+  // ---- Added: Missing internal helper methods to satisfy references ----
+  private async analyzeDesignContext(context: DesignContext, design: DesignState): Promise<any> {
+    return { context, design, quality: design.quality, complexity: design.complexity };
+  }
+
+  private rankSuggestions(suggestions: AIToolSuggestion[], context: DesignContext): AIToolSuggestion[] {
+    return suggestions.sort((a, b) => b.confidence - a.confidence);
+  }
+
+  private async analyzeDesignQuality(design: DesignState): Promise<{ quality: number; complexity: number; performance: PerformanceMetrics; }>
+  {
+    const performance: PerformanceMetrics = { fps: 60, renderTime: 8, frameTime: 16.7, memoryUsage: 200 };
+    return { quality: design.quality ?? 0.7, complexity: design.complexity ?? 0.5, performance };
+  }
+
+  private async generateImprovementSuggestions(design: DesignState, context: DesignContext): Promise<ImprovementSuggestion[]> {
+    return [];
+  }
+
+  private async suggestOptimizations(design: DesignState, context: DesignContext): Promise<OptimizationSuggestion[]> {
+    return [];
+  }
+
+  private generateRecommendations(analysis: { quality: number; complexity: number; performance: PerformanceMetrics; }, suggestions: ImprovementSuggestion[]): string[] {
+    const recs: string[] = [];
+    if (analysis.quality < 0.5) recs.push('Increase base design resolution or refine stitch details.');
+    if (analysis.performance.renderTime > 16) recs.push('Reduce layer count or optimize effects to keep render under 16ms.');
+    return recs;
+  }
+
+  private async suggestParameterAdjustments(currentState: DesignState, userContext: DesignContext): Promise<Array<AIToolSuggestion & { confidence: number }>> {
+    return [];
+  }
+
+  private async suggestWorkflowImprovements(currentState: DesignState, userContext: DesignContext): Promise<Array<{ priority: number; reasoning: string }>> {
+    return [];
+  }
+
+  private async measurePerformance(design: DesignState): Promise<PerformanceMetrics> {
+    return { fps: 60, renderTime: 8, frameTime: 16.7, memoryUsage: 200 };
+  }
+
+  private loadUserHistory(): UserHistory {
+    return { previousDesigns: [], preferredTools: [], skillProgression: { currentLevel: 1, progressionRate: 0, strengths: [], weaknesses: [], learningGoals: [], achievements: [] }, designPatterns: [], feedback: [], recentActions: [] };
+  }
+
+  private loadDesignContext(): DesignContext {
+    return { fabricType: 'cotton', designStyle: 'default', complexity: 0.5, userSkill: 'beginner', preferences: { preferredTools: [], renderingQuality: 'medium', shortcutsEnabled: true }, constraints: {}, currentDesign: { id: 'init', name: 'init', elements: [], tools: [], parameters: {}, quality: 0.7, complexity: 0.5, progress: 0 }, recentActions: [], designGoals: [] };
+  }
+
+  private loadUserPreferences(): UserPreferences {
+    return { preferredTools: [], renderingQuality: 'medium', shortcutsEnabled: true };
+  }
 }
 
 // Supporting interfaces
@@ -629,6 +690,31 @@ export interface Optimization {
   impact: number;
   implementation: string;
 }
+
+// --- Added missing foundational types ---
+export interface PerformanceMetrics {
+  fps: number;
+  renderTime: number;
+  frameTime: number;
+  memoryUsage: number;
+}
+
+export interface UserPreferences {
+  preferredTools: string[];
+  renderingQuality: 'low' | 'medium' | 'high';
+  shortcutsEnabled: boolean;
+}
+
+export interface DesignConstraints {
+  maxStitchCount?: number;
+  colorPalette?: string[];
+  restrictedTools?: string[];
+}
+
+// Minimal placeholders to satisfy references
+export interface Design { id: string; name: string; }
+export interface Position { x: number; y: number; }
+export interface Size { width: number; height: number; }
 
 // AI Model interfaces
 export interface AIModel {

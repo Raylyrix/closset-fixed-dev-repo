@@ -172,18 +172,18 @@ export class UXFlowTestManager {
       const endTime = performance.now();
       const duration = endTime - startTime;
       
-      const performance = this.calculatePerformanceMetrics(steps);
+      const perfMetrics = this.calculatePerformanceMetrics(steps);
       const quality = this.calculateQualityMetrics(steps);
       
       const result: UXFlowTestResult = {
         success: steps.every(step => step.success),
         duration,
         steps,
-        performance,
+        performance: perfMetrics,
         quality,
         errors,
         warnings,
-        recommendations: this.generateRecommendations(steps, performance, quality)
+        recommendations: this.generateRecommendations(steps, perfMetrics, quality)
       };
       
       console.log('✅ Complete UX Flow Test completed:', result);

@@ -1,6 +1,6 @@
 // Client for calling our server OpenRouter proxy
 // Do not expose API keys here. The server reads OPENROUTER_API_KEY from env.
-const SERVER_BASE = import.meta.env.VITE_SERVER_URL || 'http://localhost:4000';
+const SERVER_BASE = import.meta.env?.VITE_SERVER_URL || 'http://localhost:4000';
 export async function chatOpenRouter(params) {
     const res = await fetch(`${SERVER_BASE}/api/ai/chat-openrouter`, {
         method: 'POST',

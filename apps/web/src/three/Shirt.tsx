@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useThree } from '@react-three/fiber';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
@@ -58,10 +58,30 @@ const DEFAULT_FALLBACK_URLS = [
 ].filter(Boolean);
 
 export function Shirt() {
+  // ===== COMPREHENSIVE COMPONENT INITIALIZATION LOGGING =====
+  console.log('🎯 ===== SHIRT COMPONENT INITIALIZATION =====');
+  console.log('📅 Component mounted at:', new Date().toISOString());
+  console.log('🔧 Available loaders:', {
+    GLTFLoader: !!GLTFLoader,
+    OBJLoader: !!OBJLoader,
+    FBXLoader: !!FBXLoader,
+    ColladaLoader: !!ColladaLoader,
+    PLYLoader: !!PLYLoader
+  });
+  
   const modelUrl = useApp(s => s.modelUrl);
   const modelChoice = useApp(s => s.modelChoice);
   const modelType = useApp(s => s.modelType);
   const modelScene = useApp(s => s.modelScene);
+  
+  console.log('📊 Initial state:', {
+    modelUrl: modelUrl || 'none',
+    modelChoice: modelChoice || 'none',
+    modelType: modelType || 'none',
+    modelScene: !!modelScene,
+    timestamp: new Date().toISOString()
+  });
+  console.log('🎯 ===== END COMPONENT INITIALIZATION =====');
   const modelScale = useApp(s => s.modelScale);
   const modelPosition = useApp(s => s.modelPosition);
   const modelRotation = useApp(s => s.modelRotation);
@@ -84,7 +104,7 @@ export function Shirt() {
   const symmetryZ = useApp(s => s.symmetryZ);
   const activeTool = useApp(s => s.activeTool);
   const vectorMode = useApp(s => s.vectorMode);
-  
+
   // Debug vector mode changes and cleanup
   useEffect(() => {
     if (process.env.NODE_ENV === 'development') {
@@ -109,7 +129,7 @@ export function Shirt() {
         if (ctx) {
           // Clear the entire canvas to remove all UI elements including anchor points
           ctx.clearRect(0, 0, layer.canvas.width, layer.canvas.height);
-        }
+      }
       }
       
       // Re-render all layers to ensure vector paths are preserved
@@ -165,7 +185,7 @@ export function Shirt() {
       }, 100); // Increased delay to ensure proper cleanup
     }
   }, [vectorMode]);
-  
+
   // Cleanup vector store listeners on unmount
   useEffect(() => {
     return () => {
@@ -180,10 +200,43 @@ export function Shirt() {
   const composedVersion = useApp(s => (s as any).composedVersion || 0);
   const [geometry, setGeometry] = useState<THREE.BufferGeometry | null>(null);
   const setControlsEnabled = useApp(s => s.setControlsEnabled);
+  
+  // Smart control management - only disable for tools that need it
+  const shouldDisableControls = (tool: string) => {
+    const drawingTools = ['brush', 'eraser', 'puffPrint', 'embroidery', 'pen', 'line', 'rect', 'ellipse', 'gradient', 'text'];
+    return drawingTools.includes(tool);
+  };
+  
+  const manageControls = (tool: string, shouldDisable: boolean) => {
+    const currentState = useApp.getState().controlsEnabled;
+    console.log(`🎮 manageControls called: tool=${tool}, shouldDisable=${shouldDisable}, shouldDisableControls=${shouldDisableControls(tool)}, currentState=${currentState}`);
+    if (shouldDisableControls(tool)) {
+      setControlsEnabled(!shouldDisable);
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`🎮 Controls ${!shouldDisable ? 'enabled' : 'disabled'} for tool: ${tool} (was: ${currentState})`);
+      }
+    } else {
+      console.log(`🎮 Tool ${tool} does not require control management`);
+    }
+  };
+
+  // Manage controls when activeTool changes
+  useEffect(() => {
+    console.log(`🎮 Tool changed to: ${activeTool}, shouldDisable: ${shouldDisableControls(activeTool)}`);
+    if (shouldDisableControls(activeTool)) {
+      console.log(`🎮 Auto-disabling controls for tool: ${activeTool}`);
+      setControlsEnabled(false);
+    } else {
+      console.log(`🎮 Auto-enabling controls for tool: ${activeTool}`);
+      setControlsEnabled(true);
+    }
+  }, [activeTool, setControlsEnabled]);
+
   const [loadingError, setLoadingError] = useState<string | null>(null);
 
   const [texture, setTexture] = useState<THREE.CanvasTexture | null>(null);
   const meshRef = useRef<THREE.Mesh>(null);
+  const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   
   // Vector editing state
   const [draggingAnchor, setDraggingAnchor] = useState<{shapeId: string, pointIndex: number} | null>(null);
@@ -222,6 +275,72 @@ export function Shirt() {
   
   // Store original materials to restore them when needed
   const originalMaterialsRef = useRef<Map<THREE.Mesh, THREE.Material | THREE.Material[]>>(new Map());
+  
+  // Material management system for different tool types
+  const createBaseMaterial = useCallback((originalMaterial: THREE.Material) => {
+    if (originalMaterial instanceof THREE.MeshStandardMaterial) {
+      return new THREE.MeshStandardMaterial({
+        map: originalMaterial.map,
+        normalMap: originalMaterial.normalMap,
+        roughnessMap: originalMaterial.roughnessMap,
+        metalnessMap: originalMaterial.metalnessMap,
+        aoMap: originalMaterial.aoMap,
+        emissiveMap: originalMaterial.emissiveMap,
+        displacementMap: originalMaterial.displacementMap,
+        alphaMap: originalMaterial.alphaMap,
+        color: originalMaterial.color,
+        metalness: originalMaterial.metalness,
+        roughness: originalMaterial.roughness,
+        transparent: true,
+        alphaTest: 0.1
+      });
+    }
+    return new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      transparent: true,
+      alphaTest: 0.1
+    });
+  }, []);
+
+  const materialManager = useMemo(() => {
+    return {
+      // Create base material that preserves original model properties
+      createBaseMaterial,
+      
+      // Create painting material that blends with original textures
+      createPaintingMaterial: (originalMaterial: THREE.Material, paintTexture: THREE.Texture) => {
+        const base = createBaseMaterial(originalMaterial);
+        base.map = paintTexture; // Use our composed texture as the main map
+        base.transparent = true;
+        base.alphaTest = 0.1;
+        return base;
+      },
+      
+      // Create embroidery material that preserves surface details
+      createEmbroideryMaterial: (originalMaterial: THREE.Material, embroideryTexture: THREE.Texture) => {
+        const base = createBaseMaterial(originalMaterial);
+        base.map = embroideryTexture;
+        // Keep normal map for surface detail
+        base.transparent = true;
+        base.alphaTest = 0.1;
+        return base;
+      },
+      
+      // Create puff print material that works with normal maps
+      createPuffPrintMaterial: (originalMaterial: THREE.Material, puffTexture: THREE.Texture) => {
+        const base = createBaseMaterial(originalMaterial);
+        base.map = puffTexture;
+        // Modify normal map to add puff effect
+        if (base.normalMap) {
+          // We'll create a custom normal map that combines original + puff effect
+          base.normalMap = base.normalMap; // Keep original for now
+        }
+        base.transparent = true;
+        base.alphaTest = 0.1;
+        return base;
+      }
+    };
+  }, [createBaseMaterial]);
   
   // Create a custom material that always uses our texture
   const customMaterial = useMemo(() => {
@@ -284,6 +403,154 @@ export function Shirt() {
       }
     });
   }, [modelScene]);
+
+  // Create layered texture function
+  const createLayeredTexture = useCallback((originalTexture: THREE.Texture | null, paintTexture: THREE.Texture, tool: string) => {
+    if (!originalTexture) return paintTexture;
+    
+    // Create a canvas to blend textures
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d')!;
+    
+    // Set canvas size to match texture
+    canvas.width = paintTexture.image?.width || 1024;
+    canvas.height = paintTexture.image?.height || 1024;
+    
+    // Draw original texture first
+    if (originalTexture.image) {
+      ctx.drawImage(originalTexture.image, 0, 0);
+    }
+    
+    // Apply different blending modes based on tool
+    switch (tool) {
+      case 'brush':
+        // Normal blending for brush
+        ctx.globalCompositeOperation = 'source-over';
+        break;
+      case 'eraser':
+        // Erase mode
+        ctx.globalCompositeOperation = 'destination-out';
+        break;
+      case 'embroidery':
+        // Multiply to preserve surface details
+        ctx.globalCompositeOperation = 'multiply';
+        break;
+      case 'puffPrint':
+        // Screen to add puff effect
+        ctx.globalCompositeOperation = 'screen';
+        break;
+      default:
+        ctx.globalCompositeOperation = 'source-over';
+    }
+    
+    // Draw our paint texture
+    if (paintTexture.image) {
+      ctx.drawImage(paintTexture.image, 0, 0);
+    }
+    
+    // Create new texture from blended canvas
+    const blendedTexture = new THREE.CanvasTexture(canvas);
+    blendedTexture.flipY = false;
+    blendedTexture.anisotropy = 16;
+    blendedTexture.colorSpace = THREE.SRGBColorSpace;
+    
+    return blendedTexture;
+  }, []);
+
+  // Texture layer management system
+  const textureLayerManager = useMemo(() => {
+    return {
+      createLayeredTexture,
+      getToolTexture: (tool: string, originalTexture: THREE.Texture | null, paintTexture: THREE.Texture) => {
+        return createLayeredTexture(originalTexture, paintTexture, tool);
+      }
+    };
+  }, [createLayeredTexture]);
+
+  // Apply appropriate material based on active tool
+  const applyToolMaterial = useCallback(() => {
+    if (!modelScene || !texture) return;
+    
+    console.log(`🎨 Applying material for tool: ${activeTool}`);
+    
+    modelScene.traverse((child: any) => {
+      if (child.isMesh && child.material) {
+        const originalMaterial = originalMaterialsRef.current.get(child);
+        if (!originalMaterial) return;
+        
+        // Handle both single materials and material arrays
+        const materials = Array.isArray(originalMaterial) ? originalMaterial : [originalMaterial];
+        
+        const newMaterials = materials.map(mat => {
+          // Get original texture from the original material
+          const originalTexture = mat instanceof THREE.MeshStandardMaterial ? mat.map : null;
+          
+          // Create layered texture that blends original and paint textures
+          const layeredTexture = textureLayerManager.getToolTexture(activeTool, originalTexture, texture);
+          
+          let newMaterial: THREE.Material;
+          
+          switch (activeTool) {
+            case 'brush':
+            case 'eraser':
+              newMaterial = materialManager.createPaintingMaterial(mat, layeredTexture);
+              break;
+            case 'embroidery':
+              newMaterial = materialManager.createEmbroideryMaterial(mat, layeredTexture);
+              break;
+            case 'puffPrint':
+              newMaterial = materialManager.createPuffPrintMaterial(mat, layeredTexture);
+              break;
+            default:
+              // For other tools, use base material with layered texture
+              newMaterial = materialManager.createBaseMaterial(mat);
+              if (newMaterial instanceof THREE.MeshStandardMaterial) {
+                newMaterial.map = layeredTexture;
+              }
+              break;
+          }
+          
+          return newMaterial;
+        });
+        
+        const newMaterial = Array.isArray(originalMaterial) ? newMaterials : newMaterials[0];
+        
+        child.material = newMaterial;
+        child.material.needsUpdate = true;
+      }
+    });
+  }, [modelScene, texture, activeTool, materialManager, textureLayerManager]);
+
+  // Apply material when tool or texture changes
+  useEffect(() => {
+    applyToolMaterial();
+  }, [applyToolMaterial]);
+
+  // Restore original materials
+  const restoreOriginalMaterials = useCallback(() => {
+    if (!modelScene) return;
+    
+    console.log('🔄 Restoring original materials');
+    
+    modelScene.traverse((child: any) => {
+      if (child.isMesh && child.material) {
+        const originalMaterial = originalMaterialsRef.current.get(child);
+        if (originalMaterial) {
+          child.material = originalMaterial;
+          child.material.needsUpdate = true;
+        }
+      }
+    });
+  }, [modelScene]);
+
+  // Create blended texture for different tools
+  const createBlendedTexture = useCallback((tool: string, baseTexture: THREE.Texture, originalMaterial: THREE.Material) => {
+    if (!baseTexture || !originalMaterial) return baseTexture;
+    
+    // For now, return the base texture
+    // In the future, we can create custom blending logic here
+    return baseTexture;
+  }, []);
 
   // Apply texture to model materials whenever texture changes
   useEffect(() => {
@@ -351,7 +618,7 @@ export function Shirt() {
     const handleEmbroideryTextureUpdate = () => {
       if (texture) {
         texture.needsUpdate = true;
-        invalidate();
+      invalidate();
         console.log('Embroidery texture update: needsUpdate set to true');
       }
     };
@@ -392,17 +659,17 @@ export function Shirt() {
     
     // Recreate texture to ensure it's up to date
     const tex = new THREE.CanvasTexture(composedCanvas);
-    tex.flipY = false;
+      tex.flipY = false;
     tex.anisotropy = 16;
-    tex.colorSpace = THREE.SRGBColorSpace;
+      tex.colorSpace = THREE.SRGBColorSpace;
     tex.generateMipmaps = true;
     tex.minFilter = THREE.LinearMipmapLinearFilter;
-    tex.magFilter = THREE.LinearFilter;
+      tex.magFilter = THREE.LinearFilter;
     tex.wrapS = THREE.ClampToEdgeWrapping;
     tex.wrapT = THREE.ClampToEdgeWrapping;
     
     console.log('New texture created:', tex);
-    setTexture(tex);
+      setTexture(tex);
   }, [composedVersion, composedCanvas]);
 
   // We now update texture on-demand after drawing to reduce overhead
@@ -460,17 +727,17 @@ export function Shirt() {
               const lastIndex = newPoints.length - 1;
               setSelectedAnchor({shapeId: 'current', pointIndex: lastIndex});
               console.log('🎯 Auto-selected last anchor point:', lastIndex);
-            } else {
+      } else {
               setSelectedAnchor(null);
             }
           } else if (selectedAnchor.shapeId !== 'current') {
             // Delete from existing shape
             const shapesUpd = st.shapes.map(s => {
               if (s.id !== selectedAnchor.shapeId) return s;
-              if (s.path.points.length <= 1) return null; // Remove entire shape if only one point
+              if (s.points.length <= 1) return null; // Remove entire shape if only one point
               
-              const newPoints = s.path.points.filter((_, index) => index !== selectedAnchor.pointIndex);
-              const path = { ...s.path, points: newPoints };
+              const newPoints = s.points.filter((_, index) => index !== selectedAnchor.pointIndex);
+              const path = { ...s, points: newPoints };
               return { ...s, path, bounds: boundsFromPoints(newPoints) };
              }).filter((s): s is any => s !== null);
             
@@ -504,11 +771,11 @@ export function Shirt() {
             
             // Auto-select the last anchor point of the same shape
             const updatedShape = shapesUpd.find(s => s?.id === selectedAnchor.shapeId);
-            if (updatedShape && updatedShape.path.points.length > 0) {
-              const lastIndex = updatedShape.path.points.length - 1;
+            if (updatedShape && updatedShape.points.length > 0) {
+              const lastIndex = updatedShape.points.length - 1;
               setSelectedAnchor({shapeId: selectedAnchor.shapeId, pointIndex: lastIndex});
               console.log('🎯 Auto-selected last anchor point:', lastIndex);
-            } else {
+          } else {
               setSelectedAnchor(null);
             }
           }
@@ -526,6 +793,29 @@ export function Shirt() {
     // Reduced logging for performance
     if (process.env.NODE_ENV === 'development' && Math.random() < 0.1) {
       console.log('Shirt: onPointerDown called with activeTool:', activeTool, 'vectorMode:', vectorMode);
+    }
+    
+    // Disable controls immediately for drawing tools to prevent model rotation
+    if (['brush', 'eraser', 'puffPrint'].includes(activeTool)) {
+      console.log('🎨 Early control disable for:', activeTool);
+      console.log('🎨 Current controls state before disable:', useApp.getState().controlsEnabled);
+      manageControls(activeTool, true);
+      console.log('🎨 Current controls state after disable:', useApp.getState().controlsEnabled);
+      // Prevent event propagation to stop model rotation
+      e.preventDefault();
+      e.stopPropagation();
+      // Handle brush tool immediately to prevent model rotation
+      if (activeTool === 'brush' || activeTool === 'eraser' || activeTool === 'puffPrint') {
+        console.log('🎨 Handling brush tool immediately, preventing model rotation');
+        e.stopPropagation();
+        e.preventDefault();
+        snapshot();
+        paintAtEvent(e);
+        e.target.setPointerCapture(e.pointerId);
+        paintingActiveRef.current = true;
+        console.log('Shirt: Set paintingActiveRef to true for tool:', activeTool);
+        return;
+      }
     }
     
     // If we're already dragging something, don't process new pointer down events
@@ -546,7 +836,9 @@ export function Shirt() {
       // prevent camera controls and other handlers
       e.stopPropagation();
       try { (e.target as any)?.setPointerCapture?.(e.pointerId); } catch {}
-      setControlsEnabled(false);
+      
+      // Smart control management - only disable for drawing/painting tools
+      manageControls(tool, true);
       // Pen tool
       if (tool === 'pen') {
         console.log('🎯 Pen tool - Current path points:', st.currentPath?.points?.length || 0, 'buttons:', e.buttons);
@@ -588,7 +880,7 @@ export function Shirt() {
               console.log('🎯 Pen tool - Starting drag for selected anchor point:', anchorIndex);
               setDraggingAnchor({shapeId: 'current', pointIndex: anchorIndex});
               return;
-            } else {
+          } else {
               // Regular click on different anchor: Select it (clear any previous selection first)
               console.log('🎯 Pen tool - Selecting different anchor point:', anchorIndex);
               setSelectedAnchor({shapeId: 'current', pointIndex: anchorIndex});
@@ -642,7 +934,8 @@ export function Shirt() {
               fillOpacity: 1.0,
               strokeOpacity: 1.0,
               strokeJoin: 'round' as CanvasLineJoin,
-              strokeCap: 'round' as CanvasLineCap
+              strokeCap: 'round' as CanvasLineCap,
+              bounds: { x: snappedPoint.x, y: snappedPoint.y, width: 0, height: 0 }
             };
             
             try {
@@ -757,7 +1050,7 @@ export function Shirt() {
             console.log('🎯 Curvature tool - Starting drag for control handle in shape:', shape.id, controlHit);
             setDraggingControl({shapeId: shape.id, pointIndex: controlHit.pointIndex, type: controlHit.type});
             paintingActiveRef.current = true;
-            return;
+          return;
           }
         }
         
@@ -774,7 +1067,7 @@ export function Shirt() {
             vectorStore.setState({ tool: 'pen' });
             paintingActiveRef.current = false;
             renderVectorsWithAnchors();
-            return;
+          return;
           }
         }
         
@@ -797,10 +1090,10 @@ export function Shirt() {
         // Check existing shapes if no current path segment found
         if (!targetPath) {
           for (const shape of st.shapes) {
-            if (shape.path.points.length > 1) {
-              segmentIndex = findPathSegment({x, y}, shape.path.points);
+            if (shape.points.length > 1) {
+              segmentIndex = findPathSegment({x, y}, shape.points);
               if (segmentIndex !== -1) {
-                targetPath = shape.path;
+                targetPath = shape;
                 targetShapeId = shape.id;
                 console.log('🎯 Curvature tool - Found segment in shape:', shape.id, 'at index:', segmentIndex);
                 break;
@@ -843,7 +1136,7 @@ export function Shirt() {
             if (idx !== null) {
               const shapesUpd = st.shapes.map(s => {
                 if (s.id !== clicked.id) return s;
-                const pts = [...s.path.points];
+                const pts = [...s.points];
                 const cur = pts[idx];
                 const nextType = cur.type === 'corner' ? 'smooth' : cur.type === 'smooth' ? 'symmetric' : 'corner';
                 let controlIn = cur.controlIn; let controlOut = cur.controlOut;
@@ -852,8 +1145,7 @@ export function Shirt() {
                   controlIn = controlIn || { x: -20, y: 0 }; controlOut = controlOut || { x: 20, y: 0 };
                 }
                 pts[idx] = { ...cur, type: nextType, controlIn, controlOut } as any;
-                const path = { ...s.path, points: pts };
-                return { ...s, path, bounds: boundsFromPoints(pts) } as any;
+                return { ...s, points: pts, bounds: boundsFromPoints(pts) } as any;
               });
               vectorStore.setState({ shapes: shapesUpd });
             }
@@ -875,7 +1167,7 @@ export function Shirt() {
               setDraggingAnchor({shapeId: clicked.id, pointIndex: idx});
               paintingActiveRef.current = true;
               return;
-          } else {
+              } else {
               // Regular click: Start dragging anchor point
               setDraggingAnchor({shapeId: clicked.id, pointIndex: idx});
               paintingActiveRef.current = true;
@@ -936,19 +1228,19 @@ export function Shirt() {
           try {
             console.log('Adding text element:', txt);
             // Use the new text element system instead of drawing directly
-            const textUV = { u: uv.x, v: uv.y }; // Use UV coordinates directly without flipping
+            const textUV = { u: uv.x, v: 1 - uv.y }; // Fix UV coordinate conversion - flip Y axis
             (useApp.getState() as any).addTextElement(txt, textUV, getActiveLayer()?.id);
             
             // Force a recomposition to update the model
             setTimeout(() => {
               console.log('Forcing recomposition after text placement');
               (useApp.getState() as any).composeLayers();
-              setControlsEnabled(true);
+              manageControls('text', false);
               console.log('Controls re-enabled after text placement');
             }, 50);
           } catch (error) {
             console.error('Error adding text element:', error);
-            setControlsEnabled(true);
+            manageControls('text', false);
           }
           return;
         }
@@ -956,7 +1248,6 @@ export function Shirt() {
       console.log('Starting shape drag for:', activeTool);
       shapeStartRef.current = { x, y };
       shapeBeforeRef.current = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      setControlsEnabled(false);
       try { 
         (e.target as any)?.setPointerCapture?.(e.pointerId); 
       } catch (err) {
@@ -965,14 +1256,7 @@ export function Shirt() {
       paintingActiveRef.current = true;
       return;
     }
-    if (activeTool !== 'brush' && activeTool !== 'eraser' && activeTool !== 'puffPrint') return;
-    e.stopPropagation();
-    snapshot();
-    paintAtEvent(e);
-    e.target.setPointerCapture(e.pointerId);
-    setControlsEnabled(false);
-    paintingActiveRef.current = true;
-    console.log('Shirt: Set paintingActiveRef to true for tool:', activeTool);
+    // Brush tool handling moved to early return above
   };
   const onDoubleClick = (e:any) => {
     if (activeTool !== 'vectorTools') return;
@@ -984,12 +1268,20 @@ export function Shirt() {
       const appState = useApp.getState();
       const shape = { 
         id: `shape_${Date.now()}`, 
-        type: 'path' as const, 
-        path, 
-        tool: appState.activeTool, // Store the tool used to create this path
+        points: path.points,
+        closed: path.closed,
+        fill: path.fill,
+        stroke: path.stroke,
+        fillColor: path.fillColor,
+        strokeColor: path.strokeColor,
+        strokeWidth: path.strokeWidth,
+        fillOpacity: path.fillOpacity,
+        strokeOpacity: path.strokeOpacity,
+        strokeJoin: path.strokeJoin,
+        strokeCap: path.strokeCap,
         bounds: b 
       };
-      vectorStore.setAll({ currentPath: null, shapes: [...st.shapes, shape], selected: [shape.id] });
+      vectorStore.setState({ currentPath: null, shapes: [...st.shapes, shape], selected: [shape.id] });
       renderVectorsWithAnchors();
     }
   };
@@ -1083,9 +1375,9 @@ export function Shirt() {
             // Drag existing shape anchor point
             const shapesUpd = st.shapes.map((s: any) => {
               if (s.id !== draggingAnchor.shapeId) return s;
-              const pts = [...s.path.points];
+              const pts = [...s.points];
               pts[draggingAnchor.pointIndex] = { ...pts[draggingAnchor.pointIndex], x, y };
-              const path = { ...s.path, points: pts };
+              const path = { ...s, points: pts };
               return { ...s, path, bounds: boundsFromPoints(pts) };
             });
             vectorStore.setState({ shapes: shapesUpd });
@@ -1104,7 +1396,7 @@ export function Shirt() {
             const dy = y - point.y;
             if (draggingControl.type === 'in') {
               pts[draggingControl.pointIndex] = { ...point, controlIn: { x: dx, y: dy } };
-            } else {
+        } else {
               pts[draggingControl.pointIndex] = { ...point, controlOut: { x: dx, y: dy } };
             }
             const updatedPath = { ...st.currentPath, points: pts };
@@ -1112,7 +1404,7 @@ export function Shirt() {
           } else {
             const shapesUpd = st.shapes.map((s: any) => {
               if (s.id !== draggingControl.shapeId) return s;
-              const pts = [...s.path.points];
+              const pts = [...s.points];
               const point = pts[draggingControl.pointIndex];
               const dx = x - point.x;
               const dy = y - point.y;
@@ -1196,8 +1488,8 @@ export function Shirt() {
         let targetPath = null;
         if (curvatureSegment.shapeId === 'current') {
           targetPath = st.currentPath;
-        } else {
-          targetPath = st.shapes.find(s => s.id === curvatureSegment.shapeId)?.path;
+    } else {
+          targetPath = st.shapes.find(s => s.id === curvatureSegment.shapeId);
         }
         
         if (!targetPath || targetPath.points.length <= curvatureSegment.segmentIndex + 1) {
@@ -1251,16 +1543,17 @@ export function Shirt() {
         return;
       }
       
-      } else {
+
         // Handle regular vector drag operations
         const drag = vectorDragRef.current; 
         if (!drag) return;
         
       if (drag.mode === 'point' && drag.shapeId != null && drag.index != null) {
+        const st = vectorStore.getState();
         const shapesUpd = st.shapes.map(s => {
           if (s.id !== drag.shapeId) return s;
-          const pts = [...s.path.points]; pts[drag.index!] = { ...pts[drag.index!], x, y } as any;
-          const path = { ...s.path, points: pts };
+          const pts = [...s.points]; pts[drag.index!] = { ...pts[drag.index!], x, y } as any;
+          const path = { ...s, points: pts };
           return { ...s, path, bounds: boundsFromPoints(pts) } as any;
         });
         vectorStore.setState({ shapes: shapesUpd });
@@ -1271,15 +1564,15 @@ export function Shirt() {
         const scaleX = (sb.width + dx) / Math.max(1, sb.width);
         const scaleY = (sb.height + dy) / Math.max(1, sb.height);
         const cx = sb.x; const cy = sb.y;
+        const st = vectorStore.getState();
         const shapesUpd = st.shapes.map(s => {
           if (s.id !== drag.shapeId) return s;
-          const pts = s.path.points.map(p => ({ ...p, x: cx + (p.x - cx) * scaleX, y: cy + (p.y - cy) * scaleY }));
-          const path = { ...s.path, points: pts };
+          const pts = s.points.map(p => ({ ...p, x: cx + (p.x - cx) * scaleX, y: cy + (p.y - cy) * scaleY }));
+          const path = { ...s, points: pts };
           return { ...s, path, bounds: boundsFromPoints(pts) } as any;
         });
         vectorStore.setState({ shapes: shapesUpd });
           renderVectorsWithAnchors();
-      }
       }
       
       return;
@@ -1365,9 +1658,17 @@ export function Shirt() {
         const appState = useApp.getState();
         const newShape = {
           id: st.currentPath.id,
-          type: 'path' as const,
-          path: st.currentPath,
-          tool: appState.activeTool, // Store the tool used to create this path
+          points: st.currentPath.points,
+          closed: st.currentPath.closed,
+          fill: st.currentPath.fill,
+          stroke: st.currentPath.stroke,
+          fillColor: st.currentPath.fillColor,
+          strokeColor: st.currentPath.strokeColor,
+          strokeWidth: st.currentPath.strokeWidth,
+          fillOpacity: st.currentPath.fillOpacity,
+          strokeOpacity: st.currentPath.strokeOpacity,
+          strokeJoin: st.currentPath.strokeJoin,
+          strokeCap: st.currentPath.strokeCap,
           bounds: {
             x: Math.min(...st.currentPath.points.map(p => p.x)),
             y: Math.min(...st.currentPath.points.map(p => p.y)),
@@ -1401,7 +1702,7 @@ export function Shirt() {
       // (don't clear selectedAnchor here)
       
       renderVectorsWithAnchors();
-      setControlsEnabled(true);
+      manageControls('pen', false); // Re-enable controls for pen tool
       return;
     }
     // Check if Alt key is pressed for straight line drawing
@@ -1456,7 +1757,9 @@ export function Shirt() {
       window.dispatchEvent(embroideryEndEvent);
     }
     
-    setControlsEnabled(true);
+    // Re-enable controls for all drawing tools
+    console.log('🎨 Brush tool - Re-enabling controls for:', activeTool);
+    manageControls(activeTool, false);
     paintingActiveRef.current = false;
     
     // Clear text selection if clicking outside
@@ -1466,7 +1769,8 @@ export function Shirt() {
   };
   const onPointerLeave = () => { 
     paintingActiveRef.current = false; 
-    setControlsEnabled(true);
+    // Re-enable controls when leaving the canvas
+    manageControls(activeTool, false);
     document.body.style.cursor = 'default';
   };
 
@@ -1551,9 +1855,9 @@ export function Shirt() {
           canvasY + eraserRadius < bounds.y ||
           canvasY - eraserRadius > bounds.y + bounds.height
         );
-        
+
         if (boundsIntersects) {
-          const points = shape.path.points;
+          const points = shape.points;
           const newPoints: any[] = [];
           let hasIntersectingPoints = false;
           
@@ -1598,7 +1902,7 @@ export function Shirt() {
             shapesToRemove.push(shape.id);
           } else if (hasIntersectingPoints) {
             // Modify the shape by removing intersecting points
-            const newPath = { ...shape.path, points: newPoints };
+            const newPath = { ...shape, points: newPoints };
             shapesToModify.push({ id: shape.id, newPath });
           }
         }
@@ -1642,13 +1946,13 @@ export function Shirt() {
     const layer = getActiveLayer();
     if (!uv || !layer) {
       console.log('Shirt: paintAtEvent - missing UV or layer');
-      return;
+        return;
     }
 
     // Check if Alt key is pressed for straight line drawing
     const isAltPressed = altKeyPressedRef.current || e.altKey || e.originalEvent?.altKey || (e as any).nativeEvent?.altKey || false;
-    
-    
+  
+
     // Handle straight line drawing when Alt is pressed
     if (isAltPressed && (activeTool === 'brush' || activeTool === 'eraser' || activeTool === 'puffPrint' || (activeTool === 'embroidery' && !vectorMode))) {
       const canvas = layer.canvas;
@@ -1693,7 +1997,7 @@ export function Shirt() {
       return;
     }
 
-    
+
     // Handle puff print erasing - always dispatch for eraser tool
     if (activeTool === 'eraser') {
       console.log('Shirt: Dispatching puff erase event:', { u: uv.x, v: 1 - uv.y, pressure: (e as PointerEvent).pressure ?? 1 });
@@ -2419,7 +2723,7 @@ export function Shirt() {
           logRenderingError(`Vector rendering failed for shape ${shape.id}: ${error}`, ['vector-tools', 'shape-rendering']);
         }
     });
-    
+
     // Draw current path as preview/commit with tool-specific rendering (only in vector mode)
     if (st.currentPath && st.currentPath.points.length && appState.vectorMode) {
       const p = st.currentPath;
@@ -2547,7 +2851,7 @@ export function Shirt() {
   function renderVectorsWithAnchors() {
     // Clear any pending render
     if (renderTimeoutRef.current) {
-      clearTimeout(renderTimeoutRef.current);
+      clearTimeout(renderTimeoutRef.current as any);
     }
     
     // Debounce rendering to prevent excessive calls
@@ -2581,8 +2885,8 @@ export function Shirt() {
     }, 16); // ~60fps
   }
   function hitPoint(pt: { x: number; y: number }, s: any): number | null {
-    for (let i = 0; i < s.path.points.length; i++) {
-      const p = s.path.points[i];
+    for (let i = 0; i < s.points.length; i++) {
+      const p = s.points[i];
       const dx = pt.x - p.x;
       const dy = pt.y - p.y;
       if (dx * dx + dy * dy < 8 * 8) return i;
@@ -2591,8 +2895,8 @@ export function Shirt() {
   }
 
   function hitControlHandle(pt: { x: number; y: number }, s: any): {pointIndex: number, type: 'in' | 'out'} | null {
-    for (let i = 0; i < s.path.points.length; i++) {
-      const p = s.path.points[i];
+    for (let i = 0; i < s.points.length; i++) {
+      const p = s.points[i];
       
       // Check control in handle
       if (p.controlIn) {
@@ -2775,6 +3079,91 @@ export function Shirt() {
         });
         
         console.log('GLTF loaded successfully:', gltf);
+        
+        // ===== COMPREHENSIVE MODEL ANALYSIS =====
+        console.log('🎯 ===== MODEL LOADING ANALYSIS =====');
+        console.log('📁 GLTF Scene Info:', {
+          children: gltf.scene.children.length,
+          animations: gltf.animations?.length || 0,
+          cameras: gltf.cameras?.length || 0,
+          scenes: gltf.scenes?.length || 0
+        });
+        
+        let meshCount = 0;
+        let materialCount = 0;
+        let textureCount = 0;
+        const textureTypes: string[] = [];
+        const materialTypes: string[] = [];
+        
+        gltf.scene.traverse((child: any) => {
+          if (child.isMesh) {
+            meshCount++;
+            console.log(`🔸 Mesh #${meshCount}:`, {
+              name: child.name || 'unnamed',
+              geometry: child.geometry?.type || 'unknown',
+              material: child.material?.type || 'unknown',
+              visible: child.visible,
+              castShadow: child.castShadow,
+              receiveShadow: child.receiveShadow
+            });
+            
+            // Analyze materials
+            if (child.material) {
+              const material = child.material;
+              materialCount++;
+              materialTypes.push(material.type);
+              
+              console.log(`🎨 Material #${materialCount} (${material.type}):`, {
+                name: material.name || 'unnamed',
+                color: material.color ? `#${material.color.getHexString()}` : 'none',
+                transparent: material.transparent,
+                opacity: material.opacity,
+                metalness: material.metalness,
+                roughness: material.roughness,
+                emissive: material.emissive ? `#${material.emissive.getHexString()}` : 'none',
+                emissiveIntensity: material.emissiveIntensity
+              });
+              
+              // Analyze textures/maps
+              const maps = [
+                'map', 'normalMap', 'roughnessMap', 'metalnessMap', 
+                'aoMap', 'emissiveMap', 'displacementMap', 'alphaMap',
+                'bumpMap', 'envMap', 'lightMap', 'specularMap'
+              ];
+              
+              maps.forEach(mapName => {
+                if (material[mapName]) {
+                  textureCount++;
+                  textureTypes.push(mapName);
+                  const texture = material[mapName];
+                  console.log(`🖼️  Texture #${textureCount} (${mapName}):`, {
+                    name: texture.name || 'unnamed',
+                    source: texture.source?.data?.src || texture.image?.src || 'embedded',
+                    format: texture.format,
+                    type: texture.type,
+                    wrapS: texture.wrapS,
+                    wrapT: texture.wrapT,
+                    minFilter: texture.minFilter,
+                    magFilter: texture.magFilter,
+                    anisotropy: texture.anisotropy,
+                    flipY: texture.flipY,
+                    colorSpace: texture.colorSpace
+                  });
+                }
+              });
+            }
+          }
+        });
+        
+        console.log('📊 MODEL SUMMARY:', {
+          totalMeshes: meshCount,
+          totalMaterials: materialCount,
+          totalTextures: textureCount,
+          materialTypes: [...new Set(materialTypes)],
+          textureTypes: [...new Set(textureTypes)]
+        });
+        console.log('🎯 ===== END MODEL ANALYSIS =====');
+        
         let foundGeom: THREE.BufferGeometry | null = null;
         gltf.scene.traverse((child: any) => {
           if (!foundGeom && child.isMesh && child.geometry) {
@@ -2856,25 +3245,87 @@ export function Shirt() {
 
   // OBJ loader
   const loadOBJModel = async (url: string) => {
+    console.log('Loading OBJ model from URL:', url);
     const loader = new OBJLoader();
     const object = await new Promise<any>((resolve, reject) => {
       loader.load(url, resolve, undefined, reject);
     });
+    
+    // ===== COMPREHENSIVE OBJ MODEL ANALYSIS =====
+    console.log('🎯 ===== OBJ MODEL LOADING ANALYSIS =====');
+    console.log('📁 OBJ Object Info:', {
+      children: object.children.length,
+      type: object.type,
+      name: object.name || 'unnamed'
+    });
+    
+    let meshCount = 0;
+    let materialCount = 0;
+    let textureCount = 0;
+    const textureTypes: string[] = [];
+    const materialTypes: string[] = [];
     
     // Find the first geometry and texture in the object
     let foundGeom: THREE.BufferGeometry | null = null;
     let modelTexture: THREE.Texture | null = null;
     
     object.traverse((child: any) => {
-      if (!foundGeom && child.isMesh && child.geometry) {
-        foundGeom = child.geometry as THREE.BufferGeometry;
-      }
-                      if (!modelTexture && child.isMesh && child.material) {
-          if (child.material.map) {
-            modelTexture = child.material.map;
-          }
+      if (child.isMesh) {
+        meshCount++;
+        console.log(`🔸 OBJ Mesh #${meshCount}:`, {
+          name: child.name || 'unnamed',
+          geometry: child.geometry?.type || 'unknown',
+          material: child.material?.type || 'unknown',
+          visible: child.visible
+        });
+        
+        if (!foundGeom && child.geometry) {
+          foundGeom = child.geometry as THREE.BufferGeometry;
         }
+        
+        if (child.material) {
+          const material = child.material;
+          materialCount++;
+          materialTypes.push(material.type);
+          
+          console.log(`🎨 OBJ Material #${materialCount} (${material.type}):`, {
+            name: material.name || 'unnamed',
+            color: material.color ? `#${material.color.getHexString()}` : 'none',
+            transparent: material.transparent,
+            opacity: material.opacity
+          });
+          
+          // Analyze textures/maps for OBJ
+          const maps = ['map', 'normalMap', 'bumpMap', 'specularMap'];
+          maps.forEach(mapName => {
+            if (material[mapName]) {
+              textureCount++;
+              textureTypes.push(mapName);
+              const texture = material[mapName];
+              console.log(`🖼️  OBJ Texture #${textureCount} (${mapName}):`, {
+                name: texture.name || 'unnamed',
+                source: texture.source?.data?.src || texture.image?.src || 'embedded',
+                format: texture.format,
+                type: texture.type
+              });
+              
+              if (!modelTexture && mapName === 'map') {
+                modelTexture = texture;
+              }
+            }
+          });
+        }
+      }
     });
+    
+    console.log('📊 OBJ MODEL SUMMARY:', {
+      totalMeshes: meshCount,
+      totalMaterials: materialCount,
+      totalTextures: textureCount,
+      materialTypes: [...new Set(materialTypes)],
+      textureTypes: [...new Set(textureTypes)]
+    });
+    console.log('🎯 ===== END OBJ MODEL ANALYSIS =====');
     
     if (foundGeom) {
       setGeometry(foundGeom);
@@ -3089,7 +3540,7 @@ export function Shirt() {
       console.log('🧹 Clearing active layer...');
       
       // First, clear the vector store completely
-      vectorStore.setAll({
+      vectorStore.setState({
         shapes: [],
         selected: [],
         currentPath: null
@@ -3197,7 +3648,7 @@ export function Shirt() {
     if (!uv) return;
     
     e.stopPropagation(); // Prevent model rotation
-    setControlsEnabled(false); // Disable camera controls
+    manageControls('embroidery', true); // Smart control management
     
     console.log('Starting embroidery at UV:', uv.x, uv.y);
     
@@ -3226,6 +3677,75 @@ export function Shirt() {
     });
     window.dispatchEvent(embroideryMoveEvent);
   }
+
+
+  // Render
+  return (
+    <>
+      {modelScene ? (
+        <group
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerOver={onPointerOver}
+          onPointerUp={onPointerUp}
+          onPointerLeave={onPointerLeave}
+          onDoubleClick={onDoubleClick}
+        >
+          <primitive 
+            object={modelScene!} 
+            castShadow 
+            receiveShadow 
+          />
+        </group>
+      ) : (
+        geometry && material ? (
+          <mesh
+            ref={meshRef}
+            geometry={geometry!}
+            material={material}
+            castShadow
+            receiveShadow
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerOver={onPointerOver}
+            onPointerUp={onPointerUp}
+            onPointerLeave={onPointerLeave}
+            onDoubleClick={onDoubleClick}
+          />
+        ) : null
+      )}
+      
+      <Html fullscreen>
+        <canvas
+          ref={overlayCanvasRef}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            width: '100%',
+            height: '100%',
+            pointerEvents: 'none'
+          }}
+        />
+      </Html>
+      
+      {loadingError && (
+        <Html position={[0, 0, 0]} center>
+          <div style={{
+            background: 'rgba(0,0,0,0.8)',
+            color: 'white',
+            padding: '10px',
+            borderRadius: '5px',
+            fontSize: '12px',
+            maxWidth: '200px',
+            textAlign: 'center'
+          }}>
+            <div>Model Loading Error</div>
+            <div style={{ fontSize: '10px', marginTop: '5px' }}>
+              {loadingError}
+            </div>
+          </div>
+        </Html>
+      )}
+    </>
+  );
 }
-
-

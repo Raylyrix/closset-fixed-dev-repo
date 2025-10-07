@@ -13,7 +13,7 @@
 import { VectorState, VectorPath, VectorPoint, VectorTool } from './VectorStateManager';
 
 export interface AdvancedToolState {
-  activeTool: VectorTool;
+  activeTool: string;
   isActive: boolean;
   cursor: string;
   canUndo: boolean;
@@ -61,9 +61,9 @@ export class AdvancedVectorTools {
   private static instance: AdvancedVectorTools;
   
   // Core state
-  private state: AdvancedToolState;
-  private dragState: DragState;
-  private selection: SelectionState;
+  private state!: AdvancedToolState;
+  private dragState!: DragState;
+  private selection!: SelectionState;
   
   // Tool-specific state
   private currentPath: VectorPath | null = null;
@@ -130,7 +130,7 @@ export class AdvancedVectorTools {
   // CORE TOOL SYSTEM
   // ============================================================================
   
-  setTool(tool: VectorTool): ToolResult {
+  setTool(tool: string): ToolResult {
     try {
       this.state.activeTool = tool;
       this.state.cursor = this.getToolCursor(tool);
@@ -151,8 +151,8 @@ export class AdvancedVectorTools {
     }
   }
   
-  private getToolCursor(tool: VectorTool): string {
-    const cursors: Record<VectorTool, string> = {
+  private getToolCursor(tool: string): string {
+    const cursors: Record<string, string> = {
       'select': 'default',
       'pen': 'crosshair',
       'pencil': 'crosshair',
@@ -400,8 +400,9 @@ export class AdvancedVectorTools {
     const gridSize = this.state.gridSize;
     return {
       x: Math.round(point.x / gridSize) * gridSize,
-      y: Math.round(point.y / gridSize) * gridSize
-    };
+      y: Math.round(point.y / gridSize) * gridSize,
+      type: point.type ?? 'corner'
+    } as VectorPoint;
   }
   
   private snapToGuides(point: VectorPoint): VectorPoint {
@@ -433,7 +434,17 @@ export class AdvancedVectorTools {
           strokeWidth: 2,
           fill: 'none',
           opacity: 1
-        }
+        },
+        fill: false,
+        stroke: true,
+        fillColor: '#000000',
+        strokeColor: '#000000',
+        strokeWidth: 2,
+        fillOpacity: 1,
+        strokeOpacity: 1,
+        strokeJoin: 'round',
+        strokeCap: 'round',
+        bounds: { x: point.x, y: point.y, width: 0, height: 0 }
       };
       
       this.currentPath = newPath;

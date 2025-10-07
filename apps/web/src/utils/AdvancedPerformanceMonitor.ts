@@ -52,7 +52,7 @@ export class AdvancedPerformanceMonitor {
   private renderTimes: number[] = [];
   private alerts: PerformanceAlert[] = [];
   private isMonitoring = false;
-  private monitoringInterval: NodeJS.Timeout | null = null;
+  private monitoringInterval: ReturnType<typeof setInterval> | null = null;
   private lastFrameTime = 0;
   private frameCount = 0;
   private alertCallbacks: ((alert: PerformanceAlert) => void)[] = [];
@@ -373,4 +373,28 @@ export class AdvancedPerformanceMonitor {
 
 // Export singleton instance
 export const advancedPerformanceMonitor = AdvancedPerformanceMonitor.getInstance();
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

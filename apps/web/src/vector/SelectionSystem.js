@@ -10,10 +10,13 @@
  * - Selection persistence
  * - Visual feedback
  */
+import { isFeatureEnabled } from '../config/featureFlags';
+import VectorProjectionService from './VectorProjectionService';
 export class SelectionSystem {
     constructor() {
         this.transformState = null;
         this.eventListeners = new Map();
+        this.projectionService = VectorProjectionService.getInstance();
         // Performance optimization
         this.selectionCache = new Map();
         this.lastUpdateTime = 0;
@@ -301,7 +304,13 @@ export class SelectionSystem {
                     x: element.bounds.x + deltaX,
                     y: element.bounds.y + deltaY
                 };
-                this.updateElement(id, { bounds: newBounds });
+                const updates = { bounds: newBounds };
+                // Optional surface rebuild for vector-like elements with points
+                if (isFeatureEnabled('vectorGlobalOps') && element.data && Array.isArray(element.data.points)) {
+                    const rebuilt = this.projectionService.rebuildCurveOnSurface(element.data.points);
+                    updates.data = { ...element.data, points: rebuilt };
+                }
+                this.updateElement(id, updates);
             }
         }
     }

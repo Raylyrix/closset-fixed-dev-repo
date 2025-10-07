@@ -4,20 +4,19 @@ import { useApp } from '../App';
 // Import all tool components
 import { PatternMaker } from './PatternMaker';
 import { AdvancedSelection } from './AdvancedSelection';
-import { AIDesignAssistant } from './AIDesignAssistant';
-import { PrintReadyExport } from './PrintReadyExport';
+// Removed AI Assistant and Export features
 import { CloudSync } from './CloudSync';
 import { LayerEffects } from './LayerEffects';
 import { ColorGrading } from './ColorGrading';
-import { AnimationTools } from './AnimationTools';
+// Removed Animation tools
 import { DesignTemplates } from './DesignTemplates';
 import { BatchProcessing } from './BatchProcessing';
 import { AdvancedBrushSystem } from './AdvancedBrushSystem';
-import { MeshDeformationTool } from './MeshDeformationTool';
 import { ProceduralGenerator } from './ProceduralGenerator';
-import { ThreeDPaintingTool } from './3DPaintingTool';
+// Removed 3D Painting tool
 import { SmartFillTool } from './SmartFillTool';
-import EmbroideryTool from './EmbroideryTool';
+// Embroidery settings now in RightPanelNew.tsx - no separate component needed
+import { ProfessionalVectorTool } from './ProfessionalVectorTool';
 
 interface ToolRouterProps {
   active: boolean;
@@ -51,8 +50,9 @@ export function ToolRouter({ active }: ToolRouterProps) {
     'transform': null, // Handled by main canvas
     'move': null, // Handled by main canvas
 
-    // Vector & Paths (handled directly on 3D model; no panel)
-    'vectorTools': null,
+    // Vector & Paths (UV-based 3D surface drawing)
+    'vectorTools': ProfessionalVectorTool,
+    'vector': ProfessionalVectorTool,
 
     // Effects & Filters
     'layerEffects': LayerEffects,
@@ -61,27 +61,27 @@ export function ToolRouter({ active }: ToolRouterProps) {
     // Textile Design
     'puffPrint': null, // Handled by existing PuffPrintTool
     'patternMaker': PatternMaker,
-    'embroidery': EmbroideryTool, // Enhanced embroidery tool with advanced features
+    'embroidery': null, // Settings in RightPanelNew.tsx, drawing on 3D model
 
     // AI & Automation
-    'aiAssistant': AIDesignAssistant,
+    'aiAssistant': null,
     'batch': BatchProcessing,
 
     // Media & Animation
-    'animation': AnimationTools,
+    'animation': null,
 
     // Assets & Templates
     'templates': DesignTemplates,
 
     // Export & Sync
-    'printExport': PrintReadyExport,
+    'printExport': null,
     'cloudSync': CloudSync,
 
     // Advanced Tools
     'advancedBrush': AdvancedBrushSystem,
-    'meshDeformation': MeshDeformationTool,
+    'meshDeformation': null,
     'proceduralGenerator': ProceduralGenerator,
-    '3dPainting': ThreeDPaintingTool,
+    '3dPainting': null,
     'smartFill': SmartFillTool,
 
     // History & Undo
@@ -107,30 +107,38 @@ export function ToolRouter({ active }: ToolRouterProps) {
   });
 
 
-  // Special handling for embroidery tool - create a right sidebar
-  if (activeTool === 'embroidery') {
+  // Right sidebar tools (embroidery, advanced brush)
+  if (activeTool === 'embroidery' || activeTool === 'advancedBrush') {
+    const width = activeTool === 'advancedBrush' ? '360px' : '350px';
+    const className = `${activeTool}-right-sidebar`;
     return (
-      <div className="embroidery-right-sidebar" style={{
-        position: 'fixed',
-        top: '60px', // Below the toolbar
-        right: '0',
-        width: '350px',
-        height: 'calc(100vh - 60px)',
-        background: 'linear-gradient(135deg, #1E293B 0%, #0F172A 100%)',
-        borderLeft: '1px solid #334155',
-        zIndex: 1001, // Higher than other panels
-        overflow: 'hidden',
-        display: 'flex',
-        flexDirection: 'column'
-      }}>
-        <div style={{
-          flex: 1,
-          overflowY: 'auto',
-          overflowX: 'hidden',
-          padding: '0',
-          scrollbarWidth: 'thin',
-          scrollbarColor: '#475569 #1E293B'
-        }}>
+      <div
+        className={className}
+        style={{
+          position: 'fixed',
+          top: '60px',
+          right: 0,
+          width,
+          height: 'calc(100vh - 60px)',
+          background: 'linear-gradient(135deg, #1E293B 0%, #0F172A 100%)',
+          borderLeft: '1px solid #334155',
+          zIndex: 1001,
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+          boxShadow: '-12px 0 30px rgba(2, 6, 23, 0.35)'
+        }}
+      >
+        <div
+          style={{
+            flex: 1,
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            padding: activeTool === 'advancedBrush' ? '0' : '0',
+            scrollbarWidth: 'thin',
+            scrollbarColor: '#475569 #1E293B'
+          }}
+        >
           <ToolComponent active={true} />
         </div>
       </div>

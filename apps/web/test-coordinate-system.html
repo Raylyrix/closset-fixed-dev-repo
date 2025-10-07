@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coordinate System Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .test-container {
+            border: 1px solid #ccc;
+            margin: 10px 0;
+            padding: 10px;
+        }
+        canvas {
+            border: 1px solid #000;
+            margin: 10px 0;
+        }
+        .result {
+            background: #f0f0f0;
+            padding: 10px;
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Coordinate System Test</h1>
+    
+    <div class="test-container">
+        <h3>Test 1: Three.js Coordinate System (Y=0 at bottom)</h3>
+        <canvas id="canvas1" width="400" height="300"></canvas>
+        <div id="result1" class="result"></div>
+    </div>
+    
+    <div class="test-container">
+        <h3>Test 2: Canvas Coordinate System (Y=0 at top)</h3>
+        <canvas id="canvas2" width="400" height="300"></canvas>
+        <div id="result2" class="result"></div>
+    </div>
+    
+    <div class="test-container">
+        <h3>Test 3: Click Test</h3>
+        <canvas id="canvas3" width="400" height="300"></canvas>
+        <div id="result3" class="result"></div>
+    </div>
+
+    <script type="module">
+        // Simulate the coordinate system API
+        class CoordinateSystem {
+            constructor() {
+                this.isInitialized = false;
+                this.coordinateSystem = null;
+            }
+
+            async initialize() {
+                this.coordinateSystem = 'threejs';
+                this.isInitialized = true;
+                console.log('Coordinate system initialized:', this.coordinateSystem);
+            }
+
+            convertUVToCanvas(uv, canvasSize, system = null) {
+                const coordSystem = system || this.coordinateSystem;
+                
+                const x = Math.floor(uv.x * canvasSize.width);
+                let y;
+
+                if (coordSystem === 'threejs') {
+                    // Three.js UV coordinates: Y=0 at bottom, Y=1 at top
+                    // Canvas coordinates: Y=0 at top, Y=height at bottom
+                    y = Math.floor((1 - uv.y) * canvasSize.height);
+                } else {
+                    // Canvas UV coordinates: Y=0 at top, Y=1 at bottom
+                    y = Math.floor(uv.y * canvasSize.height);
+                }
+
+                return { x, y };
+            }
+        }
+
+        const coordinateSystem = new CoordinateSystem();
+        await coordinateSystem.initialize();
+
+        // Test 1: Three.js coordinate system
+        const canvas1 = document.getElementById('canvas1');
+        const ctx1 = canvas1.getContext('2d');
+        const result1 = document.getElementById('result1');
+        
+        // Draw test points
+        ctx1.fillStyle = 'red';
+        ctx1.fillRect(0, 0, 10, 10); // Top-left corner
+        
+        ctx1.fillStyle = 'blue';
+        ctx1.fillRect(390, 290, 10, 10); // Bottom-right corner
+        
+        // Test UV to Canvas conversion
+        const testUVs = [
+            { x: 0, y: 0 },     // Bottom-left in UV
+            { x: 1, y: 0 },     // Bottom-right in UV
+            { x: 0, y: 1 },     // Top-left in UV
+            { x: 1, y: 1 },     // Top-right in UV
+            { x: 0.5, y: 0.5 }  // Center in UV
+        ];
+        
+        let resultText1 = 'Three.js Coordinate System Test:<br>';
+        testUVs.forEach((uv, index) => {
+            const canvasCoords = coordinateSystem.convertUVToCanvas(uv, { width: 400, height: 300 });
+            ctx1.fillStyle = 'green';
+            ctx1.fillRect(canvasCoords.x - 2, canvasCoords.y - 2, 4, 4);
+            resultText1 += `UV(${uv.x}, ${uv.y}) → Canvas(${canvasCoords.x}, ${canvasCoords.y})<br>`;
+        });
+        result1.innerHTML = resultText1;
+
+        // Test 2: Canvas coordinate system
+        const canvas2 = document.getElementById('canvas2');
+        const ctx2 = canvas2.getContext('2d');
+        const result2 = document.getElementById('result2');
+        
+        // Draw test points
+        ctx2.fillStyle = 'red';
+        ctx2.fillRect(0, 0, 10, 10); // Top-left corner
+        
+        ctx2.fillStyle = 'blue';
+        ctx2.fillRect(390, 290, 10, 10); // Bottom-right corner
+        
+        let resultText2 = 'Canvas Coordinate System Test:<br>';
+        testUVs.forEach((uv, index) => {
+            const canvasCoords = coordinateSystem.convertUVToCanvas(uv, { width: 400, height: 300 }, 'canvas');
+            ctx2.fillStyle = 'green';
+            ctx2.fillRect(canvasCoords.x - 2, canvasCoords.y - 2, 4, 4);
+            resultText2 += `UV(${uv.x}, ${uv.y}) → Canvas(${canvasCoords.x}, ${canvasCoords.y})<br>`;
+        });
+        result2.innerHTML = resultText2;
+
+        // Test 3: Click test
+        const canvas3 = document.getElementById('canvas3');
+        const ctx3 = canvas3.getContext('2d');
+        const result3 = document.getElementById('result3');
+        
+        // Draw a simple grid
+        ctx3.strokeStyle = '#ccc';
+        for (let i = 0; i <= 400; i += 50) {
+            ctx3.beginPath();
+            ctx3.moveTo(i, 0);
+            ctx3.lineTo(i, 300);
+            ctx3.stroke();
+        }
+        for (let i = 0; i <= 300; i += 50) {
+            ctx3.beginPath();
+            ctx3.moveTo(0, i);
+            ctx3.lineTo(400, i);
+            ctx3.stroke();
+        }
+        
+        canvas3.addEventListener('click', (e) => {
+            const rect = canvas3.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            // Convert canvas coordinates to UV
+            const uv = {
+                x: x / 400,
+                y: y / 300
+            };
+            
+            // Convert back to canvas using Three.js system
+            const canvasCoords = coordinateSystem.convertUVToCanvas(uv, { width: 400, height: 300 });
+            
+            // Draw the result
+            ctx3.fillStyle = 'red';
+            ctx3.fillRect(x - 5, y - 5, 10, 10);
+            
+            ctx3.fillStyle = 'blue';
+            ctx3.fillRect(canvasCoords.x - 3, canvasCoords.y - 3, 6, 6);
+            
+            result3.innerHTML = `Click at Canvas(${x}, ${y}) → UV(${uv.x.toFixed(3)}, ${uv.y.toFixed(3)}) → Three.js Canvas(${canvasCoords.x}, ${canvasCoords.y})`;
+        });
+    </script>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

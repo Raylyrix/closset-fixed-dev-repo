@@ -297,7 +297,7 @@ class DigitalPrintRenderer implements MediaRenderer {
   render(context: CanvasRenderingContext2D, data: any, properties: MediaProperties): void {
     context.save();
     context.globalAlpha = properties.opacity;
-    context.globalCompositeOperation = properties.blendMode;
+    context.globalCompositeOperation = properties.blendMode as GlobalCompositeOperation;
     
     // Render digital print
     if (data.paths) {

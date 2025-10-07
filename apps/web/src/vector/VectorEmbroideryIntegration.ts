@@ -41,10 +41,10 @@ export interface IntegrationConfig {
 export class VectorEmbroideryIntegration {
   private static instance: VectorEmbroideryIntegration;
   
-  private state: IntegrationState;
-  private config: IntegrationConfig;
-  private vectorTools: AdvancedVectorTools;
-  private mediaIntegration: UniversalMediaIntegration;
+  private state!: IntegrationState;
+  private config!: IntegrationConfig;
+  private vectorTools!: AdvancedVectorTools;
+  private mediaIntegration!: UniversalMediaIntegration;
   
   // Event system
   private eventListeners: Map<string, Function[]> = new Map();
@@ -107,13 +107,13 @@ export class VectorEmbroideryIntegration {
   
   private setupEventHandlers(): void {
     // Listen for vector tool changes
-    this.vectorTools.on('tool:changed', (data) => {
+    this.vectorTools.on('tool:changed', (data: any) => {
       this.state.currentTool = data.tool;
       this.emit('tool:changed', data);
     });
     
     // Listen for media type changes
-    this.mediaIntegration.on('mediaType:changed', (data) => {
+    this.mediaIntegration.on('mediaType:changed', (data: any) => {
       this.state.currentMediaType = data.mediaType.id;
       this.emit('mediaType:changed', data);
     });
@@ -273,13 +273,23 @@ export class VectorEmbroideryIntegration {
         points: [embroideryPoint],
         type: 'embroidery',
         closed: false,
+        // Required rendering attributes for VectorPath
+        fill: false,
+        stroke: true,
+        fillColor: '#000000',
+        strokeColor: '#ff69b4',
+        strokeWidth: 3,
+        fillOpacity: 1,
+        strokeOpacity: 1,
+        strokeJoin: 'round',
+        strokeCap: 'round',
+        bounds: { x: embroideryPoint.x, y: embroideryPoint.y, width: 0, height: 0 },
         style: {
           stroke: '#ff69b4',
           strokeWidth: 3,
           fill: 'none',
           opacity: 1
-        },
-        embroideryType: this.state.currentMediaType
+        }
       };
       
       this.state.dragState.dragType = 'draw';
@@ -349,7 +359,7 @@ export class VectorEmbroideryIntegration {
   
   private convertPointToEmbroidery(point: VectorPoint): VectorPoint {
     // Apply precision and snapping for embroidery
-    let convertedPoint = { ...point };
+    let convertedPoint: VectorPoint = { ...point, type: point.type ?? 'corner' };
     
     if (this.config.enablePreciseAnchors) {
       convertedPoint = this.applyPrecision(convertedPoint);
@@ -364,8 +374,9 @@ export class VectorEmbroideryIntegration {
     
     return {
       x: Math.round(point.x / precision) * precision,
-      y: Math.round(point.y / precision) * precision
-    };
+      y: Math.round(point.y / precision) * precision,
+      type: point.type ?? 'corner'
+    } as VectorPoint;
   }
   
   // ============================================================================

@@ -5,7 +5,7 @@ type Props = {
   x: number;
   y: number;
   visible: boolean;
-  tool: 'brush' | 'eraser' | 'fill' | 'picker' | 'smudge' | 'blur' | 'select' | 'transform' | 'move' | 'undo' | 'redo' | 'puffPrint' | 'line' | 'rect' | 'ellipse' | 'gradient' | 'embroidery' | 'vectorTools' | 'pen' | 'curvature' | 'addAnchor' | 'removeAnchor' | 'convertAnchor' | 'pathSelection';
+  tool: 'brush' | 'eraser' | 'fill' | 'picker' | 'smudge' | 'blur' | 'select' | 'transform' | 'move' | 'undo' | 'redo' | 'puffPrint' | 'line' | 'rect' | 'ellipse' | 'gradient' | 'embroidery' | 'vectorTools' | 'pen' | 'curvature' | 'addAnchor' | 'removeAnchor' | 'convertAnchor' | 'pathSelection' | 'text' | 'shapes';
   size: number;
   shape?: 'round' | 'square' | 'airbrush' | 'calligraphy' | 'diamond' | 'triangle';
   angle?: number;
@@ -15,18 +15,20 @@ export const CursorOverlay = memo(function CursorOverlay({ x, y, visible, tool, 
   const vectorMode = useApp(s => (s as any).vectorMode);
   if (!visible) return null;
   // Treat vectorMode as an active drawing mode so overlay appears and uses plus cursor
-  const drawing = vectorMode || ['brush','eraser','fill','picker','smudge','blur','select','transform','move','puffPrint','line','rect','ellipse','gradient','embroidery','vectorTools','pen','curvature','addAnchor','removeAnchor','convertAnchor','pathSelection'].includes(tool);
+  const drawing = vectorMode || ['brush','eraser','fill','picker','smudge','blur','select','transform','move','puffPrint','line','rect','ellipse','gradient','embroidery','vectorTools','pen','curvature','addAnchor','removeAnchor','convertAnchor','pathSelection','text','shapes'].includes(tool);
   if (!drawing) return null;
 
   const diameter = Math.max(6, Math.min(256, size));
   const isVectorTool = vectorMode || tool === 'vectorTools' || ['pen', 'curvature', 'addAnchor', 'removeAnchor', 'convertAnchor', 'pathSelection'].includes(tool);
-  const isCircle = (tool === 'brush' || tool === 'eraser' || tool === 'smudge' || tool === 'blur' || tool === 'puffPrint' || tool === 'line' || tool === 'rect' || tool === 'ellipse' || tool === 'gradient' || tool === 'embroidery') && shape !== 'square' && !isVectorTool;
+  const isCircle = (tool === 'brush' || tool === 'eraser' || tool === 'smudge' || tool === 'blur' || tool === 'puffPrint' || tool === 'line' || tool === 'rect' || tool === 'ellipse' || tool === 'gradient' || tool === 'embroidery' || tool === 'text' || tool === 'shapes') && shape !== 'square' && !isVectorTool;
   const border = (
     tool === 'eraser' ? '1px dashed rgba(255,255,255,0.95)'
     : tool === 'smudge' ? '2px double rgba(147,197,253,0.9)'
     : tool === 'blur' ? '1px dotted rgba(250,204,21,0.9)'
     : tool === 'puffPrint' ? '2px solid rgba(255,182,193,0.95)'
     : tool === 'embroidery' ? '2px solid rgba(255,105,180,0.95)'
+    : tool === 'text' ? '2px solid rgba(255,255,255,0.95)'
+    : tool === 'shapes' ? '2px solid rgba(34,197,94,0.95)'
     : '1px solid rgba(103,232,249,0.95)'
   );
 
@@ -58,6 +60,21 @@ export const CursorOverlay = memo(function CursorOverlay({ x, y, visible, tool, 
           <svg className="cursor-svg" style={{ ...common, marginLeft: -10, marginTop: -10 }} width="24" height="24" viewBox="0 0 24 24">
             <path d="M12 2v20M2 12h20" stroke="#67e8f9" strokeWidth="1.5"/>
             <path d="M12 2l3 3-3-3-3 3 3-3M12 22l3-3-3 3-3-3 3 3M2 12l3 3-3-3 3-3-3 3M22 12l-3 3 3-3-3-3 3 3" stroke="#67e8f9" strokeWidth="1.2"/>
+          </svg>
+        );
+      case 'text':
+        return (
+          <svg className="cursor-svg" style={{ ...common, marginLeft: 8, marginTop: -28 }} width="20" height="20" viewBox="0 0 24 24">
+            <path d="M4 6h16M4 12h16M4 18h12" stroke="#ffffff" strokeWidth="2" strokeLinecap="round"/>
+            <path d="M8 2v4" stroke="#ffffff" strokeWidth="2" strokeLinecap="round"/>
+          </svg>
+        );
+      case 'shapes':
+        return (
+          <svg className="cursor-svg" style={{ ...common, marginLeft: 8, marginTop: -28 }} width="20" height="20" viewBox="0 0 24 24">
+            <rect x="3" y="3" width="7" height="7" stroke="#22c55e" strokeWidth="1.5" fill="none"/>
+            <circle cx="17" cy="7" r="3" stroke="#22c55e" strokeWidth="1.5" fill="none"/>
+            <polygon points="12,17 8,21 16,21" stroke="#22c55e" strokeWidth="1.5" fill="none"/>
           </svg>
         );
       case 'move':

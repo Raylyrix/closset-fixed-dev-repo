@@ -20,7 +20,9 @@ export function PuffPrintManager() {
   const [puffSettings, setPuffSettings] = useState({
     intensity: 1.0,
     color: '#ffffff',
-    opacity: 1.0
+    opacity: 1.0,
+    normalStrength: 0.8,
+    edgeSoftness: 0.03
   });
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -58,6 +60,14 @@ export function PuffPrintManager() {
     if (puffLayers.length === 0) {
       createPuffLayer('Puff Print 1');
     }
+
+    // Initialize globals so overlay picks up correct values
+    try {
+      const w: any = window as any;
+      w.__puffColor = puffSettings.color;
+      w.__puffOpacity = puffSettings.opacity;
+      w.__puffIntensity = puffSettings.intensity;
+    } catch {}
   }, [isOpen, setTool]);
 
   // Create a new puff print layer
@@ -86,7 +96,66 @@ export function PuffPrintManager() {
 
     setPuffLayers(prev => [...prev, layer]);
     setActivePuffLayerId(layer.id);
+    try { (window as any).__puffCanvas = canvas; window.dispatchEvent(new Event('puff-updated')); } catch {}
   };
+
+  // Allow vector system to push a path into the active puff layer and auto-apply it
+  useEffect(() => {
+    function applyPathToActivePuff(sampled: Array<{ x: number; y: number }>, opts?: { color?: string; width?: number; opacity?: number; mode?: GlobalCompositeOperation }) {
+      try { console.log('[PuffManager] __applyPuffFromVector', { points: sampled?.length || 0, width: opts?.width, opacity: opts?.opacity }); } catch {}
+      const layer = activePuffLayerId ? puffLayers.find(l => l.id === activePuffLayerId) : null;
+      if (!layer) return;
+      const ctx = layer.canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.save();
+      ctx.globalAlpha = typeof opts?.opacity === 'number' ? opts.opacity : 1;
+      ctx.globalCompositeOperation = opts?.mode || 'source-over';
+      // IMPORTANT: Puff canvas is a HEIGHT MASK. Always draw the mask in white so the red channel is high.
+      // The visible color is applied by the shader via puffColor uniform.
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = Math.max(1, opts?.width || 4);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      if (sampled.length) {
+        ctx.beginPath();
+        ctx.moveTo(sampled[0].x, sampled[0].y);
+        for (let i = 1; i < sampled.length; i++) ctx.lineTo(sampled[i].x, sampled[i].y);
+        ctx.stroke();
+        // Stamp small circles to ensure visibility for short/straight paths
+        const r = Math.max(1, (opts?.width || 4) * 0.5);
+        for (let i = 0; i < sampled.length; i += Math.max(1, Math.floor(sampled.length / 12))) {
+          const p = sampled[i];
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+          ctx.fillStyle = '#ffffff';
+          ctx.fill();
+        }
+      }
+      ctx.restore();
+      // Mirror to global so overlay can find it even if manager closes
+      try { (window as any).__puffCanvas = layer.canvas; } catch {}
+      // Immediately apply to the model so user sees result
+      applyPuffPrint();
+      try { window.dispatchEvent(new Event('puff-updated')); } catch {}
+    }
+    (window as any).__applyPuffFromVector = applyPathToActivePuff;
+    (window as any).__getActivePuffCanvas = () => {
+      const layer = activePuffLayerId ? puffLayers.find(l => l.id === activePuffLayerId) : null;
+      return layer?.canvas || null;
+    };
+    // Keep global mirror in sync when dependencies change
+    try {
+      const layer = activePuffLayerId ? puffLayers.find(l => l.id === activePuffLayerId) : null;
+      if (layer?.canvas) {
+        (window as any).__puffCanvas = layer.canvas;
+        window.dispatchEvent(new Event('puff-updated'));
+      }
+    } catch {}
+    return () => {
+      try { delete (window as any).__applyPuffFromVector; } catch {}
+      try { delete (window as any).__getActivePuffCanvas; } catch {}
+    };
+  }, [activePuffLayerId, puffLayers, composedCanvas, puffSettings.color]);
 
   // Delete a puff print layer
   const deletePuffLayer = (id: string) => {
@@ -113,6 +182,35 @@ export function PuffPrintManager() {
   // Update puff settings
   const updatePuffSettings = (key: string, value: number | string) => {
     setPuffSettings(prev => ({ ...prev, [key]: value }));
+    // Expose for debugging/other systems
+    try {
+      const w: any = window as any;
+      if (key === 'intensity') w.__puffIntensity = value;
+      if (key === 'opacity') w.__puffOpacity = value;
+      if (key === 'color') w.__puffColor = value;
+      if (key === 'normalStrength') w.__puffNormalStrength = value;
+      if (key === 'edgeSoftness') w.__puffEdgeSoftness = value;
+    } catch {}
+    // Propagate to materials that support uniforms
+    try {
+      if (modelScene) {
+        modelScene.traverse((child: any) => {
+          const mat: any = child?.material;
+          if (!mat) return;
+          const setUniform = (m: any) => {
+            if (m?.uniforms) {
+              if (key === 'intensity' && m.uniforms.puffIntensity) m.uniforms.puffIntensity.value = value as number;
+              if (key === 'opacity' && m.uniforms.puffOpacity) m.uniforms.puffOpacity.value = value as number;
+              if (key === 'color' && m.uniforms.puffColor) try { m.uniforms.puffColor.value = new THREE.Color(value as string); } catch {}
+              if (key === 'normalStrength' && m.uniforms.normalStrength) m.uniforms.normalStrength.value = value as number;
+              if (key === 'edgeSoftness' && m.uniforms.edgeSoftness) m.uniforms.edgeSoftness.value = value as number;
+              m.needsUpdate = true;
+            }
+          };
+          if (Array.isArray(mat)) mat.forEach(setUniform); else setUniform(mat);
+        });
+      }
+    } catch {}
   };
 
   // Apply puff print to model
@@ -144,17 +242,35 @@ export function PuffPrintManager() {
             child.material.forEach((mat: any) => {
               if (mat.map) {
                 mat.map.image = tempCanvas;
+                // Quality filters for smoother sampling
+                mat.map.generateMipmaps = true;
+                mat.map.minFilter = THREE.LinearMipmapLinearFilter;
+                mat.map.magFilter = THREE.LinearFilter;
                 mat.map.needsUpdate = true;
               }
             });
           } else {
             if (child.material.map) {
               child.material.map.image = tempCanvas;
+              child.material.map.generateMipmaps = true;
+              child.material.map.minFilter = THREE.LinearMipmapLinearFilter;
+              child.material.map.magFilter = THREE.LinearFilter;
               child.material.map.needsUpdate = true;
             }
           }
           child.material.needsUpdate = true;
         }
+      });
+      // Also propagate shader-specific uniforms after applying
+      modelScene.traverse((child: any) => {
+        const mats: any[] = Array.isArray(child.material) ? child.material : [child.material];
+        mats.forEach((m: any) => {
+          if (m?.uniforms) {
+            if (m.uniforms.normalStrength) m.uniforms.normalStrength.value = puffSettings.normalStrength;
+            if (m.uniforms.edgeSoftness) m.uniforms.edgeSoftness.value = puffSettings.edgeSoftness;
+            m.needsUpdate = true;
+          }
+        });
       });
     }
   };
@@ -361,6 +477,32 @@ export function PuffPrintManager() {
                 onChange={(e) => updatePuffSettings('opacity', parseFloat(e.target.value))}
               />
               <span>{puffSettings.opacity}</span>
+            </div>
+
+            <div className="setting-group">
+              <label>Normal Strength</label>
+              <input
+                type="range"
+                min={0}
+                max={2}
+                step={0.05}
+                value={puffSettings.normalStrength}
+                onChange={(e) => updatePuffSettings('normalStrength', parseFloat(e.target.value))}
+              />
+              <span>{puffSettings.normalStrength.toFixed(2)}</span>
+            </div>
+
+            <div className="setting-group">
+              <label>Edge Softness</label>
+              <input
+                type="range"
+                min={0}
+                max={0.1}
+                step={0.005}
+                value={puffSettings.edgeSoftness}
+                onChange={(e) => updatePuffSettings('edgeSoftness', parseFloat(e.target.value))}
+              />
+              <span>{puffSettings.edgeSoftness.toFixed(3)}</span>
             </div>
           </div>
         )}

@@ -316,7 +316,8 @@ export class AdvancedVectorTools {
         const gridSize = this.state.gridSize;
         return {
             x: Math.round(point.x / gridSize) * gridSize,
-            y: Math.round(point.y / gridSize) * gridSize
+            y: Math.round(point.y / gridSize) * gridSize,
+            type: point.type ?? 'corner'
         };
     }
     snapToGuides(point) {
@@ -345,7 +346,17 @@ export class AdvancedVectorTools {
                     strokeWidth: 2,
                     fill: 'none',
                     opacity: 1
-                }
+                },
+                fill: false,
+                stroke: true,
+                fillColor: '#000000',
+                strokeColor: '#000000',
+                strokeWidth: 2,
+                fillOpacity: 1,
+                strokeOpacity: 1,
+                strokeJoin: 'round',
+                strokeCap: 'round',
+                bounds: { x: point.x, y: point.y, width: 0, height: 0 }
             };
             this.currentPath = newPath;
             this.dragState.dragType = 'draw';

@@ -8,6 +8,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { useApp } from '../../../App';
 import { vectorStore } from '../../../vector/vectorState';
+import { VectorPath } from '../../../vector/VectorStateManager';
 import { performanceMonitor } from '../../../utils/PerformanceMonitor';
 
 export const useShirtEvents = () => {
@@ -16,6 +17,9 @@ export const useShirtEvents = () => {
   const brushColor = useApp(s => s.brushColor);
   const brushSize = useApp(s => s.brushSize);
   const brushOpacity = useApp(s => s.brushOpacity);
+  const strokeEnabled = useApp(s => s.strokeEnabled);
+  const strokeColor = useApp(s => s.strokeColor);
+  const strokeWidth = useApp(s => s.strokeWidth);
   const getActiveLayer = useApp(s => s.getActiveLayer);
   const composeLayers = useApp(s => s.composeLayers);
   
@@ -76,7 +80,7 @@ export const useShirtEvents = () => {
       }
     } catch (error) {
       console.error('❌ Error in mouse down:', error);
-      performanceMonitor.trackError('mouse_down', error as Error);
+      performanceMonitor.trackError(error as Error, 'useShirtEvents', 'high', { phase: 'mouse_down' });
     }
   }, [vectorMode, getActiveLayer, validateAndCorrectCoordinates, uvToCanvasCoordinates]);
   
@@ -84,7 +88,7 @@ export const useShirtEvents = () => {
   const handleVectorMouseDown = useCallback((event: any, coords: { x: number; y: number }, canvas: HTMLCanvasElement) => {
     const { shapes } = vectorStore.getState();
     
-    if (activeTool === 'pen') {
+    if (String(activeTool) === 'pen') {
       // Start new path
       const newPath = {
         points: [{
@@ -115,18 +119,37 @@ export const useShirtEvents = () => {
     // Start brush stroke
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    
+
+    if (strokeEnabled && strokeWidth > 0) {
+      ctx.save();
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = Math.max(1, brushSize + strokeWidth * 2);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.globalAlpha = brushOpacity;
+      // Render initial dot with arc so outline is visible without movement
+      ctx.beginPath();
+      ctx.arc(coords.x, coords.y, Math.max(1, brushSize / 2 + strokeWidth), 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
     ctx.strokeStyle = brushColor;
     ctx.lineWidth = brushSize;
     ctx.globalAlpha = brushOpacity;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     
+    // Fill dot for initial click
+    ctx.beginPath();
+    ctx.arc(coords.x, coords.y, Math.max(1, brushSize / 2), 0, Math.PI * 2);
+    ctx.stroke();
+    // Start path for subsequent movement
     ctx.beginPath();
     ctx.moveTo(coords.x, coords.y);
     
     console.log('🎨 Brush tool - Started stroke');
-  }, [brushColor, brushSize, brushOpacity]);
+  }, [brushColor, brushSize, brushOpacity, strokeColor, strokeEnabled, strokeWidth]);
   
   // Handle mouse move
   const handleMouseMove = useCallback((event: any) => {
@@ -148,14 +171,14 @@ export const useShirtEvents = () => {
         }
       } catch (error) {
         console.error('❌ Error in mouse move:', error);
-        performanceMonitor.trackError('mouse_move', error as Error);
+        performanceMonitor.trackError(error as Error, 'useShirtEvents', 'medium', { phase: 'mouse_move' });
       }
     });
   }, [isPainting, vectorMode, getActiveLayer, validateAndCorrectCoordinates, uvToCanvasCoordinates, throttleEvent]);
   
   // Handle vector mouse move
-  const handleVectorMouseMove = useCallback((event: any, coords: { x: number; number }, canvas: HTMLCanvasElement) => {
-    if (activeTool === 'pen' && currentPath) {
+  const handleVectorMouseMove = useCallback((event: any, coords: { x: number; y: number }, canvas: HTMLCanvasElement) => {
+    if (String(activeTool) === 'pen' && currentPath) {
       // Add point to current path
       const newPoint = {
         x: coords.x,
@@ -195,8 +218,30 @@ export const useShirtEvents = () => {
     if (!ctx) return;
     
     ctx.lineTo(coords.x, coords.y);
+    
+    if (strokeEnabled && strokeWidth > 0) {
+      ctx.save();
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = Math.max(1, brushSize + strokeWidth * 2);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.globalAlpha = brushOpacity;
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    ctx.save();
+    ctx.strokeStyle = brushColor;
+    ctx.lineWidth = brushSize;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.globalAlpha = brushOpacity;
     ctx.stroke();
-  }, []);
+    ctx.restore();
+
+    ctx.beginPath();
+    ctx.moveTo(coords.x, coords.y);
+  }, [brushColor, brushSize, brushOpacity, strokeColor, strokeEnabled, strokeWidth]);
   
   // Handle mouse up
   const handleMouseUp = useCallback((event: any) => {
@@ -210,7 +255,7 @@ export const useShirtEvents = () => {
       }
     } catch (error) {
       console.error('❌ Error in mouse up:', error);
-      performanceMonitor.trackError('mouse_up', error as Error);
+      performanceMonitor.trackError(error as Error, 'useShirtEvents', 'medium', { phase: 'mouse_up' });
     } finally {
       setIsPainting(false);
     }
@@ -218,30 +263,38 @@ export const useShirtEvents = () => {
   
   // Handle vector mouse up
   const handleVectorMouseUp = useCallback((event: any) => {
-    if (activeTool === 'pen' && currentPath) {
-      // Commit path
+    if (String(activeTool) === 'pen' && currentPath) {
+      // Commit path into a proper VectorPath
       const { shapes } = vectorStore.getState();
-      const newShape = {
+      const bounds = calculateBounds(currentPath.points);
+      const newShape: VectorPath = {
         id: `shape_${Date.now()}`,
+        points: currentPath.points,
+        closed: false,
         type: 'path',
-        path: currentPath,
-        tool: activeTool,
-        bounds: calculateBounds(currentPath.points)
+        style: {},
+        fill: false,
+        stroke: true,
+        fillColor: '#00000000',
+        strokeColor: brushColor,
+        strokeWidth: brushSize,
+        fillOpacity: 0,
+        strokeOpacity: brushOpacity,
+        strokeJoin: 'round',
+        strokeCap: 'round',
+        bounds: { x: bounds.minX, y: bounds.minY, width: bounds.maxX - bounds.minX, height: bounds.maxY - bounds.minY },
       };
       
       vectorStore.setState({
         shapes: [...shapes, newShape],
         currentPath: null
       });
-      
       setCurrentPath(null);
-      
       // Re-render
       composeLayers();
-      
       console.log('✅ Path committed');
     }
-  }, [activeTool, currentPath, composeLayers]);
+  }, [activeTool, currentPath, composeLayers, brushColor, brushSize, brushOpacity]);
   
   // Handle brush mouse up
   const handleBrushMouseUp = useCallback((event: any) => {

@@ -1,15 +1,18 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useApp } from '../App';
 import { vectorStore } from '../vector/vectorState';
+import { puffVectorEngine } from '../vector/PuffVectorEngine';
 
 export function VectorOverlay() {
-  const { composedCanvas, activeTool } = useApp();
+  const { composedCanvas, activeTool, vectorMode } = useApp();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
-
+  
+  // All hooks must be called before any early returns
   const [shapes, setShapes] = useState(vectorStore.getState().shapes);
   const [selected, setSelected] = useState(vectorStore.getState().selected);
   const [currentPath, setCurrentPath] = useState(vectorStore.getState().currentPath);
+  const [puffShapes, setPuffShapes] = useState(() => puffVectorEngine.getState().shapes || []);
   const [tool, setTool] = useState(vectorStore.getState().tool);
 
   const [isDown, setIsDown] = useState(false);
@@ -25,16 +28,25 @@ export function VectorOverlay() {
       setCurrentPath(st.currentPath);
       setTool(st.tool);
     });
-    return () => { unsub(); };
+    const unsubPuff = puffVectorEngine.subscribe((state) => {
+      setPuffShapes(state.shapes || []);
+    });
+    return () => { unsub(); unsubPuff(); };
   }, []);
 
   // helpers
   const getCtx = () => canvasRef.current?.getContext('2d') || null;
 
   const canvasSize = useMemo(() => {
-    if (!containerRef.current) return { w: 0, h: 0 };
-    const rect = containerRef.current.getBoundingClientRect();
-    return { w: Math.floor(rect.width), h: Math.floor(rect.height) };
+    if (containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      return { w: Math.max(1, Math.floor(rect.width)), h: Math.max(1, Math.floor(rect.height)) };
+    }
+    // Fallback: use viewport size so we at least receive pointer events
+    if (typeof window !== 'undefined') {
+      return { w: window.innerWidth, h: window.innerHeight };
+    }
+    return { w: 1, h: 1 };
   }, [containerRef.current]);
 
   // draw all
@@ -72,39 +84,47 @@ export function VectorOverlay() {
       }
     };
 
+    const baseWidth = composedCanvas?.width || width;
+    const baseHeight = composedCanvas?.height || height;
+    const scaleX = baseWidth ? width / baseWidth : 1;
+    const scaleY = baseHeight ? height / baseHeight : 1;
+
     shapes.forEach((shape) => {
+      // Normalize shape to support both schemas: { points, fill, stroke, ... } and { path: { points, ... }, bounds }
+      const path = (shape as any).path ? (shape as any).path : shape as any;
+      const points = path.points || [];
       // path
-      drawBezier(shape.path.points);
+      drawBezier(points);
       
       // Set opacity for fill
-      if (shape.path.fill) { 
+      if (path.fill) { 
         ctx.save();
-        ctx.globalAlpha = shape.path.fillOpacity || 1.0;
-        ctx.fillStyle = shape.path.fillColor; 
+        ctx.globalAlpha = path.fillOpacity || 1.0;
+        ctx.fillStyle = path.fillColor; 
         ctx.fill(); 
         ctx.restore();
       }
       
       // Set opacity for stroke
-      if (shape.path.stroke) { 
+      if (path.stroke) { 
         ctx.save();
-        ctx.globalAlpha = shape.path.strokeOpacity || 1.0;
-        ctx.strokeStyle = shape.path.strokeColor; 
-        ctx.lineWidth = shape.path.strokeWidth;
-        ctx.lineJoin = shape.path.strokeJoin || 'round';
-        ctx.lineCap = shape.path.strokeCap || 'round';
+        ctx.globalAlpha = path.strokeOpacity || 1.0;
+        ctx.strokeStyle = path.strokeColor; 
+        ctx.lineWidth = path.strokeWidth;
+        ctx.lineJoin = path.strokeJoin || 'round';
+        ctx.lineCap = path.strokeCap || 'round';
         ctx.stroke(); 
         ctx.restore();
       }
 
       // selection box + anchors if selected
       if (selected.includes(shape.id)){
-        const b = shape.bounds; ctx.save();
+        const b = (shape as any).bounds || boundsFromPoints(points); ctx.save();
         ctx.setLineDash([5,5]); ctx.strokeStyle = '#3B82F6'; ctx.lineWidth = 1.5;
         ctx.strokeRect(b.x-2, b.y-2, b.width+4, b.height+4);
         ctx.setLineDash([]);
         // anchors
-        shape.path.points.forEach((p,i)=>{
+        points.forEach((p: any, i: number)=>{
           ctx.fillStyle = i===0 ? '#10B981' : '#3B82F6';
           ctx.beginPath(); ctx.arc(p.x,p.y,4,0,Math.PI*2); ctx.fill();
           if (p.controlIn){
@@ -120,6 +140,29 @@ export function VectorOverlay() {
         });
         ctx.restore();
       }
+    });
+
+    // Draw committed puff shapes from PuffVectorEngine (dashed highlight)
+    puffShapes.forEach((shape: any) => {
+      const pts = Array.isArray(shape?.worldPoints) ? shape.worldPoints : [];
+      if (pts.length < 2) return;
+      ctx.save();
+      ctx.beginPath();
+      const first = pts[0];
+      ctx.moveTo(first.x * scaleX, first.y * scaleY);
+      for (let i = 1; i < pts.length; i++) {
+        const p = pts[i];
+        ctx.lineTo(p.x * scaleX, p.y * scaleY);
+      }
+      if (shape.closed) {
+        ctx.closePath();
+      }
+      ctx.setLineDash([6, 4]);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(0, 255, 102, 0.8)';
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
     });
 
     if (currentPath && currentPath.points.length){
@@ -151,7 +194,7 @@ export function VectorOverlay() {
         ctx.beginPath(); ctx.arc(p.x,p.y,4,0,Math.PI*2); ctx.fill();
       });
     }
-  }, [shapes, selected, currentPath]);
+  }, [shapes, selected, currentPath, puffShapes, composedCanvas]);
 
   useEffect(() => { draw(); }, [draw]);
 
@@ -169,6 +212,17 @@ export function VectorOverlay() {
     return () => ro.disconnect();
   }, [draw]);
 
+  // DEPRECATED: This old 2D vector overlay is no longer used
+  // The new vector tools are integrated directly into ShirtRefactored.tsx
+  // They work on the 3D model using UV coordinates
+  // Always return null to disable this old system
+  return null;
+  
+  // Old code kept for reference but disabled:
+  // if (!vectorMode) {
+  //   return null;
+  // }
+
   // coordinate mapping (screen -> overlay)
   const toOverlay = (ev: React.MouseEvent) => {
     const rect = canvasRef.current!.getBoundingClientRect();
@@ -176,37 +230,80 @@ export function VectorOverlay() {
   };
 
   const hitPoint = (pt:{x:number;y:number}, s:any): number | null => {
-    for(let i=0;i<s.path.points.length;i++){
-      const p = s.path.points[i]; const dx=pt.x-p.x; const dy=pt.y-p.y; if (dx*dx+dy*dy<8*8) return i;
+    const pts = s.points || s.path?.points || [];
+    for(let i=0;i<pts.length;i++){
+      const p = pts[i]; const dx=pt.x-p.x; const dy=pt.y-p.y; if (dx*dx+dy*dy<8*8) return i;
     }
     return null;
   };
 
   const onMouseDown = (e: React.MouseEvent) => {
-    if (activeTool !== 'vectorTools') return;
+    // Handle mouse events when vector mode is active
+    // When brush/puff/embroidery is selected in vector mode, it acts as a pen tool
+    if (!vectorMode) return;
+    
+    // Allow vector path creation even when brush/puff/embroidery is selected
+    const isVectorPathCreation = activeTool === 'vector' || 
+                                   activeTool === 'brush' || 
+                                   activeTool === 'puffPrint' || 
+                                   activeTool === 'embroidery';
+    
+    if (!isVectorPathCreation) return;
+    
+    e.stopPropagation();
+    e.preventDefault();
     setIsDown(true);
     const pos = toOverlay(e);
-    if (tool === 'pen') {
+    // Debug pointer routing
+    if (process.env.NODE_ENV === 'development') {
+      console.log('VectorOverlay: onMouseDown at', pos, 'tool:', tool, 'activeTool:', activeTool);
+    }
+    
+    // In vector mode, all drawing tools act as pen tool
+    if (tool === 'pen' || activeTool === 'brush' || activeTool === 'puffPrint' || activeTool === 'embroidery') {
       const st = vectorStore.getState();
       if (!st.currentPath){
-        const path = { id: `path_${Date.now()}`, points:[{ x: pos.x, y: pos.y, type:'corner' as const }], closed:false, fill:true, stroke:true, fillColor:'#ffffff', strokeColor:'#000000', strokeWidth:2 };
+        const pts = [{ x: pos.x, y: pos.y, type:'corner' as const }];
+        const bounds = boundsFromPoints(pts);
+        const path = {
+          id: `path_${Date.now()}`,
+          points: pts,
+          closed: false,
+          type: 'bezier',
+          style: { stroke: '#000000', strokeWidth: 2, fill: 'none', opacity: 1 },
+          fill: true,
+          stroke: true,
+          fillColor: '#ffffff',
+          strokeColor: '#000000',
+          strokeWidth: 2,
+          fillOpacity: 1,
+          strokeOpacity: 1,
+          strokeJoin: 'round' as CanvasLineJoin,
+          strokeCap: 'round' as CanvasLineCap,
+          bounds
+        };
         vectorStore.setState({ currentPath: path });
       } else {
-        const cp = { ...st.currentPath, points: [...st.currentPath.points, { x: pos.x, y: pos.y, type:'corner' as const }] };
+        const newPts = [...st.currentPath.points, { x: pos.x, y: pos.y, type:'corner' as const }];
+        const cp = { ...st.currentPath, points: newPts, bounds: boundsFromPoints(newPts) };
         vectorStore.setState({ currentPath: cp });
       }
       return;
     }
     // selection
     const st = vectorStore.getState();
-    const clicked = [...st.shapes].reverse().find(s => pos.x>=s.bounds.x && pos.x<=s.bounds.x+s.bounds.width && pos.y>=s.bounds.y && pos.y<=s.bounds.y+s.bounds.height);
+    const clicked = [...st.shapes].reverse().find(s => {
+      const b = (s as any).bounds || boundsFromPoints((s as any).points || (s as any).path?.points || []);
+      return pos.x>=b.x && pos.x<=b.x+b.width && pos.y>=b.y && pos.y<=b.y+b.height;
+    });
     if (clicked){
       vectorStore.setState({ selected: [clicked.id] });
       const idx = hitPoint(pos, clicked);
       if (idx !== null) {
         draggingPointRef.current = { shapeId: clicked.id, index: idx };
       } else {
-        draggingBoundsRef.current = { shapeId: clicked.id, startX: pos.x, startY: pos.y, startBounds: { ...clicked.bounds } };
+        const startB = (clicked as any).bounds || boundsFromPoints((clicked as any).points || (clicked as any).path?.points || []);
+        draggingBoundsRef.current = { shapeId: clicked.id, startX: pos.x, startY: pos.y, startBounds: { ...startB } };
       }
     } else {
       vectorStore.setState({ selected: [] });
@@ -214,6 +311,19 @@ export function VectorOverlay() {
   };
 
   const onMouseMove = (e: React.MouseEvent) => {
+    // Handle mouse events when vector mode is active
+    if (!vectorMode) return;
+    
+    // Allow vector path editing even when brush/puff/embroidery is selected
+    const isVectorPathCreation = activeTool === 'vector' || 
+                                   activeTool === 'brush' || 
+                                   activeTool === 'puffPrint' || 
+                                   activeTool === 'embroidery';
+    
+    if (!isVectorPathCreation) return;
+    
+    e.stopPropagation();
+    e.preventDefault();
     if (!isDown) return;
     const pos = toOverlay(e);
     const st = vectorStore.getState();
@@ -223,11 +333,10 @@ export function VectorOverlay() {
       const { shapeId, index } = draggingPointRef.current;
       const shapesUpd = st.shapes.map(s => {
         if (s.id !== shapeId) return s;
-        const pts = [...s.path.points];
+        const pts = [...s.points];
         pts[index] = { ...pts[index], x: pos.x, y: pos.y };
-        const path = { ...s.path, points: pts };
         const b = boundsFromPoints(pts);
-        return { ...s, path, bounds: b };
+        return { ...s, points: pts, bounds: b };
       });
       vectorStore.setState({ shapes: shapesUpd });
     } else if (draggingBoundsRef.current){
@@ -238,15 +347,15 @@ export function VectorOverlay() {
         const scaleX = (startBounds.width + dx) / Math.max(1, startBounds.width);
         const scaleY = (startBounds.height + dy) / Math.max(1, startBounds.height);
         const cx = startBounds.x; const cy = startBounds.y;
-        const pts = s.path.points.map(p => ({ ...p, x: cx + (p.x - cx)*scaleX, y: cy + (p.y - cy)*scaleY }));
-        const path = { ...s.path, points: pts };
-        return { ...s, path, bounds: boundsFromPoints(pts) };
+        const pts = s.points.map((p: any) => ({ ...p, x: cx + (p.x - cx)*scaleX, y: cy + (p.y - cy)*scaleY }));
+        return { ...s, points: pts, bounds: boundsFromPoints(pts) };
       });
       vectorStore.setState({ shapes: shapesUpd });
     }
   };
 
-  const onMouseUp = () => {
+  const onMouseUp = (e?: React.MouseEvent) => {
+    if (e) { e.stopPropagation(); e.preventDefault(); }
     setIsDown(false);
     draggingPointRef.current = null;
     draggingBoundsRef.current = null;
@@ -257,18 +366,31 @@ export function VectorOverlay() {
     if (tool === 'pen' && st.currentPath && st.currentPath.points.length>=3){
       const path = { ...st.currentPath, closed: true };
       const b = boundsFromPoints(path.points);
-      const shape = { id: `shape_${Date.now()}`, type: 'path' as const, path, bounds: b };
-      vectorStore.setAll({ currentPath: null, shapes: [...st.shapes, shape], selected: [shape.id] });
+      const shape = { ...path, id: `shape_${Date.now()}`, bounds: b };
+      vectorStore.setState({ currentPath: null, shapes: [...st.shapes, shape], selected: [shape.id] } as any);
     }
   };
 
   return (
-    <div ref={containerRef} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+    <div ref={containerRef} style={{ 
+      position: 'absolute', 
+      inset: 0, 
+      zIndex: 10000,
+      // Only capture pointer events when vector mode is active and using drawing tools
+      pointerEvents: vectorMode && (activeTool === 'vector' || activeTool === 'brush' || activeTool === 'puffPrint' || activeTool === 'embroidery') ? 'auto' : 'none'
+    }}>
       <canvas
         ref={canvasRef}
         width={canvasSize.w}
         height={canvasSize.h}
-        style={{ position: 'absolute', inset: 0, pointerEvents: 'auto' }}
+        style={{ 
+          position: 'absolute', 
+          inset: 0, 
+          // Capture pointer events when vector mode is active and using any drawing tool
+          // This allows brush/puff/embroidery to create vector paths in vector mode
+          pointerEvents: vectorMode && (activeTool === 'vector' || activeTool === 'brush' || activeTool === 'puffPrint' || activeTool === 'embroidery') ? 'auto' : 'none', 
+          zIndex: 10000 
+        }}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}

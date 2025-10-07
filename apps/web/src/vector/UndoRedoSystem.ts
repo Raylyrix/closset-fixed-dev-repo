@@ -49,7 +49,7 @@ export interface UndoRedoState {
 export class UndoRedoSystem {
   private static instance: UndoRedoSystem;
   
-  private state: UndoRedoState;
+  private state!: UndoRedoState;
   private currentGroup: CommandGroup | null = null;
   private eventListeners: Map<string, Function[]> = new Map();
   
@@ -104,7 +104,9 @@ export class UndoRedoSystem {
       if (this.currentGroup) {
         this.currentGroup.commands.push(command);
       } else {
-        this.createCommandGroup([command], command.getDescription());
+        this.startCommandGroup(command.getDescription());
+        this.currentGroup!.commands.push(command);
+        this.endCommandGroup();
       }
       
       // Update state

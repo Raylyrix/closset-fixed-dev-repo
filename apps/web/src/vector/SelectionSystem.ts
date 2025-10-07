@@ -11,6 +11,9 @@
  * - Visual feedback
  */
 
+import { isFeatureEnabled } from '../config/featureFlags';
+import VectorProjectionService from './VectorProjectionService.ts';
+
 export interface SelectionElement {
   id: string;
   type: 'path' | 'point' | 'group';
@@ -69,10 +72,11 @@ export interface SelectionOptions {
 export class SelectionSystem {
   private static instance: SelectionSystem;
   
-  private state: SelectionState;
-  private options: SelectionOptions;
+  private state!: SelectionState;
+  private options!: SelectionOptions;
   private transformState: TransformState | null = null;
   private eventListeners: Map<string, Function[]> = new Map();
+  private projectionService = VectorProjectionService.getInstance();
   
   // Performance optimization
   private selectionCache: Map<string, BoundingBox> = new Map();
@@ -420,7 +424,13 @@ export class SelectionSystem {
           y: element.bounds.y + deltaY
         };
         
-        this.updateElement(id, { bounds: newBounds });
+        const updates: Partial<SelectionElement> = { bounds: newBounds };
+        // Optional surface rebuild for vector-like elements with points
+        if (isFeatureEnabled('vectorGlobalOps') && element.data && Array.isArray(element.data.points)) {
+          const rebuilt = this.projectionService.rebuildCurveOnSurface(element.data.points);
+          updates.data = { ...element.data, points: rebuilt };
+        }
+        this.updateElement(id, updates);
       }
     }
   }

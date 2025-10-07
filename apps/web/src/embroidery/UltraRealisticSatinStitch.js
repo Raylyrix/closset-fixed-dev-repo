@@ -129,10 +129,10 @@ export class UltraRealisticSatinStitch {
         return stitches.map((stitch, index) => {
             // Calculate lighting for each point
             const litPoints = stitch.points.map((point) => {
-                const lighting = this.calculatePointLighting(point, lighting, material);
+                const pointLighting = this.calculatePointLighting(point, lighting, material);
                 return {
                     ...point,
-                    lighting: lighting
+                    lighting: pointLighting
                 };
             });
             // Generate material properties

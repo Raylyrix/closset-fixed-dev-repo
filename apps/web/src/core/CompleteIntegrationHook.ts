@@ -85,6 +85,8 @@ export function useCompleteIntegration(config?: Partial<CompleteIntegrationConfi
   
   // App state
   const activeTool = useApp(s => s.activeTool);
+  // Widened string to avoid union literal comparison errors
+  const activeToolStr = (activeTool as unknown) as string;
   const vectorMode = useApp(s => s.vectorMode);
   const embroideryStitchType = useApp(s => s.embroideryStitchType);
   const embroideryColor = useApp(s => s.embroideryColor);
@@ -154,15 +156,14 @@ export function useCompleteIntegration(config?: Partial<CompleteIntegrationConfi
     const handleToolChange = async () => {
       try {
         // Handle embroidery tool activation
-        if (activeTool === 'embroidery' || activeTool === 'cross-stitch' || 
-            activeTool === 'satin' || activeTool === 'chain' || activeTool === 'fill') {
+        if (['embroidery','cross-stitch','satin','chain','fill'].includes(activeToolStr)) {
           
           await enhancedShirtIntegration.handleEmbroideryToolActivation(activeTool);
           
           setState(prev => ({
             ...prev,
             embroideryToolActive: true,
-            currentStitchType: activeTool
+            currentStitchType: activeToolStr
           }));
         } else {
           setState(prev => ({
@@ -172,16 +173,14 @@ export function useCompleteIntegration(config?: Partial<CompleteIntegrationConfi
         }
         
         // Handle vector tool activation
-        if (vectorMode && (activeTool === 'pen' || activeTool === 'curvature' || 
-            activeTool === 'pathSelection' || activeTool === 'addAnchor' || 
-            activeTool === 'removeAnchor' || activeTool === 'convertAnchor')) {
+        if (vectorMode && ['pen','curvature','pathSelection','addAnchor','removeAnchor','convertAnchor'].includes(activeToolStr)) {
           
           await enhancedShirtIntegration.handleVectorToolActivation(activeTool);
           
           setState(prev => ({
             ...prev,
             vectorToolActive: true,
-            currentVectorTool: activeTool
+            currentVectorTool: activeToolStr
           }));
         } else {
           setState(prev => ({
@@ -233,7 +232,7 @@ export function useCompleteIntegration(config?: Partial<CompleteIntegrationConfi
         
         if (currentPath && currentPath.points && currentPath.points.length > 0) {
           // Handle pen tool point addition
-          if (activeTool === 'pen') {
+          if (activeToolStr === 'pen') {
             const lastPoint = currentPath.points[currentPath.points.length - 1];
             await enhancedShirtIntegration.handlePenToolPointAdded(lastPoint);
           }

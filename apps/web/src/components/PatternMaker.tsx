@@ -58,9 +58,9 @@ export function PatternMaker({ active }: PatternMakerProps) {
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
 
   // Refs
-  const patternCanvasRef = useRef<HTMLCanvasElement>(null);
-  const previewCanvasRef = useRef<HTMLCanvasElement>(null);
-  const tileCanvasRef = useRef<HTMLCanvasElement>(null);
+  const patternCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const tileCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   // Initialize pattern canvas
   useEffect(() => {

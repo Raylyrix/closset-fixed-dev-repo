@@ -567,7 +567,7 @@ export function AIDesignAssistant({ active }: AIDesignAssistantProps) {
                     {harmony.type.charAt(0).toUpperCase() + harmony.type.slice(1)}
                   </div>
                   <div style={{ display: 'flex', gap: '2px' }}>
-                    {harmony.colors.slice(0, 5).map((color, index) => (
+                    {harmony.colors.slice(0, 5).map((color: string, index: number) => (
                       <div
                         key={index}
                         style={{

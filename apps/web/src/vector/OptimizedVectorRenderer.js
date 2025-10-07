@@ -399,9 +399,27 @@ export class OptimizedVectorRenderer {
         if (this.renderCache.size >= this.maxCacheSize) {
             // Remove oldest entry
             const firstKey = this.renderCache.keys().next().value;
-            this.renderCache.delete(firstKey);
+            if (typeof firstKey === 'string') {
+                this.renderCache.delete(firstKey);
+            }
         }
         this.renderCache.set(key, imageData);
+    }
+    /**
+     * Render selection highlight for a shape
+     */
+    renderShapeSelection(context, shape, _options) {
+        const ctx = context.ctx;
+        ctx.save();
+        try {
+            ctx.strokeStyle = '#3B82F6';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([4, 4]);
+            ctx.strokeRect(shape.bounds.x - 2, shape.bounds.y - 2, shape.bounds.width + 4, shape.bounds.height + 4);
+        }
+        finally {
+            ctx.restore();
+        }
     }
     /**
      * Update render statistics

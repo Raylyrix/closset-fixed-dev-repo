@@ -26,8 +26,8 @@ button, input, select { font: inherit; }
   backdrop-filter: blur(8px); 
   overflow: hidden; 
 }
-.sidebar { grid-area: left; background: var(--panel); border-right: 1px solid var(--panel-border); padding: 12px; overflow-y: auto; overflow-x: hidden; backdrop-filter: blur(8px); }
-.rightbar { grid-area: right; background: var(--panel); border-left: 1px solid var(--panel-border); padding: 12px; overflow-y: auto; overflow-x: hidden; backdrop-filter: blur(8px); }
+.sidebar { grid-area: left; background: var(--panel); border-right: 1px solid var(--panel-border); padding: 12px; overflow-y: auto; overflow-x: hidden; }
+.rightbar { grid-area: right; background: var(--panel); border-left: 1px solid var(--panel-border); padding: 12px; overflow-y: auto; overflow-x: hidden; }
 .center { grid-area: center; position: relative; }
 .canvas-wrap { position: absolute; inset: 0; }
 .canvas-wrap.drawing { cursor: none; }

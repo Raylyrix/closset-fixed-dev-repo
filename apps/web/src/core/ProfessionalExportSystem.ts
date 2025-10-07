@@ -78,7 +78,6 @@ export interface FormatCapabilities {
   supportsPaths: boolean;
   supportsText: boolean;
   supportsGradients: boolean;
-  supportsPatterns: boolean;
   supportsFilters: boolean;
   
   // 3D capabilities
@@ -92,7 +91,6 @@ export interface FormatCapabilities {
   supportsStitches: boolean;
   supportsThreads: boolean;
   supportsColors: boolean;
-  supportsPatterns: boolean;
   supportsHoops: boolean;
   
   // Print capabilities
@@ -101,6 +99,9 @@ export interface FormatCapabilities {
   supportsBleeds: boolean;
   supportsCropMarks: boolean;
   supportsRegistration: boolean;
+  
+  // Generic pattern support (applies where relevant)
+  supportsPatterns: boolean;
 }
 
 export interface FormatSettings {
@@ -206,6 +207,11 @@ export interface BatchItem {
   status: 'pending' | 'processing' | 'completed' | 'failed';
   result: ExportResult | null;
   error: string | null;
+  // Optional metadata used by createBatchExport
+  name?: string;
+  description?: string;
+  format?: ExportFormat;
+  priority?: number;
 }
 
 export interface ExportFilter {
@@ -323,11 +329,11 @@ export class ProfessionalExportSystem {
   private engines: Map<string, ExportEngine> = new Map();
   
   // Queue management
-  private queueProcessor: QueueProcessor;
+  private queueProcessor!: QueueProcessor;
   private maxConcurrentJobs: number = 3;
   
   // Performance monitoring
-  private performanceMonitor: ExportPerformanceMonitor;
+  private performanceMonitor!: ExportPerformanceMonitor;
   
   // Event system
   private eventListeners: Map<string, Function[]> = new Map();
@@ -504,7 +510,7 @@ export class ProfessionalExportSystem {
     } catch (error) {
       // Mark as failed
       job.status = 'failed';
-      job.error = error.message;
+      job.error = (error as any)?.message ?? String(error);
       job.completed = new Date();
       job.duration = job.completed.getTime() - (job.started?.getTime() || job.created.getTime());
       
@@ -525,11 +531,12 @@ export class ProfessionalExportSystem {
       const jobs: ExportJob[] = [];
       
       for (const item of config.items) {
+        const fallbackFormat = this.getFormat('png') || Array.from(this.formats.values())[0]!;
         const job = await this.createExportJob({
           name: item.name || `Batch Export ${jobs.length + 1}`,
           description: item.description || '',
           source: item.source,
-          format: item.format,
+          format: item.format || fallbackFormat,
           settings: item.settings,
           priority: item.priority || 0
         });
@@ -595,7 +602,6 @@ export class ProfessionalExportSystem {
           supportsPaths: false,
           supportsText: false,
           supportsGradients: false,
-          supportsPatterns: false,
           supportsFilters: false,
           supportsGeometry: false,
           supportsMaterials: false,
@@ -669,7 +675,6 @@ export class ProfessionalExportSystem {
           supportsStitches: false,
           supportsThreads: false,
           supportsColors: true,
-          supportsPatterns: false,
           supportsHoops: false,
           supportsCMYK: false,
           supportsSpotColors: false,
@@ -723,7 +728,6 @@ export class ProfessionalExportSystem {
           supportsPaths: false,
           supportsText: false,
           supportsGradients: false,
-          supportsPatterns: false,
           supportsFilters: false,
           supportsGeometry: false,
           supportsMaterials: false,

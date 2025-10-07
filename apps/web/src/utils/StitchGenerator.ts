@@ -313,5 +313,29 @@ function getBounds(points: StitchPoint[]): { minX: number; minY: number; maxX: n
   return { minX, minY, maxX, maxY };
 }
 
-export default StitchGenerator;
+export default { generateStitch, generateStitchPattern };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

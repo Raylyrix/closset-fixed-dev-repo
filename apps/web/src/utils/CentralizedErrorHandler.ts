@@ -183,7 +183,7 @@ class CentralizedErrorHandler {
   }
 
   private generateUserMessage(error: Error, category: ErrorCategory, severity: ErrorSeverity): string {
-    const messages = {
+    const messages: any = {
       [ErrorCategory.RENDERING]: {
         [ErrorSeverity.LOW]: "A minor rendering issue occurred. The application will continue to work normally.",
         [ErrorSeverity.MEDIUM]: "A rendering issue occurred. Some features may not display correctly.",
@@ -238,7 +238,7 @@ class CentralizedErrorHandler {
   }
 
   private generateSuggestedAction(error: Error, category: ErrorCategory): string | undefined {
-    const actions = {
+    const actions: any = {
       [ErrorCategory.RENDERING]: "Try refreshing the page or reducing the complexity of your design.",
       [ErrorCategory.USER_INPUT]: "Check your input format and try again.",
       [ErrorCategory.NETWORK]: "Check your internet connection and try again.",

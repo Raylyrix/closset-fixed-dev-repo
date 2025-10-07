@@ -56,9 +56,9 @@ export interface GuideSettings {
 export class PrecisionEngine {
   private static instance: PrecisionEngine;
   
-  private snapSettings: SnapSettings;
-  private gridSettings: GridSettings;
-  private guideSettings: GuideSettings;
+  private snapSettings!: SnapSettings;
+  private gridSettings!: GridSettings;
+  private guideSettings!: GuideSettings;
   private objects: Array<{ id: string; points: PrecisionPoint[]; type: string }> = [];
   private guides: { horizontal: number[]; vertical: number[] } = { horizontal: [], vertical: [] };
   
@@ -69,6 +69,11 @@ export class PrecisionEngine {
   
   constructor() {
     this.initializeSettings();
+  }
+
+  // Lightweight event API for compatibility with callers that subscribe to changes
+  on(_event: string, _callback: Function): void {
+    // No-op in this implementation; retained for interface compatibility
   }
   
   static getInstance(): PrecisionEngine {
@@ -144,35 +149,35 @@ export class PrecisionEngine {
     // Apply snapping in order of priority
     if (settings.snapToGrid) {
       const gridSnap = this.snapToGrid(snappedPoint, settings);
-      if (gridSnap && (!bestSnap || gridSnap.distance < bestSnap.distance)) {
+      if (gridSnap && gridSnap.distance < (bestSnap ? bestSnap.distance : Infinity)) {
         bestSnap = gridSnap;
       }
     }
     
     if (settings.snapToGuides) {
       const guideSnap = this.snapToGuides(snappedPoint, settings);
-      if (guideSnap && (!bestSnap || guideSnap.distance < bestSnap.distance)) {
+      if (guideSnap && guideSnap.distance < (bestSnap ? bestSnap.distance : Infinity)) {
         bestSnap = guideSnap;
       }
     }
     
     if (settings.snapToObjects) {
       const objectSnap = this.snapToObjects(snappedPoint, settings);
-      if (objectSnap && (!bestSnap || objectSnap.distance < bestSnap.distance)) {
+      if (objectSnap && objectSnap.distance < (bestSnap ? bestSnap.distance : Infinity)) {
         bestSnap = objectSnap;
       }
     }
     
     if (settings.snapToAngles) {
       const angleSnap = this.snapToAngles(snappedPoint, settings);
-      if (angleSnap && (!bestSnap || angleSnap.distance < bestSnap.distance)) {
+      if (angleSnap && angleSnap.distance < (bestSnap ? bestSnap.distance : Infinity)) {
         bestSnap = angleSnap;
       }
     }
     
     if (settings.snapToDistances) {
       const distanceSnap = this.snapToDistances(snappedPoint, settings);
-      if (distanceSnap && (!bestSnap || distanceSnap.distance < bestSnap.distance)) {
+      if (distanceSnap && distanceSnap.distance < (bestSnap ? bestSnap.distance : Infinity)) {
         bestSnap = distanceSnap;
       }
     }

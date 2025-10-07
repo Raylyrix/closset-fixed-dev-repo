@@ -56,7 +56,9 @@ export class UndoRedoSystem {
                 this.currentGroup.commands.push(command);
             }
             else {
-                this.createCommandGroup([command], command.getDescription());
+                this.startCommandGroup(command.getDescription());
+                this.currentGroup.commands.push(command);
+                this.endCommandGroup();
             }
             // Update state
             this.updateState();

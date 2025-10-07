@@ -263,7 +263,16 @@ export class ComprehensiveVectorSystem {
             if (this.config.enableRealTimePreview && result.requiresRedraw) {
                 this.queueRenderTask({
                     type: 'render',
-                    context: event.target,
+                    context: (() => {
+                        const tgt = event.target;
+                        if (tgt && tgt.tagName === 'CANVAS') {
+                            const ctx = tgt.getContext('2d');
+                            if (ctx) {
+                                return ctx;
+                            }
+                        }
+                        return undefined;
+                    })(),
                     data: result.data,
                     mediaType: this.state.currentMediaType
                 });
@@ -394,7 +403,8 @@ export class ComprehensiveVectorSystem {
         const gridSize = this.config.gridSize;
         return {
             x: Math.round(point.x / gridSize) * gridSize,
-            y: Math.round(point.y / gridSize) * gridSize
+            y: Math.round(point.y / gridSize) * gridSize,
+            type: point.type ?? 'corner'
         };
     }
     // ============================================================================
@@ -404,7 +414,9 @@ export class ComprehensiveVectorSystem {
         this.renderQueue.push(task);
     }
     renderToCanvas(context, data, mediaType) {
-        this.mediaIntegration.render(context, data, mediaType);
+        if (!context || !mediaType)
+            return false;
+        return this.mediaIntegration.render(context, data, mediaType);
     }
     updateDisplay(data) {
         // Update display with new data

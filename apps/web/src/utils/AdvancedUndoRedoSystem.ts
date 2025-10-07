@@ -32,7 +32,7 @@ export class AdvancedUndoRedoSystem {
   private maxHistorySize = 50;
   private enableCompression = true;
   private enableMemoryOptimization = true;
-  private autoSaveInterval: NodeJS.Timeout | null = null;
+  private autoSaveInterval: ReturnType<typeof setInterval> | null = null;
   private isCompressing = false;
   private compressionThreshold = 10; // Compress when history exceeds this size
 
@@ -301,9 +301,7 @@ export class AdvancedUndoRedoSystem {
       ...stitch,
       points: stitch.points.map(point => ({
         x: Math.round(point.x * 100) / 100, // Round to 2 decimal places
-        y: Math.round(point.y * 100) / 100,
-        pressure: point.pressure ? Math.round(point.pressure * 100) / 100 : undefined,
-        timestamp: point.timestamp
+        y: Math.round(point.y * 100) / 100
       }))
     }));
   }
@@ -316,9 +314,7 @@ export class AdvancedUndoRedoSystem {
       ...stitch,
       points: stitch.points.map(point => ({
         x: point.x,
-        y: point.y,
-        pressure: point.pressure,
-        timestamp: point.timestamp
+        y: point.y
       }))
     }));
   }
@@ -402,4 +398,28 @@ export const advancedUndoRedoSystem = AdvancedUndoRedoSystem.getInstance({
   enableMemoryOptimization: true,
   autoSaveInterval: 30000 // Auto-save every 30 seconds
 });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

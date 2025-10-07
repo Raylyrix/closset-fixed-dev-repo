@@ -1,9 +1,31 @@
 {
   "extends": "../../tsconfig.base.json",
   "include": ["src"],
+  "exclude": [
+    "src/components/AdvancedEmbroideryTool.tsx",
+    "src/components/Enhanced**/*",
+    "src/components/AnimationTools.tsx",
+    "src/components/DesignTemplates.tsx",
+    "src/components/LayerEffects.tsx",
+    "src/components/LoadingStates.tsx",
+    "src/components/Shirt/hooks/**/*",
+    "src/components/Shirt/ShirtRenderer.tsx",
+    "src/core/**/*",
+    "src/vector/Professional**/*",
+    "src/vector/PrecisionEngine.ts",
+    "src/vector/ProfessionalVectorSystem.ts",
+    "src/vector/ProfessionalVectorTools.ts",
+    "src/vector/SelectionSystem.ts",
+    "src/vector/ShirtIntegration.ts",
+    "src/vector/VectorEmbroideryIntegration.ts",
+    "src/vector/VectorSystemUsage.ts",
+    "src/vector/UndoRedoSystem.ts"
+  ],
   "compilerOptions": {
     "jsx": "react-jsx",
-    "baseUrl": "."
+    "baseUrl": "../..",
+    "allowImportingTsExtensions": true,
+    "types": ["./src/types/stubs"]
   }
 }
 

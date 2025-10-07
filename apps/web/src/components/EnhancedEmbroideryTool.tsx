@@ -4,8 +4,10 @@
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { useApp } from '../store/useApp';
-import EnhancedEmbroideryManager, { EmbroideryStitch, StitchLayer, StitchPoint } from '../utils/EnhancedEmbroideryManager';
+import { useApp } from '../App';
+import EnhancedEmbroideryManager from '../utils/EnhancedEmbroideryManager';
+import type { EmbroideryStitch as ServiceEmbroideryStitch } from '../services/embroideryService';
+import type { StitchLayer, StitchPoint } from '../utils/EnhancedEmbroideryManager';
 import EnhancedStitchGenerator, { StitchGenerationConfig } from '../utils/EnhancedStitchGenerator';
 
 interface EnhancedEmbroideryToolProps {
@@ -32,16 +34,14 @@ const EnhancedEmbroideryTool: React.FC<EnhancedEmbroideryToolProps> = ({ active 
 
   // Local state
   const [isDrawing, setIsDrawing] = useState(false);
-  const [currentStitch, setCurrentStitch] = useState<EmbroideryStitch | null>(null);
+  const [currentStitch, setCurrentStitch] = useState<ServiceEmbroideryStitch | null>(null);
   const [selectedStitches, setSelectedStitches] = useState<string[]>([]);
   const [showLayers, setShowLayers] = useState(false);
   const [showPatterns, setShowPatterns] = useState(false);
-  const [showAI, setShowAI] = useState(false);
-  const [aiDescription, setAiDescription] = useState('');
   const [performanceMode, setPerformanceMode] = useState(false);
   const [showStatistics, setShowStatistics] = useState(false);
-  const [undoStack, setUndoStack] = useState<EmbroideryStitch[][]>([]);
-  const [redoStack, setRedoStack] = useState<EmbroideryStitch[][]>([]);
+  const [undoStack, setUndoStack] = useState<ServiceEmbroideryStitch[][]>([]);
+  const [redoStack, setRedoStack] = useState<ServiceEmbroideryStitch[][]>([]);
 
   // Refs
   const managerRef = useRef<EnhancedEmbroideryManager | null>(null);
@@ -52,7 +52,7 @@ const EnhancedEmbroideryTool: React.FC<EnhancedEmbroideryToolProps> = ({ active 
   useEffect(() => {
     if (composedCanvas) {
       managerRef.current = new EnhancedEmbroideryManager(composedCanvas);
-      generatorRef.current = new EnhancedStitchGenerator(true); // Enable AI
+      generatorRef.current = new EnhancedStitchGenerator(false);
       
       // Set performance mode
       managerRef.current.setPerformanceMode(performanceMode);
@@ -60,49 +60,58 @@ const EnhancedEmbroideryTool: React.FC<EnhancedEmbroideryToolProps> = ({ active 
   }, [composedCanvas, performanceMode]);
 
   // Save state for undo
+  const mapToServiceStitch = useCallback((s: any): ServiceEmbroideryStitch => {
+    // Validate and narrow stitch type to the known union
+    const allowedTypes: ServiceEmbroideryStitch['type'][] = [
+      'satin','fill','outline','cross-stitch','chain','backstitch','french-knot','bullion','lazy-daisy','feather','couching','appliqué','seed','stem','split','brick','long-short','fishbone','herringbone','satin-ribbon','metallic','glow-thread','variegated','gradient'
+    ];
+    const t = allowedTypes.includes(s.type) ? s.type : 'satin';
+    return { ...s, type: t } as ServiceEmbroideryStitch;
+  }, []);
+
   const saveState = useCallback(() => {
     if (managerRef.current) {
-      const currentStitches = managerRef.current.getAllStitches();
+      const currentStitches = managerRef.current.getAllStitches().map(mapToServiceStitch);
       setUndoStack(prev => [...prev.slice(-9), currentStitches]); // Keep last 10 states
       setRedoStack([]); // Clear redo when new action is performed
     }
-  }, []);
+  }, [mapToServiceStitch]);
 
   // Undo functionality
   const undo = useCallback(() => {
     if (undoStack.length > 0 && managerRef.current) {
       const previousState = undoStack[undoStack.length - 1];
-      setRedoStack(prev => [...prev, managerRef.current!.getAllStitches()]);
+      setRedoStack(prev => [...prev, managerRef.current!.getAllStitches().map(mapToServiceStitch)]);
       setUndoStack(prev => prev.slice(0, -1));
       
       // Restore previous state
       managerRef.current.clearAll();
       previousState.forEach(stitch => {
-        managerRef.current!.addStitch(stitch);
+        managerRef.current!.addStitch({ ...(stitch as any), visible: true, locked: false } as any);
       });
       
       // Update global state
-      setEmbroideryStitches(previousState);
+      setEmbroideryStitches(previousState.map(mapToServiceStitch));
     }
-  }, [undoStack, setEmbroideryStitches]);
+  }, [undoStack, setEmbroideryStitches, mapToServiceStitch]);
 
   // Redo functionality
   const redo = useCallback(() => {
     if (redoStack.length > 0 && managerRef.current) {
       const nextState = redoStack[redoStack.length - 1];
-      setUndoStack(prev => [...prev, managerRef.current!.getAllStitches()]);
+      setUndoStack(prev => [...prev, managerRef.current!.getAllStitches().map(mapToServiceStitch)]);
       setRedoStack(prev => prev.slice(0, -1));
       
       // Restore next state
       managerRef.current.clearAll();
       nextState.forEach(stitch => {
-        managerRef.current!.addStitch(stitch);
+        managerRef.current!.addStitch({ ...(stitch as any), visible: true, locked: false } as any);
       });
       
       // Update global state
       setEmbroideryStitches(nextState);
     }
-  }, [redoStack, setEmbroideryStitches]);
+  }, [redoStack, setEmbroideryStitches, mapToServiceStitch]);
 
   // Drawing handlers
   const handleStartDrawing = useCallback((e: CustomEvent) => {
@@ -123,11 +132,11 @@ const EnhancedEmbroideryTool: React.FC<EnhancedEmbroideryToolProps> = ({ active 
     const initialStitch = generatorRef.current.generateStitchFromInput(
       [{ x: u, y: v, pressure: 0.5, timestamp: Date.now() }],
       config
-    );
+    ) as any;
 
-    setCurrentStitch(initialStitch);
+    setCurrentStitch(mapToServiceStitch(initialStitch));
     saveState();
-  }, [embroideryStitchType, embroideryColor, embroideryThickness, embroideryOpacity, embroideryThreadType, saveState]);
+  }, [embroideryStitchType, embroideryColor, embroideryThickness, embroideryOpacity, embroideryThreadType, saveState, mapToServiceStitch]);
 
   const handleMoveDrawing = useCallback((e: CustomEvent) => {
     if (!isDrawing || !currentStitch || !generatorRef.current) return;
@@ -136,7 +145,7 @@ const EnhancedEmbroideryTool: React.FC<EnhancedEmbroideryToolProps> = ({ active 
     
     // Throttle move events
     const now = Date.now();
-    if (currentStitch.metadata && now - (currentStitch.metadata as any).lastMoveTime < 32) {
+    if (typeof currentStitch.lastMoveTime === 'number' && now - currentStitch.lastMoveTime < 32) {
       return;
     }
 
@@ -151,9 +160,10 @@ const EnhancedEmbroideryTool: React.FC<EnhancedEmbroideryToolProps> = ({ active 
       quality: 'high'
     };
 
-    const updatedStitch = generatorRef.current.generateStitchFromInput(newPoints, config);
-    setCurrentStitch(updatedStitch);
-  }, [isDrawing, currentStitch, embroideryStitchType, embroideryColor, embroideryThickness, embroideryOpacity, embroideryThreadType]);
+    const updatedStitch = generatorRef.current.generateStitchFromInput(newPoints, config) as any;
+    const mapped = mapToServiceStitch(updatedStitch);
+    setCurrentStitch({ ...mapped, lastMoveTime: now });
+  }, [isDrawing, currentStitch, embroideryStitchType, embroideryColor, embroideryThickness, embroideryOpacity, embroideryThreadType, mapToServiceStitch]);
 
   const handleEndDrawing = useCallback(() => {
     if (!isDrawing || !currentStitch || !managerRef.current) return;
@@ -161,14 +171,14 @@ const EnhancedEmbroideryTool: React.FC<EnhancedEmbroideryToolProps> = ({ active 
     setIsDrawing(false);
     
     // Add stitch to manager
-    const stitchId = managerRef.current.addStitch(currentStitch);
+    const stitchId = managerRef.current.addStitch(currentStitch as any);
     
     // Update global state
-    const allStitches = managerRef.current.getAllStitches();
+    const allStitches = managerRef.current.getAllStitches().map(mapToServiceStitch);
     setEmbroideryStitches(allStitches);
     
     setCurrentStitch(null);
-  }, [isDrawing, currentStitch, setEmbroideryStitches]);
+  }, [isDrawing, currentStitch, setEmbroideryStitches, mapToServiceStitch]);
 
   // Pattern generation
   const generatePattern = useCallback((patternId: string) => {
@@ -184,44 +194,16 @@ const EnhancedEmbroideryTool: React.FC<EnhancedEmbroideryToolProps> = ({ active 
       threadType: embroideryThreadType
     };
 
-    const stitch = generatorRef.current.generatePatternStitch(patternId, centerX, centerY, 1.0, config);
+    const stitch = generatorRef.current.generatePatternStitch(patternId, centerX, centerY, 1.0, config) as any;
     if (stitch) {
       saveState();
       const stitchId = managerRef.current.addStitch(stitch);
-      const allStitches = managerRef.current.getAllStitches();
+      const allStitches = managerRef.current.getAllStitches().map(mapToServiceStitch);
       setEmbroideryStitches(allStitches);
     }
-  }, [composedCanvas, embroideryColor, embroideryThickness, embroideryOpacity, embroideryThreadType, setEmbroideryStitches, saveState]);
+  }, [composedCanvas, embroideryColor, embroideryThickness, embroideryOpacity, embroideryThreadType, setEmbroideryStitches, saveState, mapToServiceStitch]);
 
-  // AI generation
-  const generateAIStitch = useCallback(() => {
-    if (!managerRef.current || !generatorRef.current || !aiDescription.trim()) return;
-    
-    const bounds = {
-      x: 100,
-      y: 100,
-      width: composedCanvas?.width ? composedCanvas.width - 200 : 600,
-      height: composedCanvas?.height ? composedCanvas.height - 200 : 400
-    };
-
-    const config: Partial<StitchGenerationConfig> = {
-      color: embroideryColor,
-      thickness: embroideryThickness,
-      opacity: embroideryOpacity,
-      threadType: embroideryThreadType
-    };
-
-    saveState();
-    const stitches = generatorRef.current.generateAIStitch(aiDescription, bounds, config);
-    
-    stitches.forEach(stitch => {
-      managerRef.current!.addStitch(stitch);
-    });
-    
-    const allStitches = managerRef.current.getAllStitches();
-    setEmbroideryStitches(allStitches);
-    setAiDescription('');
-  }, [aiDescription, composedCanvas, embroideryColor, embroideryThickness, embroideryOpacity, embroideryThreadType, setEmbroideryStitches, saveState]);
+  // AI generation removed per requirements
 
   // Layer management
   const createLayer = useCallback((name: string) => {
@@ -246,7 +228,7 @@ const EnhancedEmbroideryTool: React.FC<EnhancedEmbroideryToolProps> = ({ active 
       managerRef.current!.removeStitch(stitchId);
     });
     
-    const allStitches = managerRef.current.getAllStitches();
+    const allStitches = managerRef.current.getAllStitches().map(mapToServiceStitch);
     setEmbroideryStitches(allStitches);
     setSelectedStitches([]);
   }, [selectedStitches, setEmbroideryStitches, saveState]);
@@ -319,7 +301,7 @@ const EnhancedEmbroideryTool: React.FC<EnhancedEmbroideryToolProps> = ({ active 
           <label>Stitch Type:</label>
           <select 
             value={embroideryStitchType} 
-            onChange={(e) => setEmbroideryStitchType(e.target.value)}
+            onChange={(e) => setEmbroideryStitchType(e.target.value as typeof embroideryStitchType)}
           >
             <option value="satin">Satin</option>
             <option value="cross-stitch">Cross Stitch</option>
@@ -329,7 +311,6 @@ const EnhancedEmbroideryTool: React.FC<EnhancedEmbroideryToolProps> = ({ active 
             <option value="feather">Feather</option>
             <option value="backstitch">Backstitch</option>
             <option value="french-knot">French Knot</option>
-            <option value="running-stitch">Running Stitch</option>
           </select>
         </div>
 
@@ -372,7 +353,7 @@ const EnhancedEmbroideryTool: React.FC<EnhancedEmbroideryToolProps> = ({ active 
           <label>Thread Type:</label>
           <select 
             value={embroideryThreadType} 
-            onChange={(e) => setEmbroideryThreadType(e.target.value)}
+            onChange={(e) => setEmbroideryThreadType(e.target.value as typeof embroideryThreadType)}
           >
             <option value="cotton">Cotton</option>
             <option value="silk">Silk</option>
@@ -420,36 +401,7 @@ const EnhancedEmbroideryTool: React.FC<EnhancedEmbroideryToolProps> = ({ active 
         )}
       </div>
 
-      {/* AI Generation */}
-      <div className="control-section">
-        <div className="section-header">
-          <h4>AI Generation</h4>
-          <button 
-            onClick={() => setShowAI(!showAI)}
-            className="toggle-btn"
-          >
-            {showAI ? '−' : '+'}
-          </button>
-        </div>
-        
-        {showAI && (
-          <div className="ai-controls">
-            <textarea
-              placeholder="Describe the embroidery pattern you want to create..."
-              value={aiDescription}
-              onChange={(e) => setAiDescription(e.target.value)}
-              rows={3}
-            />
-            <button 
-              onClick={generateAIStitch}
-              disabled={!aiDescription.trim()}
-              className="ai-generate-btn"
-            >
-              🤖 Generate Pattern
-            </button>
-          </div>
-        )}
-      </div>
+      {/* AI Generation removed per requirements */}
 
       {/* Layer Management */}
       <div className="control-section">
@@ -572,7 +524,7 @@ const EnhancedEmbroideryTool: React.FC<EnhancedEmbroideryToolProps> = ({ active 
         </div>
       )}
 
-      <style jsx>{`
+      <style>{`
         .enhanced-embroidery-tool {
           padding: 16px;
           background: #f8f9fa;
@@ -852,4 +804,28 @@ const EnhancedEmbroideryTool: React.FC<EnhancedEmbroideryToolProps> = ({ active 
 };
 
 export default EnhancedEmbroideryTool;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

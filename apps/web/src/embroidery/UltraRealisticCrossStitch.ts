@@ -498,10 +498,10 @@ export class UltraRealisticCrossStitch {
     return stitches.map((stitch, index) => {
       // Calculate lighting for each point
       const litPoints = stitch.points.map((point: any) => {
-        const lighting = this.calculatePointLighting(point, lighting, material, properties3D);
+        const pointLighting = this.calculatePointLighting(point, lighting, material, properties3D);
         return {
           ...point,
-          lighting: lighting
+          lighting: pointLighting
         };
       });
       
@@ -527,7 +527,7 @@ export class UltraRealisticCrossStitch {
         fabric: {
           type: 'cotton',
           color: '#ffffff',
-          weave: properties3D.fabricWeave,
+          weave: this.mapFabricWeave(properties3D.fabricWeave),
           stretch: 0.1,
           thickness: 0.5,
           roughness: 0.3,
@@ -651,6 +651,22 @@ export class UltraRealisticCrossStitch {
         return { frequency: count / 12, amplitude: 0.08 };
       default:
         return { frequency: 1, amplitude: 0.1 };
+    }
+  }
+
+  // Map cross-stitch fabric weave names to allowed fabric weave literal union
+  private static mapFabricWeave(weave: 'aida' | 'evenweave' | 'linen' | 'canvas'): 'satin' | 'plain' | 'twill' | 'basket' {
+    switch (weave) {
+      case 'aida':
+        return 'basket';
+      case 'evenweave':
+        return 'plain';
+      case 'linen':
+        return 'plain';
+      case 'canvas':
+        return 'basket';
+      default:
+        return 'plain';
     }
   }
 
@@ -831,5 +847,29 @@ export class UltraRealisticCrossStitch {
 }
 
 export default UltraRealisticCrossStitch;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 

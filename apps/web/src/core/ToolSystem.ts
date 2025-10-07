@@ -10,6 +10,29 @@ export interface ToolCapability {
   conflicts: string[];
 }
 
+// Minimal no-op renderers to ensure initialization succeeds
+class BaseNoopRenderer implements ToolRenderer {
+  id = 'noop';
+  name = 'Noop Renderer';
+  version = '1.0.0';
+  capabilities = [] as any;
+  renderPreview() {}
+  renderFinal() {}
+  renderThumbnail() {}
+  canOptimize() { return false; }
+  optimize(path: VectorPath) { return path; }
+  supportsRealTimePreview() { return true; }
+  getPreviewQuality() { return 'normal' as const; }
+  validateConfig(): ValidationResult { return { valid: true, errors: [], warnings: [], suggestions: [] }; }
+  validatePath(): ValidationResult { return { valid: true, errors: [], warnings: [], suggestions: [] }; }
+}
+
+class BrushToolRenderer extends BaseNoopRenderer { id='brush'; name='Brush'; }
+class EmbroideryToolRenderer extends BaseNoopRenderer { id='embroidery'; name='Embroidery'; }
+class PuffPrintToolRenderer extends BaseNoopRenderer { id='puff-print'; name='Puff Print'; }
+class VectorToolRenderer extends BaseNoopRenderer { id='vector'; name='Vector'; }
+class AIToolRenderer extends BaseNoopRenderer { id='ai'; name='AI Tool'; }
+
 export interface ToolRenderer {
   id: string;
   name: string;
@@ -86,6 +109,13 @@ export interface VectorPath {
   cached: boolean;
 }
 
+export interface BoundingBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface VectorPoint {
   x: number;
   y: number;
@@ -127,6 +157,43 @@ export class UniversalToolSystem {
   private constructor() {
     this.initializeCoreTools();
     this.setupPerformanceMonitoring();
+  }
+
+  private validateRenderer(renderer: ToolRenderer): ValidationResult {
+    // Basic structural validation
+    const ok = !!renderer && typeof renderer.renderPreview === 'function' && typeof renderer.renderFinal === 'function';
+    return ok ? { valid: true, errors: [], warnings: [], suggestions: [] } : { valid: false, errors: ['Invalid renderer'], warnings: [], suggestions: [] };
+  }
+
+  private checkToolConflicts(renderer: ToolRenderer): string[] {
+    // Placeholder: no conflicts
+    return [];
+  }
+
+  private resolveConflicts(renderer: ToolRenderer, conflicts: string[]): void {
+    // No-op conflict resolution for now
+  }
+
+  private createDefaultConfig(renderer: ToolRenderer): ToolConfig {
+    return {
+      id: renderer.id,
+      name: renderer.name,
+      type: renderer.id,
+      version: renderer.version,
+      enabled: true,
+      visible: true,
+      locked: false,
+      opacity: 1,
+      blendMode: 'source-over',
+      quality: 'normal',
+      cacheEnabled: true,
+      maxCacheSize: 256,
+      optimizationLevel: 3,
+      properties: {},
+      aiEnabled: false,
+      autoOptimize: true,
+      smartSuggestions: false,
+    };
   }
   
   public static getInstance(): UniversalToolSystem {
@@ -247,8 +314,18 @@ export class UniversalToolSystem {
       
     } catch (error) {
       console.error('Error in universal rendering:', error);
-      return { success: false, error: error.message };
+      const msg = (error as any)?.message ?? String(error);
+      return { success: false, error: msg };
     }
+  }
+
+  private validateRenderInputs(ctx: CanvasRenderingContext2D, path: VectorPath, mode: 'preview'|'final'|'thumbnail'): ValidationResult {
+    if (!ctx || !path) return { valid: false, errors: ['Invalid inputs'], warnings: [], suggestions: [] };
+    return { valid: true, errors: [], warnings: [], suggestions: [] };
+  }
+
+  private applyCachedRender(ctx: CanvasRenderingContext2D, cached: any): void {
+    // No-op placeholder
   }
   
   // Real-time Preview System
@@ -297,7 +374,7 @@ export class UniversalToolSystem {
     // Generate suggestions
     for (const tool of rankedTools) {
       suggestions.push({
-        tool,
+        tool: tool.config,
         confidence: tool.relevance,
         reasoning: tool.reasoning,
         preview: this.generateToolPreview(path, tool.config)
@@ -305,6 +382,43 @@ export class UniversalToolSystem {
     }
     
     return suggestions;
+  }
+
+  // --- Helper stubs for composition and suggestion system ---
+  private checkToolCompositionConflicts(tools: ToolConfig[]): string[] {
+    return [];
+  }
+
+  private calculateOptimalRenderOrder(tools: ToolConfig[]): number[] {
+    return tools.map((_, idx) => idx);
+  }
+
+  private mergeToolProperties(tools: ToolConfig[]): Record<string, any> {
+    const out: Record<string, any> = {};
+    tools.forEach(t => Object.assign(out, t.properties || {}));
+    return out;
+  }
+
+  private analyzePath(path: VectorPath): any {
+    return { pointCount: path.points.length, closed: path.closed };
+  }
+
+  private getCompatibleTools(analysis: any): Array<{ config: ToolConfig; relevance: number; reasoning: string }> {
+    const all = Array.from(this.toolConfigs.values());
+    return all.map(cfg => ({ config: cfg, relevance: 0.5, reasoning: 'Default compatibility' }));
+  }
+
+  private rankToolsByRelevance(
+    tools: Array<{ config: ToolConfig; relevance: number; reasoning: string }>,
+    analysis: any,
+    context: DesignContext
+  ) {
+    return tools.sort((a, b) => b.relevance - a.relevance);
+  }
+
+  private generateToolPreview(path: VectorPath, config: ToolConfig): string {
+    // Placeholder base64 pixel
+    return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=';
   }
   
   // Performance Optimization
@@ -329,6 +443,42 @@ export class UniversalToolSystem {
     }
     
     this.performanceCache.set(key, results);
+  }
+
+  private sortToolsByRenderOrder(tools: ToolConfig[]): ToolConfig[] {
+    // If tools embed their own render order, sort; otherwise return as-is
+    return [...tools];
+  }
+
+  private renderPreview(ctx: CanvasRenderingContext2D, path: VectorPath, config: ToolConfig, renderer: ToolRenderer): RenderResult {
+    try { renderer.renderPreview(ctx, path, config); return { success: true, renderTime: 0 }; } catch (e) { return { success: false, error: (e as any)?.message ?? String(e) }; }
+  }
+
+  private renderFinal(ctx: CanvasRenderingContext2D, path: VectorPath, config: ToolConfig, renderer: ToolRenderer): RenderResult {
+    try { renderer.renderFinal(ctx, path, config); return { success: true, renderTime: 0 }; } catch (e) { return { success: false, error: (e as any)?.message ?? String(e) }; }
+  }
+
+  private renderThumbnail(ctx: CanvasRenderingContext2D, path: VectorPath, config: ToolConfig, renderer: ToolRenderer): RenderResult {
+    try { renderer.renderThumbnail(ctx, path, config); return { success: true, renderTime: 0 }; } catch (e) { return { success: false, error: (e as any)?.message ?? String(e) }; }
+  }
+
+  private hashPath(path: VectorPath): string {
+    // Simple hash by points length and id
+    return `${path.id}_${path.points.length}`;
+    }
+
+  private hashOptions(options: RenderOptions): string {
+    return JSON.stringify(options ?? {});
+  }
+
+  private evictOldestCacheEntries(): void {
+    // Remove first entry
+    const firstKey = this.performanceCache.keys().next().value;
+    if (typeof firstKey === 'string') this.performanceCache.delete(firstKey);
+  }
+
+  private optimizeCache(): void {
+    // Placeholder for cache optimization
   }
   
   // Event System

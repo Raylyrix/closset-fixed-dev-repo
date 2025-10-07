@@ -171,6 +171,53 @@ export class UltraRealisticBullion {
   }
 
   /**
+   * Wrapper: Generate wrapped bullion pattern (maps to spiral pattern for now)
+   */
+  private static generateWrappedBullion(
+    geometry: BullionGeometry,
+    pattern: BullionPattern,
+    properties3D: Bullion3DProperties
+  ): any[] {
+    // Use spiral as a visually similar fallback
+    return this.generateSpiralBullion(geometry, pattern, properties3D);
+  }
+
+  /**
+   * Wrapper: Generate padded bullion pattern (maps to double bullion for now)
+   */
+  private static generatePaddedBullion(
+    geometry: BullionGeometry,
+    pattern: BullionPattern,
+    properties3D: Bullion3DProperties
+  ): any[] {
+    return this.generateDoubleBullion(geometry, pattern, properties3D);
+  }
+
+  /**
+   * Wrapper: Generate heavy bullion pattern (maps to triple bullion for now)
+   */
+  private static generateHeavyBullion(
+    geometry: BullionGeometry,
+    pattern: BullionPattern,
+    properties3D: Bullion3DProperties
+  ): any[] {
+    return this.generateTripleBullion(geometry, pattern, properties3D);
+  }
+
+  /**
+   * Wrapper: Generate decorative bullion pattern (maps to double + spiral)
+   */
+  private static generateDecorativeBullion(
+    geometry: BullionGeometry,
+    pattern: BullionPattern,
+    properties3D: Bullion3DProperties
+  ): any[] {
+    const a = this.generateDoubleBullion(geometry, pattern, properties3D);
+    const b = this.generateSpiralBullion(geometry, pattern, properties3D);
+    return [...a, ...b];
+  }
+
+  /**
    * Generate single bullion pattern
    */
   private static generateSingleBullion(
@@ -535,10 +582,10 @@ export class UltraRealisticBullion {
     return stitches.map((stitch, index) => {
       // Calculate lighting for each point
       const litPoints = stitch.points.map((point: any) => {
-        const lighting = this.calculatePointLighting(point, lighting, material, properties3D);
+        const pointLighting = this.calculatePointLighting(point, lighting, material, properties3D);
         return {
           ...point,
-          lighting: lighting
+          lighting: pointLighting
         };
       });
       

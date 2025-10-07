@@ -264,7 +264,7 @@ export class EnhancedVectorTools {
     handleRemoveAnchor(event, point, shapes) {
         // Find clicked anchor point
         const hitResult = this.hitDetector.detectHit(point, shapes, {
-            tolerance: 10,
+            tolerance: this.options.precision,
             zoom: 1,
             showHitAreas: false,
             multiSelect: false,
@@ -298,7 +298,7 @@ export class EnhancedVectorTools {
     handleConvertAnchor(event, point, shapes) {
         // Find clicked anchor point
         const hitResult = this.hitDetector.detectHit(point, shapes, {
-            tolerance: 10,
+            tolerance: this.options.precision,
             zoom: 1,
             showHitAreas: false,
             multiSelect: false,

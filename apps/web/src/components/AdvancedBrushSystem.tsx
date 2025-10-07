@@ -1,335 +1,198 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useApp } from '../App';
+import { BrushEngine, BrushSettings, BrushPoint } from '../utils/BrushEngine';
+import { StrokeSmoothing, WetMediaSimulator } from '../utils/StrokeSmoothing';
+import { brushPresetManager, BrushPreset } from '../utils/BrushPresets';
 
 interface AdvancedBrushSystemProps {
   active: boolean;
 }
 
-interface BrushPreset {
-  id: string;
-  name: string;
-  type: 'paint' | 'ink' | 'watercolor' | 'oil' | 'digital' | 'custom';
-  dynamics: BrushDynamics;
-  texture: BrushTexture;
-  color: string;
-}
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
-interface BrushDynamics {
-  sizeVariation: number;
-  opacityVariation: number;
-  flowVariation: number;
-  angleVariation: number;
-  spacingVariation: number;
-  pressureSensitivity: boolean;
-  tiltSensitivity: boolean;
-  velocitySensitivity: boolean;
-  randomize: boolean;
-}
-
-interface BrushTexture {
-  pattern: string;
-  scale: number;
-  rotation: number;
-  opacity: number;
-  blendMode: GlobalCompositeOperation;
-  noise: number;
-  grain: number;
-}
+const hexToRgba = (hex: string, alpha: number) => {
+  let normalized = hex.replace('#', '').trim();
+  if (normalized.length === 3) {
+    normalized = normalized.split('').map(char => char + char).join('');
+  }
+  const bigint = parseInt(normalized, 16);
+  const r = (bigint >> 16) & 255;
+  const g = (bigint >> 8) & 255;
+  const b = bigint & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
 
 export function AdvancedBrushSystem({ active }: AdvancedBrushSystemProps) {
-  // Console log removed
+  // Initialize with presets from the manager
+  const [brushPresets, setBrushPresets] = useState<BrushPreset[]>(() =>
+    brushPresetManager.getAllPresets()
+  );
+  const [selectedPresetId, setSelectedPresetId] = useState<string>('hard_round');
+  const [currentSettings, setCurrentSettings] = useState<BrushSettings | null>(null);
 
-  const [brushPresets, setBrushPresets] = useState<BrushPreset[]>([
-    {
-      id: 'realistic_paint',
-      name: 'Realistic Paint',
-      type: 'paint',
-      dynamics: {
-        sizeVariation: 0.3,
-        opacityVariation: 0.4,
-        flowVariation: 0.2,
-        angleVariation: 0.1,
-        spacingVariation: 0.15,
-        pressureSensitivity: true,
-        tiltSensitivity: true,
-        velocitySensitivity: true,
-        randomize: false
-      },
-      texture: {
-        pattern: 'canvas',
-        scale: 1.0,
-        rotation: 0,
-        opacity: 0.8,
-        blendMode: 'multiply',
-        noise: 0.1,
-        grain: 0.2
-      },
-      color: '#ff3366'
-    },
-    {
-      id: 'watercolor_brush',
-      name: 'Watercolor',
-      type: 'watercolor',
-      dynamics: {
-        sizeVariation: 0.5,
-        opacityVariation: 0.6,
-        flowVariation: 0.4,
-        angleVariation: 0.2,
-        spacingVariation: 0.3,
-        pressureSensitivity: true,
-        tiltSensitivity: false,
-        velocitySensitivity: true,
-        randomize: true
-      },
-      texture: {
-        pattern: 'watercolor',
-        scale: 1.2,
-        rotation: 0,
-        opacity: 0.7,
-        blendMode: 'soft-light',
-        noise: 0.3,
-        grain: 0.4
-      },
-      color: '#ff3366'
-    },
-    {
-      id: 'ink_pen',
-      name: 'Ink Pen',
-      type: 'ink',
-      dynamics: {
-        sizeVariation: 0.1,
-        opacityVariation: 0.05,
-        flowVariation: 0.1,
-        angleVariation: 0.3,
-        spacingVariation: 0.05,
-        pressureSensitivity: true,
-        tiltSensitivity: true,
-        velocitySensitivity: false,
-        randomize: false
-      },
-      texture: {
-        pattern: 'smooth',
-        scale: 1.0,
-        rotation: 0,
-        opacity: 1.0,
-        blendMode: 'source-over',
-        noise: 0.02,
-        grain: 0.0
-      },
-      color: '#000000'
-    }
-  ]);
+  // Missing state variables
+  const [customDynamics, setCustomDynamics] = useState({
+    sizeVariation: 0.5,
+    opacityVariation: 0.3,
+    flowVariation: 0.2,
+    angleVariation: 0.1,
+    pressureSensitivity: true,
+    tiltSensitivity: false,
+    velocitySensitivity: true,
+    randomize: false
+  });
 
-  const [selectedPreset, setSelectedPreset] = useState<string>('realistic_paint');
-  const [customDynamics, setCustomDynamics] = useState<BrushDynamics>(brushPresets[0].dynamics);
-  const [customTexture, setCustomTexture] = useState<BrushTexture>(brushPresets[0].texture);
+  const [customTexture, setCustomTexture] = useState({
+    pattern: 'canvas',
+    scale: 1.0,
+    noise: 0.1,
+    grain: 0.05
+  });
+
+  // Brush engine and utilities
+  const brushEngineRef = useRef<BrushEngine | null>(null);
+  const strokeSmoothingRef = useRef<StrokeSmoothing | null>(null);
+  const wetMediaRef = useRef<WetMediaSimulator | null>(null);
+
+  // Drawing state
   const [isDrawing, setIsDrawing] = useState(false);
-  const [lastPoint, setLastPoint] = useState<{ x: number; y: number } | null>(null);
-  const [brushPath, setBrushPath] = useState<{ x: number; y: number; pressure: number; tilt: number }[]>([]);
+  const [currentStrokeId, setCurrentStrokeId] = useState<string | null>(null);
+  const [lastPoint, setLastPoint] = useState<BrushPoint | null>(null);
 
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  // Canvas refs
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const currentPreset = brushPresets.find(p => p.id === selectedPreset) || brushPresets[0];
+  // Initialize engines
+  useEffect(() => {
+    if (previewCanvasRef.current) {
+      brushEngineRef.current = new BrushEngine(previewCanvasRef.current);
+      strokeSmoothingRef.current = new StrokeSmoothing();
+      wetMediaRef.current = new WetMediaSimulator(previewCanvasRef.current);
 
-  const updateBrushPreset = useCallback((presetId: string, updates: Partial<BrushPreset>) => {
-    // Console log removed
-    setBrushPresets(prev => prev.map(preset => 
-      preset.id === presetId ? { ...preset, ...updates } : preset
-    ));
+      // Load current preset settings
+      const preset = brushPresetManager.getPreset(selectedPresetId);
+      if (preset) {
+        setCurrentSettings(preset.settings);
+      }
+    }
+
+    return () => {
+      brushEngineRef.current?.dispose();
+      wetMediaRef.current?.dispose();
+    };
   }, []);
 
-  const createCustomBrush = useCallback(() => {
-    // Console log removed
-    const newPreset: BrushPreset = {
-      id: `custom_${Date.now()}`,
-      name: 'Custom Brush',
-      type: 'custom',
-      dynamics: customDynamics,
-      texture: customTexture,
-      color: '#ff3366'
-    };
-    setBrushPresets(prev => [...prev, newPreset]);
-    setSelectedPreset(newPreset.id);
-  }, [customDynamics, customTexture]);
-
-  const applyBrushStroke = useCallback((ctx: CanvasRenderingContext2D, points: typeof brushPath) => {
-    // Console log removed
-    
-    if (points.length < 2) return;
-
-    const preset = currentPreset;
-    const dynamics = preset.dynamics;
-    const texture = preset.texture;
-
-    ctx.save();
-    ctx.globalCompositeOperation = texture.blendMode;
-
-    // Create brush texture
-    const textureCanvas = document.createElement('canvas');
-    const textureCtx = textureCanvas.getContext('2d')!;
-    textureCanvas.width = 64;
-    textureCanvas.height = 64;
-
-    // Generate texture based on pattern
-    switch (texture.pattern) {
-      case 'canvas':
-        generateCanvasTexture(textureCtx, texture);
-        break;
-      case 'watercolor':
-        generateWatercolorTexture(textureCtx, texture);
-        break;
-      case 'smooth':
-        generateSmoothTexture(textureCtx, texture);
-        break;
+  // Update settings when preset changes
+  useEffect(() => {
+    const preset = brushPresetManager.getPreset(selectedPresetId);
+    if (preset) {
+      setCurrentSettings(preset.settings);
     }
+  }, [selectedPresetId]);
 
-    // Draw brush strokes with dynamics
-    for (let i = 1; i < points.length; i++) {
-      const prevPoint = points[i - 1];
-      const currentPoint = points[i];
-      
-      const pressure = currentPoint.pressure;
-      const velocity = Math.sqrt(
-        Math.pow(currentPoint.x - prevPoint.x, 2) + 
-        Math.pow(currentPoint.y - prevPoint.y, 2)
-      );
-
-      // Calculate dynamic properties
-      let size = 20 * pressure * (1 + (dynamics.sizeVariation * (Math.random() - 0.5)));
-      let opacity = pressure * (1 + (dynamics.opacityVariation * (Math.random() - 0.5)));
-      const flow = pressure * (1 + (dynamics.flowVariation * (Math.random() - 0.5)));
-      const angle = Math.atan2(currentPoint.y - prevPoint.y, currentPoint.x - prevPoint.x) + 
-                   (dynamics.angleVariation * (Math.random() - 0.5));
-
-      // Apply velocity sensitivity
-      if (dynamics.velocitySensitivity) {
-        const velocityFactor = Math.min(1, velocity / 10);
-        const sizeMultiplier = 1 - (velocityFactor * 0.3);
-        const opacityMultiplier = 1 - (velocityFactor * 0.2);
-        size *= sizeMultiplier;
-        opacity *= opacityMultiplier;
-      }
-
-      // Draw brush stroke
-      ctx.save();
-      ctx.globalAlpha = opacity * texture.opacity;
-      ctx.translate(currentPoint.x, currentPoint.y);
-      ctx.rotate(angle);
-      ctx.scale(size / 64, size / 64);
-      
-      // Apply texture
-      ctx.drawImage(textureCanvas, -32, -32);
-      
-      ctx.restore();
-    }
-
-    ctx.restore();
-  }, [currentPreset]);
-
-  const generateCanvasTexture = (ctx: CanvasRenderingContext2D, texture: BrushTexture) => {
-    // Console log removed
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, 64, 64);
-    
-    // Add canvas weave pattern
-    ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
-    ctx.lineWidth = 1;
-    for (let i = 0; i < 64; i += 4) {
-      ctx.beginPath();
-      ctx.moveTo(i, 0);
-      ctx.lineTo(i, 64);
-      ctx.stroke();
-    }
-    for (let i = 0; i < 64; i += 4) {
-      ctx.beginPath();
-      ctx.moveTo(0, i);
-      ctx.lineTo(64, i);
-      ctx.stroke();
-    }
-  };
-
-  const generateWatercolorTexture = (ctx: CanvasRenderingContext2D, texture: BrushTexture) => {
-    // Console log removed
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, 64, 64);
-    
-    // Add watercolor bleeding effect
-    for (let i = 0; i < 20; i++) {
-      const x = Math.random() * 64;
-      const y = Math.random() * 64;
-      const radius = Math.random() * 15 + 5;
-      
-      const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius);
-      gradient.addColorStop(0, `rgba(0, 0, 0, ${Math.random() * 0.3})`);
-      gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
-      
-      ctx.fillStyle = gradient;
-      ctx.beginPath();
-      ctx.arc(x, y, radius, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  };
-
-  const generateSmoothTexture = (ctx: CanvasRenderingContext2D, texture: BrushTexture) => {
-    // Console log removed
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, 64, 64);
-    
-    // Add subtle noise
-    const imageData = ctx.getImageData(0, 0, 64, 64);
-    const data = imageData.data;
-    
-    for (let i = 0; i < data.length; i += 4) {
-      const noise = (Math.random() - 0.5) * texture.noise * 255;
-      data[i] = Math.max(0, Math.min(255, data[i] + noise));
-      data[i + 1] = Math.max(0, Math.min(255, data[i + 1] + noise));
-      data[i + 2] = Math.max(0, Math.min(255, data[i + 2] + noise));
-    }
-    
-    ctx.putImageData(imageData, 0, 0);
-  };
-
+  // Handle mouse events
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    // Console log removed
+    if (!currentSettings || !brushEngineRef.current) return;
+
     setIsDrawing(true);
-    setBrushPath([]);
-    
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    
-    setLastPoint({ x, y });
-    setBrushPath([{ x, y, pressure: 1, tilt: 0 }]);
-  }, []);
+
+    const point: BrushPoint = {
+      x,
+      y,
+      pressure: 1, // TODO: Get from pressure API
+      tiltX: 0,   // TODO: Get from tilt API
+      tiltY: 0,   // TODO: Get from tilt API
+      velocity: 0,
+      timestamp: Date.now(),
+      distance: 0
+    };
+
+    setLastPoint(point);
+    const strokeId = brushEngineRef.current.startStroke(currentSettings);
+    setCurrentStrokeId(strokeId);
+    brushEngineRef.current.addPoint(point);
+  }, [currentSettings]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isDrawing) return;
-    
+    if (!isDrawing || !currentSettings || !brushEngineRef.current || !lastPoint) return;
+
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    
-    setBrushPath(prev => [...prev, { x, y, pressure: 1, tilt: 0 }]);
-    
-    // Apply brush stroke in real-time
-    const canvas = canvasRef.current;
-    if (canvas) {
-      const ctx = canvas.getContext('2d')!;
-      applyBrushStroke(ctx, [...brushPath, { x, y, pressure: 1, tilt: 0 }]);
+
+    const currentTime = Date.now();
+    const dx = x - lastPoint.x;
+    const dy = y - lastPoint.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    const timeDelta = currentTime - lastPoint.timestamp;
+    const velocity = timeDelta > 0 ? distance / timeDelta : 0;
+
+    const point: BrushPoint = {
+      x,
+      y,
+      pressure: 1, // TODO: Get from pressure API
+      tiltX: 0,   // TODO: Get from tilt API
+      tiltY: 0,   // TODO: Get from tilt API
+      velocity,
+      timestamp: currentTime,
+      distance
+    };
+
+    // Apply stroke smoothing if enabled
+    let processedPoint = point;
+    if (strokeSmoothingRef.current && currentSettings.stabilization.enabled) {
+      const recentPoints = [lastPoint, point];
+      processedPoint = strokeSmoothingRef.current.stabilizePoint(
+        point,
+        recentPoints,
+        { ...currentSettings.stabilization, adaptive: true }
+      );
     }
-  }, [isDrawing, brushPath, applyBrushStroke]);
+
+    brushEngineRef.current.addPoint(processedPoint);
+    setLastPoint(point);
+  }, [isDrawing, currentSettings, lastPoint]);
 
   const handleMouseUp = useCallback(() => {
-    // Console log removed
+    if (!brushEngineRef.current) return;
+
     setIsDrawing(false);
+    brushEngineRef.current.endStroke();
+    setCurrentStrokeId(null);
     setLastPoint(null);
   }, []);
 
-  if (!active) {
-    // Console log removed
-    return null;
-  }
+  // Update preset
+  const updateBrushPreset = useCallback((presetId: string, updates: Partial<BrushPreset>) => {
+    brushPresetManager.updatePreset(presetId, updates);
+    setBrushPresets(brushPresetManager.getAllPresets());
+  }, []);
+
+  // Create custom brush
+  const createCustomBrush = useCallback(() => {
+    if (!currentSettings) return;
+
+    const newPreset: BrushPreset = {
+      id: `custom-${Date.now()}`,
+      name: 'Custom Brush',
+      category: 'custom',
+      description: 'User-created custom brush',
+      settings: currentSettings,
+      tags: ['custom'],
+      createdAt: Date.now(),
+      modifiedAt: Date.now()
+    };
+
+    brushPresetManager.addPreset(newPreset);
+    setBrushPresets(brushPresetManager.getAllPresets());
+    setSelectedPresetId(newPreset.id);
+  }, [currentSettings]);
+
+  const selectedPreset = brushPresets.find(p => p.id === selectedPresetId) || brushPresets[0];
 
   console.log('🎨 AdvancedBrushSystem: Rendering component', { 
     presetsCount: brushPresets.length,
@@ -389,12 +252,12 @@ export function AdvancedBrushSystem({ active }: AdvancedBrushSystemProps) {
           {brushPresets.map(preset => (
             <button
               key={preset.id}
-              className={`preset-btn ${selectedPreset === preset.id ? 'active' : ''}`}
-              onClick={() => setSelectedPreset(preset.id)}
+              className={`preset-btn ${selectedPresetId === preset.id ? 'active' : ''}`}
+              onClick={() => setSelectedPresetId(preset.id)}
               style={{
                 padding: '8px',
-                background: selectedPreset === preset.id ? '#3B82F6' : 'rgba(59, 130, 246, 0.2)',
-                color: selectedPreset === preset.id ? '#FFFFFF' : '#93C5FD',
+                background: selectedPresetId === preset.id ? '#3B82F6' : 'rgba(59, 130, 246, 0.2)',
+                color: selectedPresetId === preset.id ? '#FFFFFF' : '#93C5FD',
                 border: '1px solid rgba(59, 130, 246, 0.3)',
                 borderRadius: '6px',
                 fontSize: '11px',
@@ -404,10 +267,7 @@ export function AdvancedBrushSystem({ active }: AdvancedBrushSystemProps) {
               }}
             >
               <div style={{ fontSize: '16px', marginBottom: '4px' }}>
-                {preset.type === 'paint' ? '🎨' : 
-                 preset.type === 'watercolor' ? '💧' : 
-                 preset.type === 'ink' ? '✒️' : 
-                 preset.type === 'oil' ? '🖼️' : '🖌️'}
+                🖌️
               </div>
               <div>{preset.name}</div>
             </button>

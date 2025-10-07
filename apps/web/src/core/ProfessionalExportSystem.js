@@ -158,7 +158,7 @@ export class ProfessionalExportSystem {
         catch (error) {
             // Mark as failed
             job.status = 'failed';
-            job.error = error.message;
+            job.error = error?.message ?? String(error);
             job.completed = new Date();
             job.duration = job.completed.getTime() - (job.started?.getTime() || job.created.getTime());
             // Remove from active jobs
@@ -174,11 +174,12 @@ export class ProfessionalExportSystem {
         try {
             const jobs = [];
             for (const item of config.items) {
+                const fallbackFormat = this.getFormat('png') || Array.from(this.formats.values())[0];
                 const job = await this.createExportJob({
                     name: item.name || `Batch Export ${jobs.length + 1}`,
                     description: item.description || '',
                     source: item.source,
-                    format: item.format,
+                    format: item.format || fallbackFormat,
                     settings: item.settings,
                     priority: item.priority || 0
                 });
@@ -238,7 +239,6 @@ export class ProfessionalExportSystem {
                     supportsPaths: false,
                     supportsText: false,
                     supportsGradients: false,
-                    supportsPatterns: false,
                     supportsFilters: false,
                     supportsGeometry: false,
                     supportsMaterials: false,
@@ -312,7 +312,6 @@ export class ProfessionalExportSystem {
                     supportsStitches: false,
                     supportsThreads: false,
                     supportsColors: true,
-                    supportsPatterns: false,
                     supportsHoops: false,
                     supportsCMYK: false,
                     supportsSpotColors: false,
@@ -366,7 +365,6 @@ export class ProfessionalExportSystem {
                     supportsPaths: false,
                     supportsText: false,
                     supportsGradients: false,
-                    supportsPatterns: false,
                     supportsFilters: false,
                     supportsGeometry: false,
                     supportsMaterials: false,

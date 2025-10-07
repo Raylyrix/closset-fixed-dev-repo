@@ -1,14 +1,4 @@
-/**
- * ✅ Validation System - Production Input Validation
- *
- * Comprehensive validation system for production:
- * - Type validation
- * - Range validation
- * - Format validation
- * - Custom validation rules
- * - Error message management
- * - Real-time validation
- */
+import React from 'react';
 export class ValidationSystem {
     constructor() {
         this.rules = new Map();

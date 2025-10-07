@@ -123,7 +123,7 @@ export function BatchProcessing({ active }: BatchProcessingProps) {
   const [customOperations, setCustomOperations] = useState<BatchOperation[]>([]);
 
   // Refs
-  const processingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const processingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Initialize batch processing

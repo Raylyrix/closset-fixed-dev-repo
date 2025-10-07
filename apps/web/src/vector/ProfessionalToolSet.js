@@ -541,7 +541,7 @@ export class ProfessionalToolSet {
                 roundness: 1.0,
                 color: '#000000',
                 blendMode: 'normal',
-                angle: 360,
+                revolveAngle: 360,
                 segments: 16
             }
         });

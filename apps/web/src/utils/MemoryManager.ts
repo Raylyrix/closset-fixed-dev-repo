@@ -27,7 +27,7 @@ class MemoryManager {
   private cleanupTasks: CleanupTask[] = [];
   private isMonitoring = false;
   private memoryThreshold = 100 * 1024 * 1024; // 100MB
-  private cleanupInterval: NodeJS.Timeout | null = null;
+  private cleanupInterval: ReturnType<typeof setInterval> | null = null;
   private canvasPool: HTMLCanvasElement[] = [];
   private imagePool: HTMLImageElement[] = [];
   private maxPoolSize = 10;

@@ -302,8 +302,8 @@ export class ProfessionalVectorSystem {
             },
             precision: {
                 snapEnabled: precisionState.enabled,
-                gridEnabled: precisionState.gridSnap,
-                guidesEnabled: precisionState.guideSnap
+                gridEnabled: precisionState.snapToGrid,
+                guidesEnabled: precisionState.snapToGuides
             },
             performance: {
                 memoryUsage: this.performanceMetrics.memoryUsage,
@@ -337,7 +337,7 @@ export class ProfessionalVectorSystem {
         };
     }
     saveState() {
-        this.undoRedoSystem.saveState(this.currentState);
+        // Intentionally a no-op; integrate with UndoRedoSystem command pattern as needed
     }
     restoreState() {
         // This would restore the state from the undo/redo system

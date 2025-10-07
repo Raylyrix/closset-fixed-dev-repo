@@ -1,8 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../App';
 import { vectorStore } from '../vector/vectorState';
-import VectorSettingsPanel from './VectorSettingsPanel';
-import ErrorMonitoringDashboard from './ErrorMonitoringDashboard';
 
 interface VectorToolbarProps {
   isVisible: boolean;
@@ -12,8 +10,6 @@ interface VectorToolbarProps {
 const VectorToolbar: React.FC<VectorToolbarProps> = ({ isVisible, onClose }) => {
   const { activeTool, setActiveTool, vectorMode, setVectorMode } = useApp();
   const [selectedVectorTool, setSelectedVectorTool] = useState<string>('pen');
-  const [showSettings, setShowSettings] = useState(false);
-  const [showErrorDashboard, setShowErrorDashboard] = useState(false);
   
   // Sync with vector store state
   React.useEffect(() => {
@@ -44,33 +40,6 @@ const VectorToolbar: React.FC<VectorToolbarProps> = ({ isVisible, onClose }) => 
     };
   }, []);
 
-  const vectorTools = [
-    // Drawing Tools
-    { id: 'pen', name: 'Pen Tool', icon: '✏️', description: 'Draw vector paths', category: 'drawing' },
-    { id: 'curvature', name: 'Curvature Tool', icon: '🌊', description: 'Create smooth curves', category: 'drawing' },
-    
-    // Selection Tools
-    { id: 'pathSelection', name: 'Select Tool', icon: '↖️', description: 'Select and move paths', category: 'selection' },
-    { id: 'marqueeRect', name: 'Rectangular Marquee', icon: '⬜', description: 'Rectangular selection', category: 'selection' },
-    { id: 'marqueeEllipse', name: 'Elliptical Marquee', icon: '⭕', description: 'Elliptical selection', category: 'selection' },
-    { id: 'lasso', name: 'Lasso Tool', icon: '🪃', description: 'Freehand selection', category: 'selection' },
-    { id: 'polygonLasso', name: 'Polygon Lasso', icon: '🔷', description: 'Polygonal selection', category: 'selection' },
-    { id: 'magneticLasso', name: 'Magnetic Lasso', icon: '🧲', description: 'Magnetic selection', category: 'selection' },
-    { id: 'magicWand', name: 'Magic Wand', icon: '🪄', description: 'Color-based selection', category: 'selection' },
-    
-    // Path Editing Tools
-    { id: 'addAnchor', name: 'Add Anchor', icon: '➕', description: 'Add anchor points', category: 'editing' },
-    { id: 'removeAnchor', name: 'Remove Anchor', icon: '➖', description: 'Remove anchor points', category: 'editing' },
-    { id: 'convertAnchor', name: 'Convert Anchor', icon: '🔄', description: 'Convert anchor point types', category: 'editing' },
-    
-    // Transform Tools
-    { id: 'transform', name: 'Transform', icon: '🔄', description: 'Transform objects', category: 'transform' },
-    { id: 'scale', name: 'Scale', icon: '📏', description: 'Scale objects', category: 'transform' },
-    { id: 'rotate', name: 'Rotate', icon: '🔄', description: 'Rotate objects', category: 'transform' },
-    { id: 'skew', name: 'Skew', icon: '📐', description: 'Skew objects', category: 'transform' },
-    { id: 'perspective', name: 'Perspective', icon: '🏗️', description: 'Perspective transform', category: 'transform' }
-  ];
-
   const handleVectorToolSelect = (toolId: string) => {
     setSelectedVectorTool(toolId);
     // Update the vector store with the selected tool
@@ -85,7 +54,7 @@ const VectorToolbar: React.FC<VectorToolbarProps> = ({ isVisible, onClose }) => 
 
   const handleClearAll = () => {
     try {
-      vectorStore.setAll({ shapes: [], selected: [], currentPath: null });
+      vectorStore.setState({ shapes: [], selected: [], currentPath: null });
       // Dispatch event to clear the canvas
       window.dispatchEvent(new CustomEvent('clearActiveLayer'));
       console.log('🎨 Vector shapes cleared');
@@ -94,122 +63,334 @@ const VectorToolbar: React.FC<VectorToolbarProps> = ({ isVisible, onClose }) => 
     }
   };
 
+  const handleApplyToolToPaths = () => {
+    const appState = useApp.getState();
+    const currentTool = appState.activeTool;
+    const vectorPaths = appState.vectorPaths || [];
+    
+    if (!vectorPaths.length) {
+      console.log('⚠️ No vector paths to apply tool to');
+      return;
+    }
+    
+    if (currentTool === 'brush' || currentTool === 'puffPrint' || currentTool === 'embroidery') {
+      console.log(`🎨 Applying ${currentTool} to ${vectorPaths.length} vector path(s)`);
+      
+      const layer = appState.getActiveLayer();
+      if (!layer || !layer.canvas) {
+        console.log('⚠️ No active layer or canvas');
+        return;
+      }
+      
+      const ctx = layer.canvas.getContext('2d');
+      if (!ctx) return;
+      
+      // Apply tool to each vector path
+      vectorPaths.forEach((path: any) => {
+        console.log(`🎨 Applying ${currentTool} to path:`, path.id, 'with', path.points.length, 'points');
+        
+        // Sample points along the path for smooth painting
+        const sampledPoints = samplePathPoints(path.points, 2);
+        
+        ctx.save();
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = appState.brushOpacity || 1;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        
+        if (currentTool === 'brush') {
+          // Apply brush along path
+          ctx.strokeStyle = appState.brushColor;
+          ctx.lineWidth = appState.brushSize;
+          ctx.beginPath();
+          sampledPoints.forEach((point: any, index: number) => {
+            const x = point.u * layer.canvas.width;
+            const y = point.v * layer.canvas.height;
+            if (index === 0) {
+              ctx.moveTo(x, y);
+            } else {
+              ctx.lineTo(x, y);
+            }
+          });
+          ctx.stroke();
+        } else if (currentTool === 'embroidery') {
+          // Apply embroidery stitches along path
+          const stitchType = appState.embroideryStitchType || 'satin';
+          const color = appState.embroideryColor || appState.brushColor;
+          const thickness = appState.embroideryThickness || 2;
+          
+          ctx.strokeStyle = color;
+          ctx.fillStyle = color;
+          ctx.lineWidth = thickness;
+          ctx.shadowColor = color;
+          ctx.shadowBlur = 2;
+          
+          ctx.beginPath();
+          sampledPoints.forEach((point: any, index: number) => {
+            const x = point.u * layer.canvas.width;
+            const y = point.v * layer.canvas.height;
+            if (index === 0) {
+              ctx.moveTo(x, y);
+            } else {
+              ctx.lineTo(x, y);
+            }
+          });
+          ctx.stroke();
+        } else if (currentTool === 'puffPrint') {
+          // Apply puff print along path - create puff texture and displacement maps directly
+          console.log('🎨 Applying puff print to path with', sampledPoints.length, 'points');
+          
+          // Get puff canvases from global state
+          const puffCanvas = appState.puffCanvas;
+          const displacementCanvas = appState.displacementCanvas;
+          
+          if (!puffCanvas || !displacementCanvas) {
+            console.log('⚠️ Puff canvases not initialized');
+            return;
+          }
+          
+          // Get puff settings
+          const puffBrushSize = appState.puffBrushSize || 20;
+          const puffBrushOpacity = appState.puffBrushOpacity || 1.0;
+          const puffColor = appState.puffColor || '#ff69b4';
+          const puffHeight = appState.puffHeight || 2.0;
+          
+          const puffCtx = puffCanvas.getContext('2d');
+          const dispCtx = displacementCanvas.getContext('2d');
+          
+          if (!puffCtx || !dispCtx) return;
+          
+          // Apply puff to each sampled point with smooth blending
+          sampledPoints.forEach((point: any, index: number) => {
+            const x = Math.round(point.u * puffCanvas.width);
+            const y = Math.round(point.v * puffCanvas.height);
+            
+            // Create puff texture with smoother gradients
+            puffCtx.save();
+            puffCtx.globalCompositeOperation = 'source-over';
+            puffCtx.globalAlpha = puffBrushOpacity * 0.85;
+            
+            // Larger radius for smoother blending
+            const puffRadius = puffBrushSize * 1.5;
+            const gradient = puffCtx.createRadialGradient(x, y, 0, x, y, puffRadius);
+            gradient.addColorStop(0, puffColor);
+            gradient.addColorStop(0.3, puffColor.replace(')', ', 0.85)').replace('rgb', 'rgba'));
+            gradient.addColorStop(0.6, puffColor.replace(')', ', 0.5)').replace('rgb', 'rgba'));
+            gradient.addColorStop(0.85, puffColor.replace(')', ', 0.15)').replace('rgb', 'rgba'));
+            gradient.addColorStop(1, puffColor.replace(')', ', 0)').replace('rgb', 'rgba'));
+            
+            puffCtx.fillStyle = gradient;
+            puffCtx.beginPath();
+            puffCtx.arc(x, y, puffRadius, 0, Math.PI * 2);
+            puffCtx.fill();
+            puffCtx.restore();
+            
+            // Create displacement map with smoother falloff
+            dispCtx.save();
+            dispCtx.globalCompositeOperation = 'source-over';
+            
+            const displacementValue = Math.floor(128 + (puffHeight / 10) * 127);
+            const dispRadius = puffBrushSize * 1.5; // Larger for smooth blend
+            const dispGradient = dispCtx.createRadialGradient(x, y, 0, x, y, dispRadius);
+            dispGradient.addColorStop(0, `rgba(${displacementValue}, ${displacementValue}, ${displacementValue}, 1.0)`);
+            dispGradient.addColorStop(0.4, `rgba(${displacementValue}, ${displacementValue}, ${displacementValue}, 0.85)`);
+            dispGradient.addColorStop(0.7, `rgba(${Math.floor((displacementValue + 128) / 2)}, ${Math.floor((displacementValue + 128) / 2)}, ${Math.floor((displacementValue + 128) / 2)}, 0.4)`);
+            dispGradient.addColorStop(0.9, `rgba(132, 132, 132, 0.1)`);
+            dispGradient.addColorStop(1, 'rgba(128, 128, 128, 0)');
+            
+            dispCtx.fillStyle = dispGradient;
+            dispCtx.beginPath();
+            dispCtx.arc(x, y, dispRadius, 0, Math.PI * 2);
+            dispCtx.fill();
+            dispCtx.restore();
+          });
+          
+          console.log('🎨 Puff texture and displacement created for path');
+          
+          // Update canvases in state
+          appState.puffCanvas = puffCanvas;
+          appState.displacementCanvas = displacementCanvas;
+          
+          // Trigger displacement update to apply 3D effect to model
+          const updatePuffDisplacement = (window as any).updateModelWithPuffDisplacement;
+          if (updatePuffDisplacement) {
+            updatePuffDisplacement();
+          }
+          
+          console.log('✅ Finished applying puff print to path');
+        }
+        
+        ctx.restore();
+      });
+      
+      // Trigger composition
+      setTimeout(() => {
+        appState.composeLayers();
+      }, 50);
+    }
+  };
+  
+  // Helper function to sample points along path
+  const samplePathPoints = (points: any[], spacing: number = 2) => {
+    if (!points || points.length < 2) return points;
+    
+    const sampled = [points[0]];
+    for (let i = 0; i < points.length - 1; i++) {
+      const p1 = points[i];
+      const p2 = points[i + 1];
+      const du = p2.u - p1.u;
+      const dv = p2.v - p1.v;
+      const dist = Math.sqrt(du * du + dv * dv);
+      const steps = Math.max(1, Math.floor(dist * 1000 / spacing));
+      
+      for (let j = 1; j <= steps; j++) {
+        const t = j / steps;
+        sampled.push({
+          u: p1.u + du * t,
+          v: p1.v + dv * t
+        });
+      }
+    }
+    return sampled;
+  };
+
   if (!isVisible) return null;
 
   return (
     <div style={{
       position: 'fixed',
-      top: 0,
-      left: 0,
-      right: 0,
+      top: '20px',
+      right: '20px',
+      width: '320px',
+      background: 'rgba(255, 255, 255, 0.95)',
+      backdropFilter: 'blur(10px)',
+      border: '1px solid rgba(255, 255, 255, 0.2)',
+      borderRadius: '16px',
+      padding: '20px',
+      color: '#2d3748',
       zIndex: 1000,
-      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-      color: 'white',
-      padding: '12px 20px',
-      boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+      boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)',
       display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      minHeight: '60px'
+      flexDirection: 'column',
+      gap: '16px'
     }}>
-      {/* Left side - Vector Tools */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+      {/* Header */}
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center',
+        borderBottom: '1px solid #e2e8f0',
+        paddingBottom: '12px'
+      }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '20px' }}>🎨</span>
-          <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '600' }}>Vector Tools</h3>
+          <span style={{ fontSize: '20px' }}>✏️</span>
+          <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '600', color: '#2d3748' }}>Vector Tools</h3>
         </div>
-        
-        <div style={{ display: 'flex', gap: '20px' }}>
-          {['drawing', 'selection', 'editing', 'transform'].map((category) => (
-            <div key={category} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <div style={{ 
-                fontSize: '12px', 
-                fontWeight: '600', 
-                color: 'rgba(255,255,255,0.7)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px'
-              }}>
-                {category}
-              </div>
-              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                {vectorTools
-                  .filter(tool => tool.category === category)
-                  .map((tool) => (
-                    <button
-                      key={tool.id}
-                      onClick={() => handleVectorToolSelect(tool.id)}
-                      style={{
-                        padding: '6px 12px',
-                        borderRadius: '6px',
-                        background: selectedVectorTool === tool.id ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.1)',
-                        color: 'white',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        fontSize: '12px',
-                        fontWeight: '500',
-                        transition: 'all 0.2s ease',
-                        border: selectedVectorTool === tool.id ? '2px solid rgba(255,255,255,0.5)' : '2px solid transparent',
-                        minWidth: '80px',
-                        justifyContent: 'center'
-                      }}
-                      onMouseEnter={(e) => {
-                        if (selectedVectorTool !== tool.id) {
-                          e.currentTarget.style.background = 'rgba(255,255,255,0.2)';
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        if (selectedVectorTool !== tool.id) {
-                          e.currentTarget.style.background = 'rgba(255,255,255,0.1)';
-                        }
-                      }}
-                      title={tool.description}
-                    >
-                      <span style={{ fontSize: '14px' }}>{tool.icon}</span>
-                      <span style={{ fontSize: '11px' }}>{tool.name}</span>
-                    </button>
-                  ))}
-              </div>
-            </div>
-          ))}
-        </div>
+        <button
+          onClick={onClose}
+          style={{
+            background: 'none',
+            border: 'none',
+            fontSize: '18px',
+            cursor: 'pointer',
+            color: '#718096',
+            padding: '4px',
+            borderRadius: '4px'
+          }}
+        >
+          ×
+        </button>
       </div>
 
-      {/* Center - Active Tool Info */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-        <div style={{
-          padding: '6px 12px',
-          background: 'rgba(255,255,255,0.2)',
-          borderRadius: '20px',
-          fontSize: '14px',
-          fontWeight: '500'
-        }}>
-          Active: {activeTool} • Vector: {vectorMode ? 'ON' : 'OFF'}
-        </div>
+      {/* Essential Tools Only */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+        {[
+          { id: 'pen', name: 'Pen', icon: '✏️' },
+          { id: 'pathSelection', name: 'Select', icon: '↖️' },
+          { id: 'addAnchor', name: 'Add Point', icon: '➕' },
+          { id: 'removeAnchor', name: 'Remove', icon: '➖' },
+          { id: 'convertAnchor', name: 'Convert', icon: '🔄' },
+          { id: 'curvature', name: 'Curve', icon: '🌊' }
+        ].map((tool) => (
+          <button
+            key={tool.id}
+            onClick={() => handleVectorToolSelect(tool.id)}
+            style={{
+              padding: '12px 8px',
+              borderRadius: '8px',
+              background: selectedVectorTool === tool.id ? '#667eea' : '#f7fafc',
+              border: selectedVectorTool === tool.id ? 'none' : '1px solid #e2e8f0',
+              color: selectedVectorTool === tool.id ? 'white' : '#4a5568',
+              cursor: 'pointer',
+              fontSize: '12px',
+              fontWeight: '500',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '4px',
+              transition: 'all 0.2s ease'
+            }}
+            onMouseEnter={(e) => {
+              if (selectedVectorTool !== tool.id) {
+                e.currentTarget.style.background = '#edf2f7';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (selectedVectorTool !== tool.id) {
+                e.currentTarget.style.background = '#f7fafc';
+              }
+            }}
+          >
+            <span style={{ fontSize: '16px' }}>{tool.icon}</span>
+            <span>{tool.name}</span>
+          </button>
+        ))}
       </div>
 
-      {/* Right side - Actions */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-        {/* Grid Controls */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+      {/* Status and Instructions */}
+      <div style={{
+        padding: '8px 12px',
+        background: vectorMode ? '#f0fff4' : '#fef5e7',
+        borderRadius: '8px',
+        fontSize: '11px',
+        color: vectorMode ? '#22543d' : '#744210',
+        textAlign: 'center'
+      }}>
+        <div style={{ fontWeight: '600', marginBottom: '4px' }}>
+          {vectorMode ? '✓ Vector Mode Active' : '⚠ Vector Mode Inactive'}
+        </div>
+        {vectorMode && (
+          <div style={{ fontSize: '10px', opacity: 0.8, lineHeight: '1.4' }}>
+            1. Draw vector paths (Brush/Puff/Embroidery act as pen tools in vector mode)<br/>
+            2. Click "✨ Apply Tool" to paint along paths
+          </div>
+        )}
+      </div>
+
+      {/* Essential Actions */}
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between',
+        borderTop: '1px solid #e2e8f0',
+        paddingTop: '12px'
+      }}>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           <button
             onClick={() => {
               const { showGrid, setShowGrid } = useApp.getState();
               setShowGrid(!showGrid);
             }}
             style={{
-              padding: '6px 12px',
-              border: 'none',
-              borderRadius: '6px',
-              background: useApp.getState().showGrid ? 'rgba(59, 130, 246, 0.3)' : 'rgba(255,255,255,0.1)',
-              color: 'white',
+              padding: '8px 12px',
+              border: '1px solid #e2e8f0',
+              borderRadius: '8px',
+              background: useApp.getState().showGrid ? '#667eea' : 'white',
+              color: useApp.getState().showGrid ? 'white' : '#4a5568',
               cursor: 'pointer',
               fontSize: '12px',
               fontWeight: '500',
               transition: 'all 0.2s ease'
             }}
-            title="Toggle Grid"
           >
             📐 Grid
           </button>
@@ -220,205 +401,78 @@ const VectorToolbar: React.FC<VectorToolbarProps> = ({ isVisible, onClose }) => 
               setShowRulers(!showRulers);
             }}
             style={{
-              padding: '6px 12px',
-              border: 'none',
-              borderRadius: '6px',
-              background: useApp.getState().showRulers ? 'rgba(59, 130, 246, 0.3)' : 'rgba(255,255,255,0.1)',
-              color: 'white',
+              padding: '8px 12px',
+              border: '1px solid #e2e8f0',
+              borderRadius: '8px',
+              background: useApp.getState().showRulers ? '#667eea' : 'white',
+              color: useApp.getState().showRulers ? 'white' : '#4a5568',
               cursor: 'pointer',
               fontSize: '12px',
               fontWeight: '500',
               transition: 'all 0.2s ease'
             }}
-            title="Toggle Rulers"
           >
             📏 Rulers
           </button>
-        </div>
-
-        {/* Quick Actions */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <button
-            onClick={() => {
-              const { undo } = useApp.getState();
-              undo();
-            }}
-            style={{
-              padding: '6px 12px',
-              border: 'none',
-              borderRadius: '6px',
-              background: 'rgba(239, 68, 68, 0.2)',
-              color: 'white',
-              cursor: 'pointer',
-              fontSize: '12px',
-              fontWeight: '500',
-              transition: 'all 0.2s ease'
-            }}
-            title="Undo"
-          >
-            ⏪ Undo
-          </button>
           
           <button
             onClick={() => {
-              const { redo } = useApp.getState();
-              redo();
+              const { showAnchorPoints, setShowAnchorPoints } = useApp.getState();
+              setShowAnchorPoints(!showAnchorPoints);
+              console.log('🎯 Toggle anchor points:', !showAnchorPoints);
             }}
             style={{
-              padding: '6px 12px',
-              border: 'none',
-              borderRadius: '6px',
-              background: 'rgba(16, 185, 129, 0.2)',
-              color: 'white',
+              padding: '8px 12px',
+              border: '1px solid #e2e8f0',
+              borderRadius: '8px',
+              background: useApp.getState().showAnchorPoints ? '#FFFFFF' : 'white',
+              color: useApp.getState().showAnchorPoints ? '#000000' : '#4a5568',
               cursor: 'pointer',
               fontSize: '12px',
               fontWeight: '500',
               transition: 'all 0.2s ease'
             }}
-            title="Redo"
           >
-            ⏩ Redo
-          </button>
-          
-          <button
-            onClick={() => {
-              // Save functionality
-              console.log('💾 Save clicked');
-            }}
-            style={{
-              padding: '6px 12px',
-              border: 'none',
-              borderRadius: '6px',
-              background: 'rgba(139, 92, 246, 0.2)',
-              color: 'white',
-              cursor: 'pointer',
-              fontSize: '12px',
-              fontWeight: '500',
-              transition: 'all 0.2s ease'
-            }}
-            title="Save"
-          >
-            💾 Save
+            🎯 Anchors
           </button>
         </div>
 
-        {/* Vector Actions */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ display: 'flex', gap: '8px' }}>
           <button
-            onClick={() => setShowErrorDashboard(!showErrorDashboard)}
+            onClick={handleApplyToolToPaths}
             style={{
-              padding: '8px 16px',
-              border: 'none',
+              padding: '8px 12px',
+              border: '1px solid #667eea',
               borderRadius: '8px',
-              background: showErrorDashboard ? 'rgba(239, 68, 68, 0.3)' : 'rgba(255,255,255,0.1)',
+              background: '#667eea',
               color: 'white',
               cursor: 'pointer',
-              fontSize: '14px',
+              fontSize: '12px',
               fontWeight: '500',
               transition: 'all 0.2s ease'
             }}
-            onMouseEnter={(e) => {
-              if (!showErrorDashboard) {
-                e.currentTarget.style.background = 'rgba(255,255,255,0.2)';
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!showErrorDashboard) {
-                e.currentTarget.style.background = 'rgba(255,255,255,0.1)';
-              }
-            }}
-            title="Error Monitoring Dashboard"
           >
-            🚨 Errors
-          </button>
-          
-          <button
-            onClick={() => setShowSettings(!showSettings)}
-            style={{
-              padding: '8px 16px',
-              border: 'none',
-              borderRadius: '8px',
-              background: showSettings ? 'rgba(59, 130, 246, 0.3)' : 'rgba(255,255,255,0.1)',
-              color: 'white',
-              cursor: 'pointer',
-              fontSize: '14px',
-              fontWeight: '500',
-              transition: 'all 0.2s ease'
-            }}
-            onMouseEnter={(e) => {
-              if (!showSettings) {
-                e.currentTarget.style.background = 'rgba(255,255,255,0.2)';
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!showSettings) {
-                e.currentTarget.style.background = 'rgba(255,255,255,0.1)';
-              }
-            }}
-            title="Vector Settings"
-          >
-            ⚙️ Settings
+            ✨ Apply Tool
           </button>
           
           <button
             onClick={handleClearAll}
             style={{
-              padding: '8px 16px',
-              border: 'none',
+              padding: '8px 12px',
+              border: '1px solid #fed7d7',
               borderRadius: '8px',
-              background: 'rgba(255,255,255,0.1)',
-              color: 'white',
+              background: '#fed7d7',
+              color: '#c53030',
               cursor: 'pointer',
-              fontSize: '14px',
+              fontSize: '12px',
               fontWeight: '500',
               transition: 'all 0.2s ease'
             }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(255,255,255,0.2)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'rgba(255,255,255,0.1)';
-            }}
           >
-            🗑️ Clear All
-          </button>
-          
-          <button
-            onClick={onClose}
-            style={{
-              padding: '8px 16px',
-              border: 'none',
-              borderRadius: '8px',
-              background: 'rgba(255,255,255,0.1)',
-              color: 'white',
-              cursor: 'pointer',
-              fontSize: '14px',
-              fontWeight: '500',
-              transition: 'all 0.2s ease'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(255,255,255,0.2)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'rgba(255,255,255,0.1)';
-            }}
-          >
-            ✕ Close
+            🗑️ Clear
           </button>
         </div>
       </div>
-      
-      {/* Settings Panel */}
-      <VectorSettingsPanel 
-        isVisible={showSettings} 
-        onClose={() => setShowSettings(false)} 
-      />
-      
-      {/* Error Monitoring Dashboard */}
-      <ErrorMonitoringDashboard 
-        isVisible={showErrorDashboard} 
-        onClose={() => setShowErrorDashboard(false)} 
-      />
     </div>
   );
 };

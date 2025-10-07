@@ -7,10 +7,13 @@
     "apps/web",
     "apps/server",
     "apps/ai",
-    "apps/electron"
+    "apps/electron",
+    "apps/background-api"
   ],
   "scripts": {
     "dev": "npm run -w apps/web dev",
+    "bg": "npm run -w apps/background-api start",
+    "dev:with-bg": "npm-run-all -p bg dev",
     "build": "npm run -w apps/web build",
     "serve": "npm run -w apps/server start",
     "ai": "python apps/ai/main.py",

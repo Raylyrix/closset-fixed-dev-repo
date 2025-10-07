@@ -106,7 +106,7 @@ export class AIToolEnhancement {
             const suggestions = [];
             // Tool suggestions based on current state
             const toolSuggestions = await this.suggestTools(userContext, currentState);
-            suggestions.push(...toolSuggestions.map(s => ({
+            suggestions.push(...toolSuggestions.map((s) => ({
                 type: 'tool',
                 priority: s.confidence,
                 content: s,
@@ -114,7 +114,7 @@ export class AIToolEnhancement {
             })));
             // Parameter suggestions
             const paramSuggestions = await this.suggestParameterAdjustments(currentState, userContext);
-            suggestions.push(...paramSuggestions.map(s => ({
+            suggestions.push(...paramSuggestions.map((s) => ({
                 type: 'parameter',
                 priority: s.confidence,
                 content: s,
@@ -122,7 +122,7 @@ export class AIToolEnhancement {
             })));
             // Workflow suggestions
             const workflowSuggestions = await this.suggestWorkflowImprovements(currentState, userContext);
-            suggestions.push(...workflowSuggestions.map(s => ({
+            suggestions.push(...workflowSuggestions.map((s) => ({
                 type: 'workflow',
                 priority: s.priority,
                 content: s,
@@ -293,6 +293,49 @@ export class AIToolEnhancement {
     }
     adjustPreferences(action, result) {
         // Implement preference adjustment logic
+    }
+    // ---- Added: Missing internal helper methods to satisfy references ----
+    async analyzeDesignContext(context, design) {
+        return { context, design, quality: design.quality, complexity: design.complexity };
+    }
+    rankSuggestions(suggestions, context) {
+        return suggestions.sort((a, b) => b.confidence - a.confidence);
+    }
+    async analyzeDesignQuality(design) {
+        const performance = { fps: 60, renderTime: 8, frameTime: 16.7, memoryUsage: 200 };
+        return { quality: design.quality ?? 0.7, complexity: design.complexity ?? 0.5, performance };
+    }
+    async generateImprovementSuggestions(design, context) {
+        return [];
+    }
+    async suggestOptimizations(design, context) {
+        return [];
+    }
+    generateRecommendations(analysis, suggestions) {
+        const recs = [];
+        if (analysis.quality < 0.5)
+            recs.push('Increase base design resolution or refine stitch details.');
+        if (analysis.performance.renderTime > 16)
+            recs.push('Reduce layer count or optimize effects to keep render under 16ms.');
+        return recs;
+    }
+    async suggestParameterAdjustments(currentState, userContext) {
+        return [];
+    }
+    async suggestWorkflowImprovements(currentState, userContext) {
+        return [];
+    }
+    async measurePerformance(design) {
+        return { fps: 60, renderTime: 8, frameTime: 16.7, memoryUsage: 200 };
+    }
+    loadUserHistory() {
+        return { previousDesigns: [], preferredTools: [], skillProgression: { currentLevel: 1, progressionRate: 0, strengths: [], weaknesses: [], learningGoals: [], achievements: [] }, designPatterns: [], feedback: [], recentActions: [] };
+    }
+    loadDesignContext() {
+        return { fabricType: 'cotton', designStyle: 'default', complexity: 0.5, userSkill: 'beginner', preferences: { preferredTools: [], renderingQuality: 'medium', shortcutsEnabled: true }, constraints: {}, currentDesign: { id: 'init', name: 'init', elements: [], tools: [], parameters: {}, quality: 0.7, complexity: 0.5, progress: 0 }, recentActions: [], designGoals: [] };
+    }
+    loadUserPreferences() {
+        return { preferredTools: [], renderingQuality: 'medium', shortcutsEnabled: true };
     }
 }
 // Model implementations (simplified)

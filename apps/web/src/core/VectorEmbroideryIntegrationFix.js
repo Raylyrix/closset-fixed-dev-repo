@@ -4,8 +4,9 @@
  * This file provides comprehensive fixes for the integration between vector tools
  * and embroidery rendering, ensuring proper connection and accuracy.
  */
+import { useEffect, useState } from 'react';
 import { useApp } from '../App';
-import { vectorStore } from '../vector/vectorState';
+import { vectorStore } from '../vector/vectorStore';
 export class VectorEmbroideryIntegrationFix {
     constructor(config = {}) {
         this.isInitialized = false;
@@ -156,7 +157,8 @@ export class VectorEmbroideryIntegrationFix {
         if (appState.vectorMode && vectorState.shapes.length > 0) {
             // Force re-render of all shapes with proper stitch connections
             vectorState.shapes.forEach(shape => {
-                if (shape.path && shape.path.points && shape.path.points.length >= 2) {
+                const pts = (shape.points ?? (shape.path?.points)) || [];
+                if (pts.length >= 2) {
                     // Trigger re-render for this shape
                     this.triggerShapeRerender(shape);
                 }
@@ -254,9 +256,9 @@ export class VectorEmbroideryIntegrationFix {
  * React hook for using the Vector-Embroidery Integration Fix
  */
 export function useVectorEmbroideryIntegrationFix(config) {
-    const [isReady, setIsReady] = React.useState(false);
-    const [error, setError] = React.useState(null);
-    React.useEffect(() => {
+    const [isReady, setIsReady] = useState(false);
+    const [error, setError] = useState(null);
+    useEffect(() => {
         const initializeFix = async () => {
             try {
                 const fix = VectorEmbroideryIntegrationFix.getInstance(config);

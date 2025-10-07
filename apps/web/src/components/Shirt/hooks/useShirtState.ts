@@ -150,13 +150,12 @@ export const useShirtState = () => {
     
     const newStitches = vectorShapes.map(shape => ({
       id: `stitch_${shape.id}`,
-      type: 'embroidery',
-      stitchType: shape.tool || 'satin',
-      points: shape.path?.points || [],
+      type: (shape.tool || appState.embroideryStitchType || 'satin') as any,
+      points: (((shape.points ?? (shape.path?.points)) || []) as any[]).map((p: any) => ({ x: p.x, y: p.y })),
       color: appState.embroideryColor || '#ff69b4',
-      size: appState.embroiderySize || 2,
-      opacity: 1.0,
-      createdAt: Date.now()
+      threadType: (appState.embroideryThreadType || 'cotton') as any,
+      thickness: appState.embroideryThickness || 2,
+      opacity: appState.embroideryOpacity ?? 1.0
     }));
     
     useApp.setState({

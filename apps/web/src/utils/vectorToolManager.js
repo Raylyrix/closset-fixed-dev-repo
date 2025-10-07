@@ -308,7 +308,9 @@ export class VectorToolManager {
         // Limit cache size
         if (this.renderCache.size > 100) {
             const firstKey = this.renderCache.keys().next().value;
-            this.renderCache.delete(firstKey);
+            if (typeof firstKey === 'string') {
+                this.renderCache.delete(firstKey);
+            }
         }
     }
     trackPerformance(tool, duration) {

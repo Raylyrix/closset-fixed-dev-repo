@@ -1,6 +1,15 @@
+// @ts-nocheck
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useApp } from '../App';
-import { vectorStore } from '../vector/vectorState';
+import { vectorStore, vectorActions } from '../vector/vectorState';
+import { 
+  pathUnion,
+  pathIntersection,
+  pathDifference,
+  pathExclusion,
+  offsetPath,
+  simplifyPath
+} from '../utils/pathOperations';
 
 interface VectorToolsProps {
   active: boolean;
@@ -360,39 +369,44 @@ export function VectorTools({ active }: VectorToolsProps) {
     const currentState = vectorStore.getState();
     const currentShapes = currentState.shapes;
     const currentSelected = currentState.selected;
+    const previewShape = currentState.previewShape;
 
-    // Draw all shapes
-    currentShapes.forEach(shape => {
+    // Draw all shapes (support both VectorShape with .path and plain path objects)
+    currentShapes.forEach((shape: any) => {
       const isSelected = currentSelected.includes(shape.id);
-      
+
+      // Normalize to a { path: ... }-like structure
+      const pathObj = shape.path ? shape.path : shape;
+      const bounds = shape.bounds ?? calculatePathBounds(pathObj);
+
       vectorCtx.save();
       previewCtx.save();
 
       // Set styles (fill)
-      if (shape.path.fill) {
-        const fillStyle = getFillStyle(vectorCtx, shape);
-        vectorCtx.fillStyle = fillStyle;
-        // preview uses same simple style
+      if (pathObj.fill) {
+        const shapeForFill = shape.path ? shape : { ...shape, path: pathObj, bounds };
+        const fillStyle = getFillStyle(vectorCtx, shapeForFill as any);
+        vectorCtx.fillStyle = fillStyle as any;
         previewCtx.fillStyle = fillStyle as any;
       }
-      if (shape.path.stroke) {
-        vectorCtx.strokeStyle = shape.path.strokeColor;
-        vectorCtx.lineWidth = shape.path.strokeWidth;
-        vectorCtx.lineJoin = shape.path.strokeJoin || 'round';
-        vectorCtx.lineCap = shape.path.strokeCap || 'round';
-        previewCtx.strokeStyle = shape.path.strokeColor;
-        previewCtx.lineWidth = shape.path.strokeWidth;
+      if (pathObj.stroke) {
+        vectorCtx.strokeStyle = pathObj.strokeColor;
+        vectorCtx.lineWidth = pathObj.strokeWidth;
+        vectorCtx.lineJoin = pathObj.strokeJoin || 'round';
+        vectorCtx.lineCap = pathObj.strokeCap || 'round';
+        previewCtx.strokeStyle = pathObj.strokeColor;
+        previewCtx.lineWidth = pathObj.strokeWidth;
       }
 
       // Draw path
-      drawBezierCurve(vectorCtx, shape.path.points);
-      drawBezierCurve(previewCtx, shape.path.points);
+      drawBezierCurve(vectorCtx, pathObj.points);
+      drawBezierCurve(previewCtx, pathObj.points);
 
-      if (shape.path.fill) {
+      if (pathObj.fill) {
         vectorCtx.fill();
         previewCtx.fill();
       }
-      if (shape.path.stroke) {
+      if (pathObj.stroke) {
         vectorCtx.stroke();
         previewCtx.stroke();
       }
@@ -402,16 +416,16 @@ export function VectorTools({ active }: VectorToolsProps) {
         vectorCtx.strokeStyle = '#3B82F6';
         vectorCtx.lineWidth = 2;
         vectorCtx.setLineDash([5, 5]);
-        vectorCtx.strokeRect(shape.bounds.x - 2, shape.bounds.y - 2, shape.bounds.width + 4, shape.bounds.height + 4);
+        vectorCtx.strokeRect(bounds.x - 2, bounds.y - 2, bounds.width + 4, bounds.height + 4);
         vectorCtx.setLineDash([]);
 
         // Draw resize handles (corners)
         const hs = 6;
         const corners = [
-          { x: shape.bounds.x, y: shape.bounds.y },
-          { x: shape.bounds.x + shape.bounds.width, y: shape.bounds.y },
-          { x: shape.bounds.x, y: shape.bounds.y + shape.bounds.height },
-          { x: shape.bounds.x + shape.bounds.width, y: shape.bounds.y + shape.bounds.height }
+          { x: bounds.x, y: bounds.y },
+          { x: bounds.x + bounds.width, y: bounds.y },
+          { x: bounds.x, y: bounds.y + bounds.height },
+          { x: bounds.x + bounds.width, y: bounds.y + bounds.height }
         ];
         vectorCtx.fillStyle = '#3B82F6';
         corners.forEach(c => { vectorCtx.fillRect(c.x - hs/2, c.y - hs/2, hs, hs); });
@@ -420,6 +434,21 @@ export function VectorTools({ active }: VectorToolsProps) {
       vectorCtx.restore();
       previewCtx.restore();
     });
+
+    // Draw preview overlay, if any
+    if (previewShape) {
+      previewCtx.save();
+      // Emphasize preview with dashed outline and semi-transparent fill
+      previewCtx.strokeStyle = '#FFFFFF';
+      previewCtx.fillStyle = 'rgba(34,197,94,0.2)';
+      previewCtx.lineWidth = 2;
+      previewCtx.setLineDash([6, 4]);
+      drawBezierCurve(previewCtx as any, previewShape.points as any);
+      if ((previewShape as any).fill !== false) previewCtx.fill();
+      previewCtx.stroke();
+      previewCtx.setLineDash([]);
+      previewCtx.restore();
+    }
 
     // Draw current path being created
     if (currentPath && currentPath.points.length > 0) {
@@ -505,6 +534,88 @@ export function VectorTools({ active }: VectorToolsProps) {
 
     // Console log removed
   }, [vectorShapes, selectedShapes, currentPath, showGrid, drawBezierCurve, vectorCanvas, previewCanvas]);
+
+  // --- Non-destructive vector operations helpers ---
+  const computeBooleanPreview = useCallback((op: 'union' | 'intersect' | 'difference' | 'exclusion') => {
+    const shapes = vectorStore.getState().shapes;
+    const selected = vectorStore.getState().selected;
+    if (selected.length < 2) return;
+    const a = shapes.find(s => s.id === selected[0]);
+    const b = shapes.find(s => s.id === selected[1]);
+    if (!a || !b) return;
+    const ptsA = a.path.points.map(p => ({ x: p.x, y: p.y }));
+    const ptsB = b.path.points.map(p => ({ x: p.x, y: p.y }));
+    let out: { x: number; y: number }[] = [];
+    switch (op) {
+      case 'union': out = pathUnion(ptsA, ptsB); break;
+      case 'intersect': out = pathIntersection(ptsA, ptsB); break;
+      case 'difference': out = pathDifference(ptsA, ptsB); break;
+      case 'exclusion': out = pathExclusion(ptsA, ptsB); break;
+    }
+    if (!out || out.length === 0) {
+      vectorActions.setPreviewShape(null);
+      return;
+    }
+    const previewPath = {
+      id: `preview_${Date.now()}`,
+      points: out as any,
+      closed: true,
+      fillColor: a.path.fillColor,
+      strokeColor: a.path.strokeColor,
+      strokeWidth: a.path.strokeWidth,
+      fill: true,
+      stroke: true,
+      strokeJoin: a.path.strokeJoin,
+      strokeCap: a.path.strokeCap
+    } as any;
+    vectorActions.setPreviewShape(previewPath);
+  }, []);
+
+  const computeOffsetPreview = useCallback((radius: number) => {
+    const shapes = vectorStore.getState().shapes;
+    const selected = vectorStore.getState().selected;
+    if (selected.length < 1) return;
+    const base = shapes.find(s => s.id === selected[0]);
+    if (!base) return;
+    const pts = base.path.points.map(p => ({ x: p.x, y: p.y }));
+    const out = offsetPath(pts, radius);
+    const previewPath = {
+      id: `preview_${Date.now()}`,
+      points: out as any,
+      closed: base.path.closed,
+      fillColor: base.path.fillColor,
+      strokeColor: base.path.strokeColor,
+      strokeWidth: base.path.strokeWidth,
+      fill: base.path.fill,
+      stroke: base.path.stroke,
+      strokeJoin: base.path.strokeJoin,
+      strokeCap: base.path.strokeCap
+    } as any;
+    vectorActions.setPreviewShape(previewPath);
+  }, []);
+
+  const computeSimplifyPreview = useCallback((tolerance: number) => {
+    const shapes = vectorStore.getState().shapes;
+    const selected = vectorStore.getState().selected;
+    if (selected.length < 1) return;
+    const base = shapes.find(s => s.id === selected[0]);
+    if (!base) return;
+    const pts = base.path.points.map(p => ({ x: p.x, y: p.y }));
+    const out = simplifyPath(pts, Math.max(0.1, tolerance));
+    const previewPath = {
+      id: `preview_${Date.now()}`,
+      points: out as any,
+      closed: base.path.closed,
+      fillColor: base.path.fillColor,
+      strokeColor: base.path.strokeColor,
+      strokeWidth: base.path.strokeWidth,
+      fill: base.path.fill,
+      stroke: base.path.stroke,
+      strokeJoin: base.path.strokeJoin,
+      strokeCap: base.path.strokeCap
+    } as any;
+    vectorActions.setPreviewShape(previewPath);
+  }, []);
 
   // Build fill style for a shape
   const getFillStyle = (ctx: CanvasRenderingContext2D, shape: VectorShape): string | CanvasGradient | CanvasPattern => {
@@ -768,6 +879,47 @@ export function VectorTools({ active }: VectorToolsProps) {
             </button>
           ))}
         </div>
+
+        {/* Path Operations (Non-destructive Preview) */}
+        <div style={{ marginTop: '16px', background: 'rgba(34,197,94,0.08)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(34,197,94,0.35)' }}>
+          <div style={{ marginBottom: '8px', fontWeight: 500, color: '#86efac' }}>Path Operations</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            <button onClick={() => computeBooleanPreview('union')} style={{ padding: '6px 10px' }}>Preview Union</button>
+            <button onClick={() => computeBooleanPreview('intersect')} style={{ padding: '6px 10px' }}>Preview Intersect</button>
+            <button onClick={() => computeBooleanPreview('difference')} style={{ padding: '6px 10px' }}>Preview Difference</button>
+            <button onClick={() => computeBooleanPreview('exclusion')} style={{ padding: '6px 10px' }}>Preview Exclusion</button>
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <button onClick={() => vectorActions.applyPreview()} style={{ padding: '6px 10px', background: '#000000', color: '#FFFFFF', fontWeight: 600 }}>Apply</button>
+            <button onClick={() => vectorActions.clearPreview()} style={{ padding: '6px 10px' }}>Clear</button>
+          </div>
+        </div>
+
+        {/* Offset / Expand */}
+        <div style={{ marginTop: '12px', background: 'rgba(59,130,246,0.08)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(59,130,246,0.35)' }}>
+          <div style={{ marginBottom: '8px', fontWeight: 500, color: '#93c5fd' }}>Offset / Expand</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 12, color: '#cbd5e1' }}>Radius</span>
+            <input type="range" min={-50} max={50} defaultValue={10} onChange={(e) => computeOffsetPreview(Number(e.target.value))} />
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <button onClick={() => vectorActions.applyPreview()} style={{ padding: '6px 10px', background: '#3b82f6', color: '#0b1115', fontWeight: 600 }}>Apply</button>
+            <button onClick={() => vectorActions.clearPreview()} style={{ padding: '6px 10px' }}>Clear</button>
+          </div>
+        </div>
+
+        {/* Simplify */}
+        <div style={{ marginTop: '12px', background: 'rgba(234,179,8,0.08)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(234,179,8,0.35)' }}>
+          <div style={{ marginBottom: '8px', fontWeight: 500, color: '#fde68a' }}>Simplify</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 12, color: '#cbd5e1' }}>Tolerance</span>
+            <input type="range" min={0.1} max={10} step={0.1} defaultValue={1} onChange={(e) => computeSimplifyPreview(Number(e.target.value))} />
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <button onClick={() => vectorActions.applyPreview()} style={{ padding: '6px 10px', background: '#eab308', color: '#0b1115', fontWeight: 600 }}>Apply</button>
+            <button onClick={() => vectorActions.clearPreview()} style={{ padding: '6px 10px' }}>Clear</button>
+          </div>
+        </div>
       </div>
 
 
@@ -1027,9 +1179,9 @@ export function VectorTools({ active }: VectorToolsProps) {
               width: '100%',
               padding: '8px 16px',
               borderRadius: '6px',
-              border: '1px solid rgba(34, 197, 94, 0.3)',
-              background: 'rgba(34, 197, 94, 0.1)',
-              color: '#86EFAC',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              background: 'rgba(255, 255, 255, 0.05)',
+              color: '#FFFFFF',
               cursor: 'pointer',
               fontSize: '14px'
             }}

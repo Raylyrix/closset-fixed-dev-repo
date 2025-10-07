@@ -1,15 +1,17 @@
 // Import types from VectorStateManager to avoid conflicts
-import { VectorPoint, VectorPath, VectorShape, VectorTool, BoundingBox } from './VectorStateManager';
+import { VectorPoint, VectorPath, VectorTool, BoundingBox } from './VectorStateManager';
 
 // Re-export types for backward compatibility
-export type { VectorPoint, VectorPath, VectorShape, VectorTool, BoundingBox };
+export type { VectorPoint, VectorPath, VectorTool, BoundingBox };
 
 // Vector State Interface
 export interface VectorState {
-  shapes: VectorShape[];
+  shapes: VectorPath[];
   currentPath: VectorPath | null;
   selected: string[];
   tool: VectorTool;
+  // Anchor currently being dragged (UV anchor selection)
+  draggingAnchor?: { shapeId: string; pointIndex: number } | null;
   isDrawing: boolean;
   isEditing: boolean;
   showAnchors: boolean;
@@ -21,12 +23,17 @@ export interface VectorState {
   history: VectorState[];
   historyIndex: number;
   maxHistorySize: number;
+  // Preview and ops
+  previewShape?: VectorPath | null;
+  booleanOp?: 'union' | 'intersect' | 'difference' | 'exclusion' | null;
+  offsetConfig?: { radius: number; join: 'miter' | 'round' | 'bevel'; miterLimit: number } | null;
+  simplifyTolerance?: number | null;
 }
 
 // Vector Actions
 export type VectorAction = 
-  | { type: 'ADD_SHAPE'; payload: VectorShape }
-  | { type: 'UPDATE_SHAPE'; payload: { id: string; shape: VectorShape } }
+  | { type: 'ADD_SHAPE'; payload: VectorPath }
+  | { type: 'UPDATE_SHAPE'; payload: { id: string; shape: VectorPath } }
   | { type: 'REMOVE_SHAPE'; payload: string }
   | { type: 'SET_CURRENT_PATH'; payload: VectorPath | null }
   | { type: 'SET_TOOL'; payload: VectorTool }
@@ -52,6 +59,7 @@ export const vectorStore = create<VectorState>((set, get) => ({
   currentPath: null,
   selected: [],
   tool: 'pen',
+  draggingAnchor: null,
   isDrawing: false,
   isEditing: false,
   showAnchors: true,
@@ -63,17 +71,21 @@ export const vectorStore = create<VectorState>((set, get) => ({
   history: [],
   historyIndex: -1,
   maxHistorySize: 50,
+  previewShape: null,
+  booleanOp: null,
+  offsetConfig: null,
+  simplifyTolerance: null,
 }));
 
 // Helper functions
 export const vectorActions = {
-  addShape: (shape: VectorShape) => {
+  addShape: (shape: VectorPath) => {
     const state = vectorStore.getState();
     const newShapes = [...state.shapes, shape];
     vectorStore.setState({ shapes: newShapes });
   },
   
-  updateShape: (id: string, shape: VectorShape) => {
+  updateShape: (id: string, shape: VectorPath) => {
     const state = vectorStore.getState();
     const newShapes = state.shapes.map(s => s.id === id ? shape : s);
     vectorStore.setState({ shapes: newShapes });
@@ -157,6 +169,7 @@ export const vectorActions = {
       currentPath: null,
       selected: [],
       tool: 'pen',
+      draggingAnchor: null,
       isDrawing: false,
       isEditing: false,
       showAnchors: true,
@@ -167,7 +180,37 @@ export const vectorActions = {
       pan: { x: 0, y: 0 },
       history: [],
       historyIndex: -1,
+      previewShape: null,
+      booleanOp: null,
+      offsetConfig: null,
+      simplifyTolerance: null,
     });
+  },
+  // Preview ops
+  setBooleanOp: (op: 'union' | 'intersect' | 'difference' | 'exclusion' | null) => {
+    vectorStore.setState({ booleanOp: op });
+  },
+  setOffsetConfig: (cfg: { radius: number; join: 'miter' | 'round' | 'bevel'; miterLimit: number } | null) => {
+    vectorStore.setState({ offsetConfig: cfg });
+  },
+  setSimplifyTolerance: (tol: number | null) => {
+    vectorStore.setState({ simplifyTolerance: tol });
+  },
+  setPreviewShape: (shape: VectorPath | null) => {
+    vectorStore.setState({ previewShape: shape });
+  },
+  applyPreview: () => {
+    const state = vectorStore.getState();
+    if (!state.previewShape) return;
+    // Replace selected shapes with preview result
+    const remaining = state.shapes.filter(s => !state.selected.includes(s.id));
+    const merged = [...remaining, state.previewShape];
+    vectorStore.setState({ shapes: merged, previewShape: null, booleanOp: null });
+  },
+  clearPreview: () => {
+    vectorStore.setState({ previewShape: null });
+  },
+  setDraggingAnchor: (payload: { shapeId: string; pointIndex: number } | null) => {
+    vectorStore.setState({ draggingAnchor: payload });
   }
-};
-
+} as any;

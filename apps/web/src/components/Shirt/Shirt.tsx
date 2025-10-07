@@ -9,6 +9,7 @@ import React, { useEffect, useRef } from 'react';
 import { useThree } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
+import { ModelData } from '../../types/app';
 import { useApp } from '../../App';
 
 // Hooks
@@ -121,8 +122,8 @@ export const Shirt: React.FC<ShirtProps> = ({
       
       // Apply texture to mesh
       if (meshRef.current) {
-        meshRef.current.material.map = texture;
-        meshRef.current.material.needsUpdate = true;
+        (meshRef.current.material as any).map = texture;
+        (meshRef.current.material as any).needsUpdate = true;
       }
     }
   }, [composedCanvas]);
@@ -245,14 +246,8 @@ export const Shirt: React.FC<ShirtProps> = ({
     <group>
       {/* 3D Model Renderer */}
       <ShirtRenderer
-        modelUrl={modelUrl}
-        modelChoice={modelChoice}
-        modelType={modelType}
-        modelScale={modelScale}
-        modelPosition={modelPosition}
-        modelRotation={modelRotation}
-        onModelLoaded={onModelLoaded}
-        onModelError={onModelError}
+        onModelLoaded={(modelData) => onModelLoaded?.(modelData.scene as THREE.Group)}
+        onModelError={(error) => onModelError?.(new Error(error))}
       />
       
       {/* Shirt Mesh */}

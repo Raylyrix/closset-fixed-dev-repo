@@ -76,6 +76,33 @@ export class UltraRealisticBullion {
         return patterns;
     }
     /**
+     * Wrapper: Generate wrapped bullion pattern (maps to spiral pattern for now)
+     */
+    static generateWrappedBullion(geometry, pattern, properties3D) {
+        // Use spiral as a visually similar fallback
+        return this.generateSpiralBullion(geometry, pattern, properties3D);
+    }
+    /**
+     * Wrapper: Generate padded bullion pattern (maps to double bullion for now)
+     */
+    static generatePaddedBullion(geometry, pattern, properties3D) {
+        return this.generateDoubleBullion(geometry, pattern, properties3D);
+    }
+    /**
+     * Wrapper: Generate heavy bullion pattern (maps to triple bullion for now)
+     */
+    static generateHeavyBullion(geometry, pattern, properties3D) {
+        return this.generateTripleBullion(geometry, pattern, properties3D);
+    }
+    /**
+     * Wrapper: Generate decorative bullion pattern (maps to double + spiral)
+     */
+    static generateDecorativeBullion(geometry, pattern, properties3D) {
+        const a = this.generateDoubleBullion(geometry, pattern, properties3D);
+        const b = this.generateSpiralBullion(geometry, pattern, properties3D);
+        return [...a, ...b];
+    }
+    /**
      * Generate single bullion pattern
      */
     static generateSingleBullion(geometry, pattern, properties3D) {
@@ -350,10 +377,10 @@ export class UltraRealisticBullion {
         return stitches.map((stitch, index) => {
             // Calculate lighting for each point
             const litPoints = stitch.points.map((point) => {
-                const lighting = this.calculatePointLighting(point, lighting, material, properties3D);
+                const pointLighting = this.calculatePointLighting(point, lighting, material, properties3D);
                 return {
                     ...point,
-                    lighting: lighting
+                    lighting: pointLighting
                 };
             });
             // Generate material properties

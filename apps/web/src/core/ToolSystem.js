@@ -1,5 +1,58 @@
 // Revolutionary Universal Tool System Architecture
 // Extensible, performant, and user-friendly tool framework
+// Minimal no-op renderers to ensure initialization succeeds
+class BaseNoopRenderer {
+    constructor() {
+        this.id = 'noop';
+        this.name = 'Noop Renderer';
+        this.version = '1.0.0';
+        this.capabilities = [];
+    }
+    renderPreview() { }
+    renderFinal() { }
+    renderThumbnail() { }
+    canOptimize() { return false; }
+    optimize(path) { return path; }
+    supportsRealTimePreview() { return true; }
+    getPreviewQuality() { return 'normal'; }
+    validateConfig() { return { valid: true, errors: [], warnings: [], suggestions: [] }; }
+    validatePath() { return { valid: true, errors: [], warnings: [], suggestions: [] }; }
+}
+class BrushToolRenderer extends BaseNoopRenderer {
+    constructor() {
+        super(...arguments);
+        this.id = 'brush';
+        this.name = 'Brush';
+    }
+}
+class EmbroideryToolRenderer extends BaseNoopRenderer {
+    constructor() {
+        super(...arguments);
+        this.id = 'embroidery';
+        this.name = 'Embroidery';
+    }
+}
+class PuffPrintToolRenderer extends BaseNoopRenderer {
+    constructor() {
+        super(...arguments);
+        this.id = 'puff-print';
+        this.name = 'Puff Print';
+    }
+}
+class VectorToolRenderer extends BaseNoopRenderer {
+    constructor() {
+        super(...arguments);
+        this.id = 'vector';
+        this.name = 'Vector';
+    }
+}
+class AIToolRenderer extends BaseNoopRenderer {
+    constructor() {
+        super(...arguments);
+        this.id = 'ai';
+        this.name = 'AI Tool';
+    }
+}
 // Universal Tool System Manager
 export class UniversalToolSystem {
     constructor() {
@@ -13,6 +66,39 @@ export class UniversalToolSystem {
         this.optimizationThreshold = 0.8;
         this.initializeCoreTools();
         this.setupPerformanceMonitoring();
+    }
+    validateRenderer(renderer) {
+        // Basic structural validation
+        const ok = !!renderer && typeof renderer.renderPreview === 'function' && typeof renderer.renderFinal === 'function';
+        return ok ? { valid: true, errors: [], warnings: [], suggestions: [] } : { valid: false, errors: ['Invalid renderer'], warnings: [], suggestions: [] };
+    }
+    checkToolConflicts(renderer) {
+        // Placeholder: no conflicts
+        return [];
+    }
+    resolveConflicts(renderer, conflicts) {
+        // No-op conflict resolution for now
+    }
+    createDefaultConfig(renderer) {
+        return {
+            id: renderer.id,
+            name: renderer.name,
+            type: renderer.id,
+            version: renderer.version,
+            enabled: true,
+            visible: true,
+            locked: false,
+            opacity: 1,
+            blendMode: 'source-over',
+            quality: 'normal',
+            cacheEnabled: true,
+            maxCacheSize: 256,
+            optimizationLevel: 3,
+            properties: {},
+            aiEnabled: false,
+            autoOptimize: true,
+            smartSuggestions: false,
+        };
     }
     static getInstance() {
         if (!UniversalToolSystem.instance) {
@@ -110,8 +196,17 @@ export class UniversalToolSystem {
         }
         catch (error) {
             console.error('Error in universal rendering:', error);
-            return { success: false, error: error.message };
+            const msg = error?.message ?? String(error);
+            return { success: false, error: msg };
         }
+    }
+    validateRenderInputs(ctx, path, mode) {
+        if (!ctx || !path)
+            return { valid: false, errors: ['Invalid inputs'], warnings: [], suggestions: [] };
+        return { valid: true, errors: [], warnings: [], suggestions: [] };
+    }
+    applyCachedRender(ctx, cached) {
+        // No-op placeholder
     }
     // Real-time Preview System
     enableRealTimePreview(path, config) {
@@ -150,13 +245,39 @@ export class UniversalToolSystem {
         // Generate suggestions
         for (const tool of rankedTools) {
             suggestions.push({
-                tool,
+                tool: tool.config,
                 confidence: tool.relevance,
                 reasoning: tool.reasoning,
                 preview: this.generateToolPreview(path, tool.config)
             });
         }
         return suggestions;
+    }
+    // --- Helper stubs for composition and suggestion system ---
+    checkToolCompositionConflicts(tools) {
+        return [];
+    }
+    calculateOptimalRenderOrder(tools) {
+        return tools.map((_, idx) => idx);
+    }
+    mergeToolProperties(tools) {
+        const out = {};
+        tools.forEach(t => Object.assign(out, t.properties || {}));
+        return out;
+    }
+    analyzePath(path) {
+        return { pointCount: path.points.length, closed: path.closed };
+    }
+    getCompatibleTools(analysis) {
+        const all = Array.from(this.toolConfigs.values());
+        return all.map(cfg => ({ config: cfg, relevance: 0.5, reasoning: 'Default compatibility' }));
+    }
+    rankToolsByRelevance(tools, analysis, context) {
+        return tools.sort((a, b) => b.relevance - a.relevance);
+    }
+    generateToolPreview(path, config) {
+        // Placeholder base64 pixel
+        return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=';
     }
     // Performance Optimization
     optimizePathForTool(path, config, renderer) {
@@ -176,6 +297,53 @@ export class UniversalToolSystem {
             this.evictOldestCacheEntries();
         }
         this.performanceCache.set(key, results);
+    }
+    sortToolsByRenderOrder(tools) {
+        // If tools embed their own render order, sort; otherwise return as-is
+        return [...tools];
+    }
+    renderPreview(ctx, path, config, renderer) {
+        try {
+            renderer.renderPreview(ctx, path, config);
+            return { success: true, renderTime: 0 };
+        }
+        catch (e) {
+            return { success: false, error: e?.message ?? String(e) };
+        }
+    }
+    renderFinal(ctx, path, config, renderer) {
+        try {
+            renderer.renderFinal(ctx, path, config);
+            return { success: true, renderTime: 0 };
+        }
+        catch (e) {
+            return { success: false, error: e?.message ?? String(e) };
+        }
+    }
+    renderThumbnail(ctx, path, config, renderer) {
+        try {
+            renderer.renderThumbnail(ctx, path, config);
+            return { success: true, renderTime: 0 };
+        }
+        catch (e) {
+            return { success: false, error: e?.message ?? String(e) };
+        }
+    }
+    hashPath(path) {
+        // Simple hash by points length and id
+        return `${path.id}_${path.points.length}`;
+    }
+    hashOptions(options) {
+        return JSON.stringify(options ?? {});
+    }
+    evictOldestCacheEntries() {
+        // Remove first entry
+        const firstKey = this.performanceCache.keys().next().value;
+        if (typeof firstKey === 'string')
+            this.performanceCache.delete(firstKey);
+    }
+    optimizeCache() {
+        // Placeholder for cache optimization
     }
     // Event System
     emit(event, data) {

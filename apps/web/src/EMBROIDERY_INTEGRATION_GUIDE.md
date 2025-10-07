@@ -167,3 +167,27 @@ You now have access to a **professional-grade, 4K HD embroidery system** that ri
 **Happy embroidering! 🧵✨**
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Navigation } from './Navigation';
 import { Toolbar } from './Toolbar';
-import { RightPanel } from './RightPanel';
-import { LeftPanel } from './LeftPanel';
+import { RightPanelCompact } from './RightPanelCompact';
+import { LeftPanelCompact } from './LeftPanelCompact';
 import { GridOverlay } from './GridOverlay';
 import { VectorOverlay } from './VectorOverlay';
 import VectorToolbar from './VectorToolbar';
 import { useApp } from '../App';
-import { vectorStore } from '../vector/vectorStore';
+import { vectorStore } from '../vector/vectorState';
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -54,7 +54,7 @@ const GridToolbarControls = () => {
         onClick={() => setShowGrid(!showGrid)}
         style={{
           padding: '8px 12px',
-          background: showGrid ? '#10B981' : '#475569',
+          background: showGrid ? '#FFFFFF' : '#000000',
           color: 'white',
           border: 'none',
           borderRadius: '6px',
@@ -76,7 +76,7 @@ const GridToolbarControls = () => {
         onClick={() => setShowRulers(!showRulers)}
         style={{
           padding: '8px 12px',
-          background: showRulers ? '#10B981' : '#475569',
+          background: showRulers ? '#FFFFFF' : '#000000',
           color: 'white',
           border: 'none',
           borderRadius: '6px',
@@ -98,7 +98,7 @@ const GridToolbarControls = () => {
         onClick={() => setSnapToGrid(!snapToGrid)}
         style={{
           padding: '8px 12px',
-          background: snapToGrid ? '#10B981' : '#475569',
+          background: snapToGrid ? '#FFFFFF' : '#000000',
           color: 'white',
           border: 'none',
           borderRadius: '6px',
@@ -121,7 +121,7 @@ const GridToolbarControls = () => {
           onClick={() => setShowScaleMenu(!showScaleMenu)}
           style={{
             padding: '8px 12px',
-            background: '#475569',
+            background: '#000000',
             color: 'white',
             border: 'none',
             borderRadius: '6px',
@@ -155,7 +155,7 @@ const GridToolbarControls = () => {
             }} onClick={() => setShowScaleMenu(false)}>
               {/* Modal Content */}
               <div style={{
-                background: 'linear-gradient(135deg, #1E293B 0%, #0F172A 100%)',
+                background: '#000000',
                 border: '1px solid #334155',
                 borderRadius: '12px',
                 padding: '24px',
@@ -229,7 +229,7 @@ const GridToolbarControls = () => {
                 style={{
                   flex: 1,
                   padding: '4px 8px',
-                  background: '#6B7280',
+                  background: '#000000',
                   color: 'white',
                   border: 'none',
                   borderRadius: '4px',
@@ -244,7 +244,7 @@ const GridToolbarControls = () => {
                 style={{
                   flex: 1,
                   padding: '4px 8px',
-                  background: '#10B981',
+                  background: '#FFFFFF',
                   color: 'white',
                   border: 'none',
                   borderRadius: '4px',
@@ -259,7 +259,7 @@ const GridToolbarControls = () => {
                 style={{
                   flex: 1,
                   padding: '4px 8px',
-                  background: '#6B7280',
+                  background: '#000000',
                   color: 'white',
                   border: 'none',
                   borderRadius: '4px',
@@ -282,7 +282,7 @@ const GridToolbarControls = () => {
           onClick={() => setShowGridMenu(!showGridMenu)}
           style={{
             padding: '8px 12px',
-            background: '#475569',
+            background: '#000000',
             color: 'white',
             border: 'none',
             borderRadius: '6px',
@@ -316,7 +316,7 @@ const GridToolbarControls = () => {
             }} onClick={() => setShowGridMenu(false)}>
               {/* Modal Content */}
               <div style={{
-                background: 'linear-gradient(135deg, #1E293B 0%, #0F172A 100%)',
+                background: '#000000',
                 border: '1px solid #334155',
                 borderRadius: '12px',
                 padding: '24px',
@@ -439,7 +439,7 @@ const GridToolbarControls = () => {
                   width: '100%',
                   padding: '6px',
                   borderRadius: '4px',
-                  border: '1px solid rgba(16, 185, 129, 0.3)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
                   background: 'rgba(15, 23, 42, 0.8)',
                   color: '#E2E8F0',
                   fontSize: '12px'
@@ -485,13 +485,17 @@ const GridToolbarControls = () => {
 export function MainLayout({ children }: MainLayoutProps) {
   // Console log removed
 
-  const [showNavigation, setShowNavigation] = useState(true);
+  const [showNavigation, setShowNavigation] = useState(false);
   const [showLeftPanel, setShowLeftPanel] = useState(true);
   const [showRightPanel, setShowRightPanel] = useState(true);
   const [leftWidth, setLeftWidth] = useState(300);
-  const [rightWidth, setRightWidth] = useState(320);
+  const [rightWidth, setRightWidth] = useState(400);
   const [activeToolSidebar, setActiveToolSidebar] = useState<string | null>(null);
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
+  
+  // Resizing state
+  const [isResizingLeft, setIsResizingLeft] = useState(false);
+  const [isResizingRight, setIsResizingRight] = useState(false);
 
   const activeTool = useApp(s => s.activeTool);
   const setActiveTool = useApp(s => s.setActiveTool);
@@ -502,6 +506,10 @@ export function MainLayout({ children }: MainLayoutProps) {
   
   // Vector toolbar state
   const [showVectorToolbar, setShowVectorToolbar] = useState(false);
+  const showGrid = useApp(s => s.showGrid);
+  const setShowGrid = useApp(s => s.setShowGrid);
+  const showRulers = useApp(s => s.showRulers);
+  const setShowRulers = useApp(s => s.setShowRulers);
 
   // Handle tool changes and sidebar switching
   useEffect(() => {
@@ -519,6 +527,45 @@ export function MainLayout({ children }: MainLayoutProps) {
       setActiveToolSidebar(null);
     }
   }, [activeTool]);
+
+  // Resize handlers
+  const handleLeftResizeStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizingLeft(true);
+  };
+
+  const handleRightResizeStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizingRight(true);
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (isResizingLeft) {
+        const newWidth = Math.max(200, Math.min(600, e.clientX));
+        setLeftWidth(newWidth);
+      }
+      if (isResizingRight) {
+        const newWidth = Math.max(200, Math.min(600, window.innerWidth - e.clientX));
+        setRightWidth(newWidth);
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsResizingLeft(false);
+      setIsResizingRight(false);
+    };
+
+    if (isResizingLeft || isResizingRight) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizingLeft, isResizingRight]);
 
   const toggleNavigation = () => {
     // Console log removed
@@ -555,7 +602,9 @@ export function MainLayout({ children }: MainLayoutProps) {
       height: '100vh',
       width: '100vw',
       overflow: 'hidden',
-      background: '#0F172A'
+      background: '#000000',
+      boxShadow: '0 0 100px rgba(0, 0, 0, 0.5)',
+      pointerEvents: 'auto'
     }}>
       {/* Vector Toolbar - Shows when vector tools are active */}
       <VectorToolbar 
@@ -582,311 +631,640 @@ export function MainLayout({ children }: MainLayoutProps) {
         display: 'flex',
         flexDirection: 'column',
         minWidth: 0,
-        marginTop: showVectorToolbar ? '60px' : '0px',
+        marginTop: showVectorToolbar ? '36px' : '0px',
         transition: 'margin-top 0.3s ease'
       }}>
-        {/* Top Toolbar - Hidden when vector mode is active */}
-        {!vectorMode && (
-          <div className="toolbar-container" style={{
-            height: '60px',
-            background: 'linear-gradient(135deg, #1E293B 0%, #0F172A 100%)',
-            borderBottom: '1px solid #334155',
+        {/* Sexy Top Navigation Bar */}
+        <div className="top-nav" style={{
+          height: '40px',
+          background: '#000000',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.2)',
             display: 'flex',
             alignItems: 'center',
+          justifyContent: 'space-between',
             padding: '0 16px',
-            gap: '16px',
-            zIndex: 10000,
-            position: 'relative'
-          }}>
-          {/* Panel Toggle Buttons */}
-          <div className="panel-toggles" style={{
-            display: 'flex',
-            gap: '8px',
-            alignItems: 'center'
-          }}>
-            <button
-              className="panel-toggle"
-              onClick={toggleSidebars}
-              style={{
-                padding: '8px 12px',
-                background: showLeftPanel || showRightPanel ? '#0ea5e9' : '#475569',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                fontSize: '12px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                transition: 'all 0.2s ease'
-              }}
-            >
-              <span>🧰</span>
-              <span>Toggle Sidebars</span>
-            </button>
-            <button
-              className="panel-toggle"
-              onClick={toggleNavigation}
-              style={{
-                padding: '8px 12px',
-                background: showNavigation ? '#3B82F6' : '#475569',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                fontSize: '12px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                transition: 'all 0.2s ease'
-              }}
-            >
-              <span>🧭</span>
-              <span>Nav</span>
-            </button>
-            <button
-              className="panel-toggle"
-              onClick={toggleLeftPanel}
-              style={{
-                padding: '8px 12px',
-                background: showLeftPanel ? '#10B981' : '#475569',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                fontSize: '12px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                transition: 'all 0.2s ease'
-              }}
-            >
-              <span>📁</span>
-              <span>Files</span>
-            </button>
-            <button
-              className="panel-toggle"
-              onClick={toggleRightPanel}
-              style={{
-                padding: '8px 12px',
-                background: showRightPanel ? '#F59E0B' : '#475569',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                fontSize: '12px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                transition: 'all 0.2s ease'
-              }}
-            >
-              <span>⚙️</span>
-              <span>Tools</span>
-            </button>
-          </div>
-
-          {/* Active Tool Indicator */}
-          <div className="active-tool-indicator" style={{
-            padding: '8px 16px',
-            background: 'rgba(59, 130, 246, 0.1)',
-            border: '1px solid rgba(59, 130, 246, 0.3)',
-            borderRadius: '6px',
-            color: '#3B82F6',
-            fontSize: '14px',
-            fontWeight: '500',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px'
-          }}>
-            <span>🎯</span>
-            <span>Active: {activeTool}</span>
-          </div>
-
-
-          {/* Grid & Scale Controls */}
-          <GridToolbarControls />
-
-          {/* Spacer */}
-          <div style={{ flex: 1 }} />
-
-          {/* Sidebar Width Controls */}
-          <div className="sidebar-width-controls" style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
-            color: '#e2e8f0'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ fontSize: 12 }}>Left</span>
-              <input type="range" min={180} max={600} value={leftWidth} onChange={e => setLeftWidth(parseInt(e.target.value))} />
-              <span style={{ fontSize: 12, width: 40, textAlign: 'right' }}>{leftWidth}px</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ fontSize: 12 }}>Right</span>
-              <input type="range" min={180} max={600} value={rightWidth} onChange={e => setRightWidth(parseInt(e.target.value))} />
-              <span style={{ fontSize: 12, width: 40, textAlign: 'right' }}>{rightWidth}px</span>
-            </div>
-          </div>
-
-          {/* Quick Actions */}
-          <div className="quick-actions" style={{
-            display: 'flex',
-            gap: '8px'
-          }}>
-            <button
-              className="quick-action"
-              style={{
-                padding: '8px 12px',
-                background: '#EF4444',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                fontSize: '12px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                transition: 'all 0.2s ease'
-              }}
-            >
-              <span>⏪</span>
-              <span>Undo</span>
-            </button>
-            <button
-              className="quick-action"
-              style={{
-                padding: '8px 12px',
-                background: '#10B981',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                fontSize: '12px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                transition: 'all 0.2s ease'
-              }}
-            >
-              <span>⏩</span>
-              <span>Redo</span>
-            </button>
-            <button
-              className="quick-action"
-              style={{
-                padding: '8px 12px',
-                background: '#8B5CF6',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                fontSize: '12px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                transition: 'all 0.2s ease'
-              }}
-            >
-              <span>💾</span>
-              <span>Save</span>
-            </button>
-          </div>
-        </div>
-        )}
-
-        {/* Vector Tools and Anchor Points Toggle Buttons - Always visible */}
-        <div style={{
-          position: 'fixed',
-          top: '10px',
-          right: '10px',
+          position: 'relative',
           zIndex: 10001,
-          display: 'flex',
-          gap: '10px',
-          flexDirection: 'column'
+          fontSize: '11px',
+          boxShadow: '0 2px 20px rgba(0, 0, 0, 0.3)',
+          backdropFilter: 'blur(10px)',
+          pointerEvents: 'auto'
         }}>
-          {/* Vector Tools Button */}
-          <button
-            onClick={() => {
-              console.log('🎨 Vector Tools button clicked - toggling vectorMode');
-              setShowVectorToolbar(!showVectorToolbar);
-              setVectorMode(!vectorMode);
-              // Set the active tool to vectorTools when entering vector mode
-              if (!vectorMode) {
-                setActiveTool('vectorTools');
-                // Initialize vector store with pen tool
-                vectorStore.set('tool', 'pen');
-              } else {
-                setActiveTool('brush'); // Return to brush when exiting vector mode
-              }
-              console.log('🎨 Vector mode set to:', !vectorMode);
-            }}
-            style={{
-              background: vectorMode ? 'rgb(139, 92, 246)' : 'rgba(139, 92, 246, 0.1)',
-              border: '1px solid rgba(139, 92, 246, 0.3)',
-              borderRadius: '8px',
-              padding: '12px 16px',
-              fontSize: '14px',
-              fontWeight: '600',
-              color: 'white',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              transition: 'all 0.3s ease',
-              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
-              backdropFilter: 'blur(10px)'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'translateY(-2px)';
-              e.currentTarget.style.boxShadow = '0 6px 20px rgba(139, 92, 246, 0.4)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)';
-            }}
-            title={vectorMode ? "Exit Vector Mode" : "Enter Vector Mode"}
-          >
-            <span style={{ fontSize: '18px' }}>🎨</span>
-            <span>{vectorMode ? 'Exit Vector' : 'Vector Tools'}</span>
-          </button>
+          {/* Left Section - Logo & Project */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{
+              fontSize: '10px',
+              color: '#a0aec0',
+              fontWeight: '500',
+              textShadow: '0 1px 2px rgba(0, 0, 0, 0.3)'
+            }}>
+              Untitled Design
+            </div>
+          </div>
 
-          {/* Anchor Points Toggle Button */}
+          {/* Center Section - Main Navigation Tabs */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+            <button
+              onClick={() => setShowLeftPanel(!showLeftPanel)}
+              style={{
+                padding: '8px 16px',
+                background: showLeftPanel 
+                  ? '#FFFFFF' 
+                  : 'transparent',
+                borderRadius: '6px',
+                color: showLeftPanel ? '#000000' : '#FFFFFF',
+                fontSize: '11px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'all 0.3s ease',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              🛠️ Tools
+            </button>
+            
+            <button style={{
+              padding: '8px 16px',
+              background: 'transparent',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+                borderRadius: '6px',
+              color: '#FFFFFF',
+              fontSize: '11px',
+              fontWeight: '600',
+                cursor: 'pointer',
+              transition: 'all 0.3s ease'
+            }}>
+              Layers
+            </button>
+            
+            <button style={{
+              padding: '8px 16px',
+              background: 'transparent',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              borderRadius: '6px',
+              color: '#FFFFFF',
+              fontSize: '11px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              transition: 'all 0.3s ease'
+            }}>
+              Export
+            </button>
+          </div>
+
+          {/* Right Section - View Controls */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', pointerEvents: 'auto' }}>
+            {/* View Controls Group */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px', background: 'rgba(255, 255, 255, 0.05)', borderRadius: '6px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
+            <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setShowGrid(!showGrid);
+                }}
+              style={{
+                  padding: '4px 8px',
+                  background: showGrid ? '#FFFFFF' : 'transparent',
+                border: 'none',
+                  borderRadius: '4px',
+                  color: showGrid ? '#000000' : '#FFFFFF',
+                  fontSize: '9px',
+                  fontWeight: '500',
+                  cursor: 'pointer'
+                }}
+              >
+                Grid
+            </button>
+              
+            <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setShowRulers(!showRulers);
+                }}
+              style={{
+                  padding: '4px 8px',
+                  background: showRulers ? '#FFFFFF' : 'transparent',
+                border: 'none',
+                  borderRadius: '4px',
+                  color: showRulers ? '#000000' : '#FFFFFF',
+                  fontSize: '9px',
+                  fontWeight: '500',
+                  cursor: 'pointer'
+                }}
+              >
+                Rulers
+            </button>
+          </div>
+
+            {/* Vector Tools Group - Only show when vector mode is active */}
+            {vectorMode && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px', background: 'rgba(255, 255, 255, 0.05)', borderRadius: '6px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
+            <button
+                  onClick={() => {
+                    const { undo } = useApp.getState();
+                    if (undo) undo();
+                  }}
+              style={{
+                    padding: '4px 8px',
+                    background: 'transparent',
+                    borderRadius: '4px',
+                    color: '#FFFFFF',
+                    fontSize: '9px',
+                    fontWeight: '500',
+                cursor: 'pointer',
+                    border: 'none'
+              }}
+            >
+                  ↶ Undo
+            </button>
+                
+            <button
+                  onClick={() => {
+                    const { redo } = useApp.getState();
+                    if (redo) redo();
+                  }}
+              style={{
+                    padding: '4px 8px',
+                    background: 'transparent',
+                    borderRadius: '4px',
+                    color: '#FFFFFF',
+                    fontSize: '9px',
+                    fontWeight: '500',
+                cursor: 'pointer',
+                    border: 'none'
+              }}
+            >
+                  ↷ Redo
+            </button>
+                
+            <button
+                  onClick={() => setShowAnchorPoints(!showAnchorPoints)}
+              style={{
+                    padding: '4px 8px',
+                    background: showAnchorPoints ? '#FFFFFF' : 'transparent',
+                    borderRadius: '4px',
+                    color: showAnchorPoints ? '#000000' : '#FFFFFF',
+                    fontSize: '9px',
+                    fontWeight: '500',
+                cursor: 'pointer',
+                    border: 'none'
+              }}
+            >
+                  ⚓ Anchor
+            </button>
+
           <button
             onClick={() => {
-              console.log('🎯 Anchor Points toggle clicked - toggling showAnchorPoints');
-              setShowAnchorPoints(!showAnchorPoints);
-              console.log('🎯 Show anchor points set to:', !showAnchorPoints);
+                    console.log('🎨 Apply Tool button clicked - applying tools to vector paths');
+                    try {
+                      const appState = useApp.getState();
+                      const vectorPaths = appState.vectorPaths || [];
+                      
+                      if (vectorPaths.length === 0) {
+                        console.log('⚠️ No vector paths to apply tools to');
+                        console.log('🎨 Available vector paths:', vectorPaths);
+                        return;
+                      }
+                      
+                      console.log('🎨 Vector paths found:', vectorPaths.length);
+                      console.log('🎨 Vector paths:', vectorPaths);
+                      
+                      // Get current tool settings
+                      const currentTool = appState.activeTool;
+                      console.log(`🎨 Applying ${currentTool} to ${vectorPaths.length} vector paths`);
+                      
+                      // Apply tool to each vector path
+                      vectorPaths.forEach((path: any) => {
+                        console.log(`🎨 Applying ${currentTool} to path:`, path.id);
+                        console.log('🎨 Path structure:', path);
+                        
+                        // Handle different vector path structures
+                        let points = [];
+                        if (path.points) {
+                          points = path.points;
+                        } else if (path.anchors) {
+                          points = path.anchors;
+                        } else if (path.vertices) {
+                          points = path.vertices;
+                        } else if (Array.isArray(path)) {
+                          points = path;
+                        }
+                        
+                        console.log('🎨 Points found:', points.length);
+                        
+                        if (points.length === 0) {
+                          console.log('⚠️ No points found in path');
+                          return;
+                        }
+                        
+                        // Create sampled points for smooth tool application
+                        const sampledPoints = [];
+                        for (let i = 0; i < points.length - 1; i++) {
+                          const p1 = points[i];
+                          const p2 = points[i + 1];
+                          
+                          // Handle different point structures
+                          const p1U = p1.u || p1.x || p1[0];
+                          const p1V = p1.v || p1.y || p1[1];
+                          const p2U = p2.u || p2.x || p2[0];
+                          const p2V = p2.v || p2.y || p2[1];
+                          
+                          const steps = Math.max(5, Math.floor(Math.sqrt(
+                            Math.pow(p2U - p1U, 2) + Math.pow(p2V - p1V, 2)
+                          )));
+                          
+                          for (let j = 0; j <= steps; j++) {
+                            const t = j / steps;
+                            sampledPoints.push({
+                              u: p1U + t * (p2U - p1U),
+                              v: p1V + t * (p2V - p1V)
+                            });
+                          }
+                        }
+                        
+                        console.log(`🎨 Sampled ${sampledPoints.length} points for smooth application`);
+                        
+                        // Apply tool based on current active tool
+                        switch (currentTool) {
+                          case 'brush':
+                            console.log('🎨 Applying brush tool to', sampledPoints.length, 'points');
+                            // Apply continuous brush stroke along the path
+                            const layer = appState.getActiveLayer();
+                            if (layer && layer.canvas) {
+                              const ctx = layer.canvas.getContext('2d');
+                              if (ctx) {
+                                console.log('🎨 Drawing continuous brush stroke');
+                                
+                                ctx.save();
+                                ctx.globalCompositeOperation = 'source-over';
+                                ctx.globalAlpha = appState.brushOpacity || 1.0;
+                                ctx.strokeStyle = appState.brushColor || '#000000';
+                                ctx.lineWidth = appState.brushSize || 5;
+                                ctx.lineCap = 'round';
+                                ctx.lineJoin = 'round';
+                                ctx.shadowColor = 'rgba(0,0,0,0.3)';
+                                ctx.shadowBlur = 4;
+                                ctx.shadowOffsetX = 2;
+                                ctx.shadowOffsetY = 2;
+                                
+                                // Draw continuous stroke
+                                ctx.beginPath();
+                                sampledPoints.forEach((point: any, index: number) => {
+                                  const x = Math.round(point.u * layer.canvas.width);
+                                  const y = Math.round(point.v * layer.canvas.height);
+                                  
+                                  if (index === 0) {
+                                    ctx.moveTo(x, y);
+              } else {
+                                    ctx.lineTo(x, y);
+                                  }
+                                  
+                                  console.log(`🎨 Drawing brush point ${index}:`, { x, y, u: point.u, v: point.v });
+                                });
+                                ctx.stroke();
+                                ctx.restore();
+                                
+                                console.log('🎨 Continuous brush stroke completed');
+                              } else {
+                                console.log('⚠️ No canvas context found for layer');
+                              }
+                            } else {
+                              console.log('⚠️ No active layer or canvas found');
+                            }
+                            break;
+                            
+                          case 'puffPrint':
+                            console.log('🎨 Applying puff print tool to', sampledPoints.length, 'points');
+                            // Apply puff print to each sampled point
+                            const puffCanvas = appState.puffCanvas;
+                            const displacementCanvas = appState.displacementCanvas;
+                            const puffBrushSize = appState.puffBrushSize || 20;
+                            const puffBrushOpacity = appState.puffBrushOpacity || 1.0;
+                            const puffColor = appState.puffColor || '#ff69b4';
+                            const puffHeight = appState.puffHeight || 2.0;
+                            
+                            console.log('🎨 Puff settings:', { puffCanvas: !!puffCanvas, displacementCanvas: !!displacementCanvas, puffBrushSize, puffBrushOpacity, puffColor, puffHeight });
+                            
+                            if (puffCanvas && displacementCanvas) {
+                              const puffCtx = puffCanvas.getContext('2d');
+                              const dispCtx = displacementCanvas.getContext('2d');
+                              
+                              if (puffCtx && dispCtx) {
+                                console.log('🎨 Drawing continuous puff stroke');
+                                
+                                // Create continuous puff stroke
+                                puffCtx.save();
+                                puffCtx.globalCompositeOperation = 'source-over';
+                                puffCtx.globalAlpha = puffBrushOpacity;
+                                puffCtx.strokeStyle = puffColor;
+                                puffCtx.lineWidth = puffBrushSize;
+                                puffCtx.lineCap = 'round';
+                                puffCtx.lineJoin = 'round';
+                                puffCtx.shadowColor = puffColor;
+                                puffCtx.shadowBlur = puffBrushSize / 2;
+                                
+                                puffCtx.beginPath();
+                                sampledPoints.forEach((point: any, index: number) => {
+                                  const x = Math.round(point.u * puffCanvas.width);
+                                  const y = Math.round(point.v * puffCanvas.height);
+                                  
+                                  if (index === 0) {
+                                    puffCtx.moveTo(x, y);
+                                  } else {
+                                    puffCtx.lineTo(x, y);
+                                  }
+                                  
+                                  console.log(`🎨 Drawing puff point ${index}:`, { x, y, u: point.u, v: point.v });
+                                });
+                                puffCtx.stroke();
+                                puffCtx.restore();
+                                
+                                // Create continuous displacement stroke
+                                dispCtx.save();
+                                dispCtx.globalCompositeOperation = 'source-over';
+                                const displacementValue = Math.floor(128 + (puffHeight / 10) * 127);
+                                dispCtx.strokeStyle = `rgb(${displacementValue}, ${displacementValue}, ${displacementValue})`;
+                                dispCtx.lineWidth = puffBrushSize;
+                                dispCtx.lineCap = 'round';
+                                dispCtx.lineJoin = 'round';
+                                
+                                dispCtx.beginPath();
+                                sampledPoints.forEach((point: any, index: number) => {
+                                  const x = Math.round(point.u * puffCanvas.width);
+                                  const y = Math.round(point.v * puffCanvas.height);
+                                  
+                                  if (index === 0) {
+                                    dispCtx.moveTo(x, y);
+                                  } else {
+                                    dispCtx.lineTo(x, y);
+                                  }
+                                });
+                                dispCtx.stroke();
+                                dispCtx.restore();
+                                
+                                console.log('🎨 Continuous puff stroke completed');
+                              } else {
+                                console.log('⚠️ No canvas contexts found for puff/displacement');
+                              }
+                            } else {
+                              console.log('⚠️ Puff or displacement canvas not found');
+                            }
+                            break;
+                            
+                          case 'embroidery':
+                            console.log('🎨 Applying embroidery tool to', sampledPoints.length, 'points');
+                            // Apply embroidery to each sampled point
+                            const embroideryCanvas = appState.embroideryCanvas;
+                            console.log('🎨 Embroidery canvas found:', !!embroideryCanvas);
+                            
+                            if (embroideryCanvas) {
+                              const embCtx = embroideryCanvas.getContext('2d');
+                              if (embCtx) {
+                                console.log('🎨 Drawing continuous embroidery stroke');
+                                
+                                embCtx.save();
+                                embCtx.globalCompositeOperation = 'source-over';
+                                embCtx.globalAlpha = appState.brushOpacity || 1.0;
+                                embCtx.strokeStyle = appState.brushColor || '#000000';
+                                embCtx.lineWidth = appState.brushSize || 5;
+                                embCtx.lineCap = 'round';
+                                embCtx.lineJoin = 'round';
+                                embCtx.shadowColor = 'rgba(0,0,0,0.3)';
+                                embCtx.shadowBlur = 4;
+                                embCtx.shadowOffsetX = 2;
+                                embCtx.shadowOffsetY = 2;
+                                
+                                // Draw continuous embroidery stroke
+                                embCtx.beginPath();
+                                sampledPoints.forEach((point: any, index: number) => {
+                                  const x = Math.round(point.u * embroideryCanvas.width);
+                                  const y = Math.round(point.v * embroideryCanvas.height);
+                                  
+                                  if (index === 0) {
+                                    embCtx.moveTo(x, y);
+                                  } else {
+                                    embCtx.lineTo(x, y);
+                                  }
+                                  
+                                  console.log(`🎨 Drawing embroidery point ${index}:`, { x, y, u: point.u, v: point.v });
+                                });
+                                embCtx.stroke();
+                                embCtx.restore();
+                                
+                                console.log('🎨 Continuous embroidery stroke completed');
+                              } else {
+                                console.log('⚠️ No embroidery canvas context found');
+                              }
+                            } else {
+                              console.log('⚠️ No embroidery canvas found');
+                            }
+                            break;
+                        }
+                      });
+                      
+                      // Commit changes and update model
+                      if (appState.commit) {
+                        appState.commit();
+                        console.log('✅ Changes committed to layer history');
+                      }
+                      
+                      if (appState.composeLayers) {
+                        appState.composeLayers();
+                        console.log('✅ All layers recomposed');
+                      }
+                      
+                      // Force texture update
+                      setTimeout(() => {
+                        if ((window as any).updateModelTexture) {
+                          console.log('🎨 Updating model texture');
+                          (window as any).updateModelTexture();
+                        }
+                        
+                        if ((window as any).updateModelWithPuffDisplacement) {
+                          console.log('🎨 Updating model displacement maps');
+                          (window as any).updateModelWithPuffDisplacement();
+                        }
+                      }, 100);
+                      
+                      console.log('✅ Apply Tool: All tools applied to vector paths successfully');
+                      
+                    } catch (error) {
+                      console.error('❌ Error applying tools to vector paths:', error);
+                    }
             }}
             style={{
-              background: showAnchorPoints ? 'rgb(34, 197, 94)' : 'rgba(34, 197, 94, 0.1)',
-              border: '1px solid rgba(34, 197, 94, 0.3)',
-              borderRadius: '8px',
-              padding: '12px 16px',
-              fontSize: '14px',
+                    padding: '4px 8px',
+                    background: '#FFFFFF',
+                    borderRadius: '4px',
+                    color: '#000000',
+                    fontSize: '9px',
+                    fontWeight: '500',
+              cursor: 'pointer',
+                    border: 'none'
+              }}
+            >
+                  ✅ Apply
+            </button>
+
+          <button
+            onClick={() => {
+                    console.log('🗑️ Clear Applied Effects button clicked');
+                    const appState = useApp.getState();
+                    
+                    try {
+                      // Clear active layer canvas (brush strokes)
+                      const activeLayer = appState.getActiveLayer();
+                      if (activeLayer && activeLayer.canvas) {
+                        const ctx = activeLayer.canvas.getContext('2d');
+                        if (ctx) {
+                          ctx.clearRect(0, 0, activeLayer.canvas.width, activeLayer.canvas.height);
+                          console.log('✅ Active layer canvas cleared');
+                        }
+                      }
+                      
+                      // Clear puff canvas
+                      if (appState.puffCanvas) {
+                        const puffCtx = appState.puffCanvas.getContext('2d');
+                        if (puffCtx) {
+                          puffCtx.clearRect(0, 0, appState.puffCanvas.width, appState.puffCanvas.height);
+                          console.log('✅ Puff canvas cleared');
+                        }
+                      }
+                      
+                      // Clear displacement canvas
+                      if (appState.displacementCanvas) {
+                        const dispCtx = appState.displacementCanvas.getContext('2d');
+                        if (dispCtx) {
+                          dispCtx.clearRect(0, 0, appState.displacementCanvas.width, appState.displacementCanvas.height);
+                          console.log('✅ Displacement canvas cleared');
+                        }
+                      }
+                      
+                      // Clear embroidery canvas
+                      if (appState.embroideryCanvas) {
+                        const embCtx = appState.embroideryCanvas.getContext('2d');
+                        if (embCtx) {
+                          embCtx.clearRect(0, 0, appState.embroideryCanvas.width, appState.embroideryCanvas.height);
+                          console.log('✅ Embroidery canvas cleared');
+                        }
+                      }
+                      
+                      // Clear all layer canvases
+                      if (appState.layers) {
+                        appState.layers.forEach((layer: any) => {
+                          if (layer.canvas) {
+                            const ctx = layer.canvas.getContext('2d');
+                            if (ctx) {
+                              ctx.clearRect(0, 0, layer.canvas.width, layer.canvas.height);
+                            }
+                          }
+                        });
+                        console.log('✅ All layer canvases cleared');
+                      }
+                      
+                      // Commit changes and recompose
+                      if (appState.commit) {
+                        appState.commit();
+                        console.log('✅ Changes committed');
+                      }
+                      
+                      if (appState.composeLayers) {
+                        appState.composeLayers();
+                        console.log('✅ Layers recomposed');
+                      }
+                      
+                      // Update 3D model to reflect cleared effects
+                      setTimeout(() => {
+                        if ((window as any).updateModelTexture) {
+                          console.log('🎨 Updating model texture after clear');
+                          (window as any).updateModelTexture();
+                        }
+                        
+                        if ((window as any).updateModelWithPuffDisplacement) {
+                          console.log('🎨 Updating model displacement maps after clear');
+                          (window as any).updateModelWithPuffDisplacement();
+                        }
+                      }, 100);
+                      
+                      console.log('✅ All applied effects cleared successfully');
+                      
+                    } catch (error) {
+                      console.error('❌ Error clearing applied effects:', error);
+                    }
+            }}
+            style={{
+                    padding: '4px 8px',
+                    background: 'transparent',
+                    borderRadius: '4px',
+                    color: '#FFFFFF',
+                    fontSize: '9px',
+                    fontWeight: '500',
+              cursor: 'pointer',
+                    border: 'none'
+                  }}
+                >
+                  🗑️ Clear
+          </button>
+              </div>
+            )}
+
+            {/* Vector Tools Toggle Button */}
+          <button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('🎨 Vector Tools button clicked');
+                
+                // Toggle behavior: if vector mode is already active, deactivate it
+                if (vectorMode) {
+                  console.log('🔄 Deactivating vector mode');
+                  setVectorMode(false);
+                  setActiveTool('brush'); // Switch back to brush
+                } else {
+                  console.log('✅ Activating vector mode');
+                  setActiveTool('vector');
+                  setVectorMode(true);
+                }
+                console.log('🎨 Vector mode set to:', !vectorMode);
+            }}
+            style={{
+                padding: '6px 12px',
+                background: vectorMode 
+                  ? '#FFFFFF' 
+                  : 'rgba(255, 255, 255, 0.05)',
+                borderRadius: '6px',
+                color: vectorMode ? '#000000' : '#FFFFFF',
+                fontSize: '10px',
               fontWeight: '600',
-              color: 'white',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              gap: '8px',
+                gap: '4px',
               transition: 'all 0.3s ease',
-              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
-              backdropFilter: 'blur(10px)'
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                pointerEvents: 'auto'
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'translateY(-2px)';
-              e.currentTarget.style.boxShadow = '0 6px 20px rgba(34, 197, 94, 0.4)';
+                if (!vectorMode) {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                  e.currentTarget.style.transform = 'translateY(-1px)';
+                }
             }}
             onMouseLeave={(e) => {
+                if (!vectorMode) {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
               e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)';
+                }
             }}
-            title={showAnchorPoints ? "Hide Anchor Points" : "Show Anchor Points"}
           >
-            <span style={{ fontSize: '18px' }}>🎯</span>
-            <span>{showAnchorPoints ? 'Hide Anchors' : 'Show Anchors'}</span>
+              <span style={{ fontSize: '12px' }}>🎨</span>
+              <span>Vector Tools</span>
           </button>
+          </div>
         </div>
 
         {/* Main Workspace */}
@@ -897,38 +1275,79 @@ export function MainLayout({ children }: MainLayoutProps) {
         }}>
           {/* Left Panel */}
           {showLeftPanel && (
+            <>
             <div className="left-panel-container" style={{
               width: `${leftWidth}px`,
-              background: 'linear-gradient(135deg, #1E293B 0%, #0F172A 100%)',
-              borderRight: '1px solid #334155',
-              overflowY: 'auto'
-            }}>
-              <LeftPanel />
+                background: '#000000',
+                borderRight: '1px solid rgba(255, 255, 255, 0.2)',
+                overflowY: 'auto',
+                boxShadow: '2px 0 20px rgba(0, 0, 0, 0.3)',
+                backdropFilter: 'blur(10px)',
+                zIndex: 10001,
+                pointerEvents: 'auto'
+              }}>
+                <LeftPanelCompact />
             </div>
+              
+              {/* Left Resizer */}
+              <div
+                className="resizer resizer-left"
+                onMouseDown={handleLeftResizeStart}
+                style={{
+                  width: '4px',
+                  background: isResizingLeft ? '#FFFFFF' : 'rgba(255, 255, 255, 0.3)',
+                  cursor: 'col-resize',
+                  zIndex: 10002,
+                  transition: 'background 0.2s ease'
+                }}
+              />
+            </>
           )}
 
           {/* Canvas Area */}
           <div className="canvas-area" style={{
             flex: 1,
             position: 'relative',
-            background: '#0F172A',
+          background: '#000000',
             overflow: 'hidden',
-            zIndex: 0
+          zIndex: 0,
+          boxShadow: 'inset 0 0 50px rgba(0, 0, 0, 0.3)'
           }}>
             {children}
             <GridOverlay canvasRef={canvasRef} />
+            {/* Ensure VectorOverlay is mounted on top of the canvas area when vector mode is active */}
+            {vectorMode && <VectorOverlay />}
           </div>
 
-          {/* Right Panel - Hide when embroidery tool is active */}
-          {showRightPanel && activeTool !== 'embroidery' && (
+          {/* Right Panel */}
+          {showRightPanel && (
+            <>
+              {/* Right Resizer */}
+              <div
+                className="resizer resizer-right"
+                onMouseDown={handleRightResizeStart}
+                style={{
+                  width: '4px',
+                  background: isResizingRight ? '#FFFFFF' : 'rgba(255, 255, 255, 0.3)',
+                  cursor: 'col-resize',
+                  zIndex: 10002,
+                  transition: 'background 0.2s ease'
+                }}
+              />
+              
             <div className="right-panel-container" style={{
               width: `${rightWidth}px`,
-              background: 'linear-gradient(135deg, #1E293B 0%, #0F172A 100%)',
-              borderLeft: '1px solid #334155',
-              overflowY: 'auto'
+              background: '#000000',
+              borderLeft: '1px solid rgba(255, 255, 255, 0.2)',
+              overflowY: 'auto',
+              boxShadow: '-2px 0 20px rgba(0, 0, 0, 0.3)',
+              backdropFilter: 'blur(10px)',
+              zIndex: 10001,
+              pointerEvents: 'auto'
             }}>
-              <RightPanel activeToolSidebar={activeToolSidebar} />
+              <RightPanelCompact activeToolSidebar={activeToolSidebar} />
             </div>
+          </>
           )}
         </div>
       </div>

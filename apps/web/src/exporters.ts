@@ -13,14 +13,14 @@ export async function exportMeshAsGLB(textureCanvas: HTMLCanvasElement) {
   scene.add(mesh);
   const exporter = new GLTFExporter();
   return new Promise<void>((resolve, reject) => {
-    exporter.parse(scene, (gltf) => {
+    exporter.parse(scene, (gltf: ArrayBuffer | object) => {
       const blob = new Blob([gltf as ArrayBuffer], { type: 'model/gltf-binary' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url; a.download = 'closset-shirt.glb'; a.click();
       URL.revokeObjectURL(url);
       resolve();
-    }, (err) => reject(err), { binary: true, embedImages: true });
+    }, (err: any) => reject(err), { binary: true, embedImages: true });
   });
 }
 

@@ -56,15 +56,15 @@ export class PuffPrintMaterial extends THREE.ShaderMaterial {
     setPuffMap(texture) {
         this.uniforms.puffMap.value = texture;
     }
-    // Clone method
+    // Clone method aligned with THREE.Material API
     clone() {
-        const cloned = new PuffPrintMaterial({
-            baseMap: this.uniforms.baseMap.value,
-            puffMap: this.uniforms.puffMap.value,
-            puffColor: this.puffColor.clone(),
-            puffOpacity: this.puffOpacity,
-            puffIntensity: this.puffIntensity
-        });
+        const cloned = super.clone();
+        // ensure custom fields are copied
+        cloned.puffIntensity = this.puffIntensity;
+        cloned.puffColor = this.puffColor.clone();
+        cloned.puffOpacity = this.puffOpacity;
+        cloned.uniforms.baseMap.value = this.uniforms.baseMap.value;
+        cloned.uniforms.puffMap.value = this.uniforms.puffMap.value;
         return cloned;
     }
 }

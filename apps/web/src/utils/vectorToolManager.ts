@@ -1,7 +1,7 @@
 // Advanced Vector Tool Manager
 // Handles all vector tool operations, rendering, and state management
 
-import { VectorShape, VectorPoint, VectorPath } from '../vector/vectorState';
+import { VectorPoint, VectorPath } from '../vector/vectorState';
 import { renderStitchType, StitchConfig } from './stitchRendering';
 
 export interface VectorToolConfig {
@@ -384,7 +384,9 @@ export class VectorToolManager {
     // Limit cache size
     if (this.renderCache.size > 100) {
       const firstKey = this.renderCache.keys().next().value;
-      this.renderCache.delete(firstKey);
+      if (typeof firstKey === 'string') {
+        this.renderCache.delete(firstKey);
+      }
     }
   }
 

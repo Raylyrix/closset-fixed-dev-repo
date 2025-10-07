@@ -119,7 +119,8 @@ export class IntegratedToolSystem {
         }
         catch (error) {
             console.error('Error in universal rendering:', error);
-            return { success: false, error: error.message };
+            const msg = error?.message ?? String(error);
+            return { success: false, error: msg };
         }
     }
     // Real-time Preview
@@ -181,6 +182,7 @@ export class IntegratedToolSystem {
     // Performance Optimization
     async optimizePerformance(design, targets) {
         try {
+            // Cast to any to tolerate differing manager interfaces
             return await this.performanceManager.optimizePerformance(design, targets);
         }
         catch (error) {
@@ -191,9 +193,13 @@ export class IntegratedToolSystem {
     // Learning and Adaptation
     async learnFromUsage(usage) {
         try {
-            // Learn from usage across all systems
-            await this.aiEnhancement.learnFromUsage(usage);
-            this.performanceManager.learnFromUsage(usage);
+            // Learn from usage across all systems (relaxed signatures)
+            if (this.aiEnhancement?.learnFromUsage) {
+                await this.aiEnhancement.learnFromUsage(usage);
+            }
+            if (this.performanceManager?.learnFromUsage) {
+                this.performanceManager.learnFromUsage(usage);
+            }
             // Update tool preferences
             this.updateToolPreferences(usage);
         }
@@ -295,15 +301,21 @@ export class IntegratedToolSystem {
         this.universalToolSystem.on('toolRegistered', (data) => {
             this.emit('toolRegistered', data);
         });
-        this.stitchSystem.on('stitchRegistered', (data) => {
-            this.emit('stitchRegistered', data);
-        });
-        this.aiEnhancement.on('suggestionGenerated', (data) => {
-            this.emit('suggestionGenerated', data);
-        });
-        this.performanceManager.on('optimizationApplied', (data) => {
-            this.emit('optimizationApplied', data);
-        });
+        if (this.stitchSystem?.on) {
+            this.stitchSystem.on('stitchRegistered', (data) => {
+                this.emit('stitchRegistered', data);
+            });
+        }
+        if (this.aiEnhancement?.on) {
+            this.aiEnhancement.on('suggestionGenerated', (data) => {
+                this.emit('suggestionGenerated', data);
+            });
+        }
+        if (this.performanceManager?.on) {
+            this.performanceManager.on('optimizationApplied', (data) => {
+                this.emit('optimizationApplied', data);
+            });
+        }
     }
     // Register built-in tools
     registerBuiltInTools() {
@@ -355,13 +367,15 @@ export class IntegratedToolSystem {
         // Unregister from core systems
     }
     sortToolsByRenderOrder(tools) {
-        return tools.sort((a, b) => a.renderOrder - b.renderOrder);
+        // Fallback: preserve insertion order (no explicit render order on UnifiedTool)
+        return [...tools];
     }
-    optimizePathForTool(path, tool, renderer) {
-        if (!renderer.canOptimize(path, tool)) {
+    optimizePathForTool(path, tool, renderer, cfg) {
+        const config = (cfg || tool);
+        if (!renderer.canOptimize(path, config)) {
             return path;
         }
-        return renderer.optimize(path, tool);
+        return renderer.optimize(path, config);
     }
     generateCacheKey(path, config, options) {
         // Implement cache key generation
