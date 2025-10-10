@@ -355,3 +355,4 @@ export type { AdaptiveSettings };
 export default adaptivePerformanceManager;
 
 
+
