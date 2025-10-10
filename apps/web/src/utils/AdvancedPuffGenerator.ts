@@ -4,7 +4,7 @@ import { UVPoint } from './AdvancedUVSystem';
 export interface PuffParameters {
   height: number;
   curvature: number;
-  shape: 'round' | 'square' | 'diamond' | 'triangle' | 'airbrush' | 'calligraphy';
+  shape: 'round' | 'square' | 'diamond' | 'triangle' | 'airbrush' | 'calligraphy' | 'spray' | 'texture' | 'watercolor' | 'oil' | 'charcoal' | 'pencil' | 'marker' | 'highlighter' | 'chalk' | 'ink' | 'pastel' | 'acrylic' | 'gouache' | 'stencil' | 'stamp' | 'blur' | 'smudge';
   size: number;
   opacity: number;
   hardness: number;

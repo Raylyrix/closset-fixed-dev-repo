@@ -1,0 +1,30 @@
+name: Enforce TSX-only in web src
+
+on:
+  pull_request:
+    paths:
+      - 'apps/web/src/**'
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'apps/web/src/**'
+
+jobs:
+  check-no-js-in-src:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fail if any .js files exist under apps/web/src
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Scanning for .js files under apps/web/src..."
+          JS_FOUND=$(git ls-files 'apps/web/src/**/*.js' | wc -l)
+          if [ "$JS_FOUND" -gt 0 ]; then
+            echo "Error: Found $JS_FOUND JavaScript files under apps/web/src (TSX-only enforced)." >&2
+            git ls-files 'apps/web/src/**/*.js'
+            exit 1
+          fi
+          echo "OK: No .js files found under apps/web/src"

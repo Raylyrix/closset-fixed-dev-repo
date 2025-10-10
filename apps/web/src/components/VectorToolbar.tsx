@@ -63,10 +63,32 @@ const VectorToolbar: React.FC<VectorToolbarProps> = ({ isVisible, onClose }) => 
     }
   };
 
+  const handleEmergencyClear = () => {
+    try {
+      const cleared = useApp.getState().emergencyClearVectorPaths();
+      if (cleared) {
+        console.log('🚨 Emergency vector cleanup performed');
+        // Also clear the vector store
+        vectorStore.setState({ shapes: [], selected: [], currentPath: null });
+        window.dispatchEvent(new CustomEvent('clearActiveLayer'));
+      } else {
+        console.log('ℹ️ No emergency cleanup needed');
+      }
+    } catch (error) {
+      console.error('Error in emergency cleanup:', error);
+    }
+  };
+
   const handleApplyToolToPaths = () => {
     const appState = useApp.getState();
     const currentTool = appState.activeTool;
     const vectorPaths = appState.vectorPaths || [];
+    
+    console.log('🎨 VectorToolbar: handleApplyToolToPaths called', { 
+      currentTool, 
+      vectorPathsCount: vectorPaths.length,
+      vectorMode: appState.vectorMode 
+    });
     
     if (!vectorPaths.length) {
       console.log('⚠️ No vector paths to apply tool to');
@@ -94,12 +116,13 @@ const VectorToolbar: React.FC<VectorToolbarProps> = ({ isVisible, onClose }) => 
         
         ctx.save();
         ctx.globalCompositeOperation = 'source-over';
-        ctx.globalAlpha = appState.brushOpacity || 1;
+        ctx.globalAlpha = 1.0; // Ensure full opacity for vector tools
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
         
         if (currentTool === 'brush') {
           // Apply brush along path
+          console.log('🎨 Brush color:', appState.brushColor, 'Size:', appState.brushSize);
           ctx.strokeStyle = appState.brushColor;
           ctx.lineWidth = appState.brushSize;
           ctx.beginPath();
@@ -113,6 +136,7 @@ const VectorToolbar: React.FC<VectorToolbarProps> = ({ isVisible, onClose }) => 
             }
           });
           ctx.stroke();
+          console.log('🎨 Stroke applied with color:', ctx.strokeStyle);
         } else if (currentTool === 'embroidery') {
           // Apply embroidery stitches along path
           const stitchType = appState.embroideryStitchType || 'satin';
@@ -137,17 +161,8 @@ const VectorToolbar: React.FC<VectorToolbarProps> = ({ isVisible, onClose }) => 
           });
           ctx.stroke();
         } else if (currentTool === 'puffPrint') {
-          // Apply puff print along path - create puff texture and displacement maps directly
-          console.log('🎨 Applying puff print to path with', sampledPoints.length, 'points');
-          
-          // Get puff canvases from global state
-          const puffCanvas = appState.puffCanvas;
-          const displacementCanvas = appState.displacementCanvas;
-          
-          if (!puffCanvas || !displacementCanvas) {
-            console.log('⚠️ Puff canvases not initialized');
-            return;
-          }
+          // FIXED: Apply puff print to layer canvas like regular puff print (not just displacement)
+          console.log('🎨 FIXED: Applying puff print to path with', sampledPoints.length, 'points');
           
           // Get puff settings
           const puffBrushSize = appState.puffBrushSize || 20;
@@ -155,78 +170,105 @@ const VectorToolbar: React.FC<VectorToolbarProps> = ({ isVisible, onClose }) => 
           const puffColor = appState.puffColor || '#ff69b4';
           const puffHeight = appState.puffHeight || 2.0;
           
-          const puffCtx = puffCanvas.getContext('2d');
-          const dispCtx = displacementCanvas.getContext('2d');
+          // Get the active layer canvas (like regular puff print does)
+          const activeLayerId = appState.activeLayerId;
+          const layers = appState.layers;
+          const activeLayer = layers.find((l: any) => l.id === activeLayerId);
           
-          if (!puffCtx || !dispCtx) return;
-          
-          // Apply puff to each sampled point with smooth blending
-          sampledPoints.forEach((point: any, index: number) => {
-            const x = Math.round(point.u * puffCanvas.width);
-            const y = Math.round(point.v * puffCanvas.height);
-            
-            // Create puff texture with smoother gradients
-            puffCtx.save();
-            puffCtx.globalCompositeOperation = 'source-over';
-            puffCtx.globalAlpha = puffBrushOpacity * 0.85;
-            
-            // Larger radius for smoother blending
-            const puffRadius = puffBrushSize * 1.5;
-            const gradient = puffCtx.createRadialGradient(x, y, 0, x, y, puffRadius);
-            gradient.addColorStop(0, puffColor);
-            gradient.addColorStop(0.3, puffColor.replace(')', ', 0.85)').replace('rgb', 'rgba'));
-            gradient.addColorStop(0.6, puffColor.replace(')', ', 0.5)').replace('rgb', 'rgba'));
-            gradient.addColorStop(0.85, puffColor.replace(')', ', 0.15)').replace('rgb', 'rgba'));
-            gradient.addColorStop(1, puffColor.replace(')', ', 0)').replace('rgb', 'rgba'));
-            
-            puffCtx.fillStyle = gradient;
-            puffCtx.beginPath();
-            puffCtx.arc(x, y, puffRadius, 0, Math.PI * 2);
-            puffCtx.fill();
-            puffCtx.restore();
-            
-            // Create displacement map with smoother falloff
-            dispCtx.save();
-            dispCtx.globalCompositeOperation = 'source-over';
-            
-            const displacementValue = Math.floor(128 + (puffHeight / 10) * 127);
-            const dispRadius = puffBrushSize * 1.5; // Larger for smooth blend
-            const dispGradient = dispCtx.createRadialGradient(x, y, 0, x, y, dispRadius);
-            dispGradient.addColorStop(0, `rgba(${displacementValue}, ${displacementValue}, ${displacementValue}, 1.0)`);
-            dispGradient.addColorStop(0.4, `rgba(${displacementValue}, ${displacementValue}, ${displacementValue}, 0.85)`);
-            dispGradient.addColorStop(0.7, `rgba(${Math.floor((displacementValue + 128) / 2)}, ${Math.floor((displacementValue + 128) / 2)}, ${Math.floor((displacementValue + 128) / 2)}, 0.4)`);
-            dispGradient.addColorStop(0.9, `rgba(132, 132, 132, 0.1)`);
-            dispGradient.addColorStop(1, 'rgba(128, 128, 128, 0)');
-            
-            dispCtx.fillStyle = dispGradient;
-            dispCtx.beginPath();
-            dispCtx.arc(x, y, dispRadius, 0, Math.PI * 2);
-            dispCtx.fill();
-            dispCtx.restore();
-          });
-          
-          console.log('🎨 Puff texture and displacement created for path');
-          
-          // Update canvases in state
-          appState.puffCanvas = puffCanvas;
-          appState.displacementCanvas = displacementCanvas;
-          
-          // Trigger displacement update to apply 3D effect to model
-          const updatePuffDisplacement = (window as any).updateModelWithPuffDisplacement;
-          if (updatePuffDisplacement) {
-            updatePuffDisplacement();
+          if (!activeLayer || !activeLayer.canvas) {
+            console.log('⚠️ No active layer canvas found for puff print');
+            return;
           }
           
-          console.log('✅ Finished applying puff print to path');
+          const layerCtx = activeLayer.canvas.getContext('2d');
+          if (!layerCtx) return;
+          
+          // Apply puff to each sampled point on the LAYER CANVAS (for visible texture)
+          sampledPoints.forEach((point: any, index: number) => {
+            const x = Math.round(point.u * activeLayer.canvas.width);
+            const y = Math.round(point.v * activeLayer.canvas.height);
+            
+            // Draw puff color to layer canvas (like regular puff print)
+            layerCtx.save();
+            layerCtx.globalCompositeOperation = 'source-over';
+            layerCtx.globalAlpha = 1.0; // Full opacity for solid puff color
+            
+            const puffSize = puffBrushSize / 2; // Use radius
+            const gradient = layerCtx.createRadialGradient(x, y, 0, x, y, puffSize);
+            gradient.addColorStop(0, puffColor);
+            gradient.addColorStop(1, puffColor); // Solid edge, no transparency
+            
+            layerCtx.fillStyle = gradient;
+            layerCtx.beginPath();
+            layerCtx.arc(x, y, puffSize, 0, Math.PI * 2);
+            layerCtx.fill();
+            layerCtx.restore();
+          });
+          
+          // Also create displacement maps for 3D effect
+          const displacementCanvas = appState.displacementCanvas;
+          if (displacementCanvas) {
+            const dispCtx = displacementCanvas.getContext('2d');
+            if (dispCtx) {
+              sampledPoints.forEach((point: any, index: number) => {
+                const x = Math.round(point.u * displacementCanvas.width);
+                const y = Math.round(point.v * displacementCanvas.height);
+                
+                // Create displacement map with proper grayscale values
+                dispCtx.save();
+                dispCtx.globalCompositeOperation = 'source-over';
+                
+                const displacementRange = puffHeight * 50;
+                const maxDisplacement = Math.min(255, 128 + displacementRange);
+                const minDisplacement = Math.max(0, 128 - displacementRange * 0.1);
+                
+                const puffSize = puffBrushSize / 2;
+                const dispGradient = dispCtx.createRadialGradient(x, y, 0, x, y, puffSize);
+                dispGradient.addColorStop(0, `rgb(${maxDisplacement}, ${maxDisplacement}, ${maxDisplacement})`);
+                dispGradient.addColorStop(0.7, `rgb(${minDisplacement}, ${minDisplacement}, ${minDisplacement})`);
+                dispGradient.addColorStop(1, `rgb(128, 128, 128)`);
+                
+                dispCtx.fillStyle = dispGradient;
+                dispCtx.beginPath();
+                dispCtx.arc(x, y, puffSize, 0, Math.PI * 2);
+                dispCtx.fill();
+                dispCtx.restore();
+              });
+            }
+          }
+          
+          console.log('🎨 FIXED: Puff texture drawn to layer canvas and displacement maps created');
+          
+          // Update the layer in state
+          const updatedLayers = layers.map((l: any) => 
+            l.id === activeLayerId ? { ...l, canvas: activeLayer.canvas } : l
+          );
+          appState.layers = updatedLayers;
+          
+          console.log('✅ FIXED: Finished applying puff print to path with both texture and displacement');
         }
         
         ctx.restore();
       });
       
-      // Trigger composition
+      // Trigger composition with longer delay to ensure vector tools finish
       setTimeout(() => {
+        console.log('🎨 Triggering composeLayers after vector tool application');
         appState.composeLayers();
-      }, 50);
+        
+        // FIXED: Also trigger texture update for puff print to ensure both texture and displacement are applied
+        if (currentTool === 'puffPrint') {
+          console.log('🎨 FIXED: Triggering texture update for vector puff print');
+          // Dispatch custom event to trigger texture update
+          window.dispatchEvent(new CustomEvent('forceModelTextureUpdate'));
+          
+          // Also trigger displacement map composition
+          const { composeDisplacementMaps } = appState;
+          if (composeDisplacementMaps) {
+            composeDisplacementMaps();
+          }
+        }
+      }, 200);
     }
   };
   
@@ -470,6 +512,24 @@ const VectorToolbar: React.FC<VectorToolbarProps> = ({ isVisible, onClose }) => 
             }}
           >
             🗑️ Clear
+          </button>
+          
+          <button
+            onClick={handleEmergencyClear}
+            style={{
+              padding: '8px 12px',
+              border: '1px solid #fbb6ce',
+              borderRadius: '8px',
+              background: '#fbb6ce',
+              color: '#97266d',
+              cursor: 'pointer',
+              fontSize: '12px',
+              fontWeight: '500',
+              transition: 'all 0.2s ease'
+            }}
+            title="Emergency cleanup for too many anchor points"
+          >
+            🚨 Emergency Clear
           </button>
         </div>
       </div>

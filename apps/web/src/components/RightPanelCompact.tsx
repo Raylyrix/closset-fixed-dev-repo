@@ -74,7 +74,13 @@ export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps)
     setActiveShapeId,
     updateShapeElement,
     deleteShapeElement,
-    duplicateShapeElement
+    duplicateShapeElement,
+    // Image settings
+    importedImages,
+    selectedImageId,
+    setSelectedImageId,
+    updateImportedImage,
+    removeImportedImage
   } = useApp();
 
   const [activeTab, setActiveTab] = React.useState('brush');
@@ -262,6 +268,7 @@ export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps)
     { id: 'embroidery', label: 'Embroidery', icon: '🧵' },
     { id: 'text', label: 'Text', icon: '📝' },
     { id: 'shapes', label: 'Shapes', icon: '🔷' },
+    { id: 'image', label: 'Image', icon: '📷' },
     { id: 'picker', label: 'Picker', icon: '🎯' },
     { id: 'symmetry', label: 'Symmetry', icon: '🔄' },
     { id: 'layers', label: 'Layers', icon: '🎨' }
@@ -280,6 +287,7 @@ export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps)
         'embroidery': 'embroidery',
         'text': 'text',
         'shapes': 'shapes',
+        'image': 'image',
         'symmetry': 'symmetry',
         'layers': 'layers'
       };
@@ -304,48 +312,6 @@ export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps)
       boxShadow: '-2px 0 20px rgba(0, 0, 0, 0.3)',
       backdropFilter: 'blur(10px)'
     }}>
-      {/* Tab Navigation */}
-      <div style={{
-        display: 'flex',
-        background: 'rgba(255, 255, 255, 0.05)',
-        borderBottom: '1px solid rgba(255, 255, 255, 0.2)',
-        backdropFilter: 'blur(10px)'
-      }}>
-        {tabs.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => {
-              setActiveTab(tab.id);
-              setUserSelectedTab(true);
-              console.log('🎯 User manually selected tab:', tab.id);
-            }}
-            style={{
-              flex: 1,
-              padding: '10px 6px',
-              background: activeTab === tab.id 
-                ? '#000000' 
-                : 'rgba(255, 255, 255, 0.05)',
-              color: activeTab === tab.id ? '#FFFFFF' : '#a0aec0',
-              fontSize: '10px',
-              fontWeight: '600',
-              cursor: 'pointer',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: '4px',
-              transition: 'all 0.3s ease',
-              boxShadow: activeTab === tab.id 
-                ? '0 4px 15px rgba(255, 255, 255, 0.2)' 
-                : '0 2px 8px rgba(0, 0, 0, 0.2)',
-              backdropFilter: 'blur(10px)',
-              border: '1px solid rgba(255, 255, 255, 0.1)'
-            }}
-          >
-            <span style={{ fontSize: '12px' }}>{tab.icon}</span>
-            <span>{tab.label}</span>
-          </button>
-        ))}
-      </div>
 
       {/* Tab Content */}
       <div style={{
@@ -703,18 +669,18 @@ export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps)
               />
             </div>
 
-            {/* Shape */}
+            {/* Brush Type */}
             <div style={{ marginBottom: '8px' }}>
               <div style={{
                 fontSize: '9px',
                 color: '#CCC',
                 marginBottom: '4px'
               }}>
-                Shape
+                Brush Type
               </div>
               <select
                 value={brushShape}
-                onChange={(e) => setBrushShape(e.target.value as 'round' | 'square' | 'diamond' | 'triangle')}
+                onChange={(e) => setBrushShape(e.target.value as any)}
                 style={{
                   width: '100%',
                   padding: '4px 6px',
@@ -725,9 +691,48 @@ export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps)
                   fontSize: '9px'
                 }}
               >
-                <option value="round">Round</option>
-                <option value="square">Square</option>
-                <option value="diamond">Diamond</option>
+                {/* Basic Shapes */}
+                <optgroup label="Basic Shapes">
+                  <option value="round">🟢 Round</option>
+                  <option value="square">⬜ Square</option>
+                  <option value="diamond">💎 Diamond</option>
+                  <option value="triangle">🔺 Triangle</option>
+                </optgroup>
+                
+                {/* Digital Brushes */}
+                <optgroup label="Digital Brushes">
+                  <option value="airbrush">🎨 Airbrush</option>
+                  <option value="spray">💨 Spray</option>
+                  <option value="texture">🖼️ Texture</option>
+                  <option value="stencil">📐 Stencil</option>
+                  <option value="stamp">🏷️ Stamp</option>
+                </optgroup>
+                
+                {/* Traditional Media */}
+                <optgroup label="Traditional Media">
+                  <option value="watercolor">🎨 Watercolor</option>
+                  <option value="oil">🖌️ Oil</option>
+                  <option value="acrylic">🎭 Acrylic</option>
+                  <option value="gouache">🎪 Gouache</option>
+                  <option value="ink">🖋️ Ink</option>
+                </optgroup>
+                
+                {/* Drawing Tools */}
+                <optgroup label="Drawing Tools">
+                  <option value="pencil">✏️ Pencil</option>
+                  <option value="charcoal">🖤 Charcoal</option>
+                  <option value="pastel">🌈 Pastel</option>
+                  <option value="chalk">🖍️ Chalk</option>
+                  <option value="marker">🖍️ Marker</option>
+                </optgroup>
+                
+                {/* Special Effects */}
+                <optgroup label="Special Effects">
+                  <option value="calligraphy">✍️ Calligraphy</option>
+                  <option value="highlighter">🖍️ Highlighter</option>
+                  <option value="blur">🌀 Blur</option>
+                  <option value="smudge">👆 Smudge</option>
+                </optgroup>
               </select>
             </div>
           </div>
@@ -2549,6 +2554,596 @@ export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps)
                 </div>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Image Settings */}
+        {activeTab === 'image' && (
+          <div onClick={(e) => e.stopPropagation()}>
+            <div style={{
+              fontSize: '11px',
+              color: '#a0aec0',
+              fontWeight: '700',
+              marginBottom: '10px',
+              textTransform: 'uppercase',
+              letterSpacing: '1px',
+              textShadow: '0 1px 2px rgba(0, 0, 0, 0.3)'
+            }}>
+              📷 Image Settings
+            </div>
+            
+            {/* Image Import Section */}
+            <div style={{
+              padding: '12px',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.2)',
+              background: 'rgba(255, 255, 255, 0.05)',
+              backdropFilter: 'blur(10px)',
+              marginBottom: '12px',
+              borderRadius: '6px'
+            }}>
+              <div style={{
+                fontSize: '10px',
+                color: '#a0aec0',
+                fontWeight: '600',
+                marginBottom: '8px',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px'
+              }}>
+                📷 Import Images
+              </div>
+              
+              {/* Hidden file input */}
+              <input
+                type="file"
+                id="image-import-right-panel"
+                accept="image/*"
+                multiple
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  const files = Array.from(e.target.files || []);
+                  files.forEach(file => {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                      if (event.target?.result) {
+                        // Create image with UV coordinates (center of texture)
+                        useApp.getState().addImportedImage({
+                          id: `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                          name: file.name,
+                          dataUrl: event.target.result as string,
+                          // UV coordinates (center of texture = 0.5, 0.5)
+                          u: 0.5,           // Center horizontally
+                          v: 0.5,           // Center vertically  
+                          uWidth: 0.25,     // 25% of texture width
+                          uHeight: 0.25,    // 25% of texture height
+                          // Legacy pixel coords for migration
+                          x: 512,
+                          y: 512,
+                          width: 512,
+                          height: 512,
+                          visible: true,
+                          opacity: 1.0,
+                          rotation: 0,
+                          locked: false,
+                          // Size linking and flip properties
+                          sizeLinked: true,
+                          horizontalFlip: false,
+                          verticalFlip: false,
+                          // Blending properties
+                          blendMode: 'source-over'
+                        });
+                      }
+                    };
+                    reader.readAsDataURL(file);
+                  });
+                  e.target.value = ''; // Reset input
+                }}
+              />
+              
+              {/* Import button */}
+              <button 
+                onClick={() => document.getElementById('image-import-right-panel')?.click()}
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  fontSize: '10px',
+                  fontWeight: '600',
+                  background: '#000000',
+                  color: '#FFFFFF',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  transition: 'all 0.3s ease',
+                  boxShadow: '0 4px 15px rgba(255, 255, 255, 0.2)',
+                  backdropFilter: 'blur(10px)',
+                  marginBottom: '8px'
+                }}
+              >
+                📷 Import Images
+              </button>
+              
+              {/* Imported Images List */}
+              {importedImages.length > 0 && (
+                <div style={{ marginTop: '8px' }}>
+                  <div style={{
+                    fontSize: '9px',
+                    color: '#a0aec0',
+                    fontWeight: '600',
+                    marginBottom: '6px',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px'
+                  }}>
+                    Images ({importedImages.length})
+                  </div>
+                  <div style={{ maxHeight: '150px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    {importedImages.map((img: any) => (
+                      <div
+                        key={img.id}
+                        onClick={() => useApp.getState().setSelectedImageId(img.id)}
+                        style={{
+                          padding: '6px 8px',
+                          fontSize: '9px',
+                          background: selectedImageId === img.id 
+                            ? 'rgba(0, 150, 255, 0.3)' 
+                            : 'rgba(255, 255, 255, 0.05)',
+                          border: selectedImageId === img.id
+                            ? '1px solid rgba(0, 150, 255, 0.5)'
+                            : '1px solid rgba(255, 255, 255, 0.1)',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s ease',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          color: '#FFFFFF'
+                        }}
+                        onMouseEnter={(e) => {
+                          if (selectedImageId !== img.id) {
+                            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (selectedImageId !== img.id) {
+                            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+                          }
+                        }}
+                      >
+                        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {img.visible ? '👁️' : '👁️‍🗨️'} {img.locked ? '🔒' : ''} {img.name}
+                        </span>
+                        <span style={{ fontSize: '8px', color: '#a0aec0', marginLeft: '8px' }}>
+                          {((img.uWidth || 0.25) * 100).toFixed(0)}%
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            {selectedImageId ? (
+              <div style={{ marginTop: '8px', padding: '12px', background: 'rgba(0,0,0,0.4)', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.2)' }}>
+                {(() => {
+                  const selectedImage = importedImages.find(img => img.id === selectedImageId);
+                  if (!selectedImage) return null;
+                  
+                  const { setActiveTool } = useApp.getState();
+                  
+                  return (
+                    <>
+                      {/* Move Tool Button */}
+                      <button
+                        onClick={() => {
+                          setActiveTool('image' as any);
+                          console.log('📷 Switched to Image Move Tool');
+                        }}
+                        style={{
+                          width: '100%',
+                          padding: '10px',
+                          fontSize: '11px',
+                          fontWeight: '700',
+                          background: (activeTool as string) === 'image' ? 'rgba(0,150,255,0.4)' : 'rgba(102,126,234,0.2)',
+                          color: (activeTool as string) === 'image' ? '#FFF' : '#667eea',
+                          border: (activeTool as string) === 'image' ? '2px solid rgba(0,150,255,0.6)' : '1px solid rgba(102,126,234,0.3)',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s ease',
+                          marginBottom: '12px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px',
+                          textTransform: 'uppercase',
+                          letterSpacing: '1px'
+                        }}
+                      >
+                        ✋ ENABLE MOVE TOOL
+                      </button>
+
+                      {/* Image File Name */}
+                      <div style={{ marginBottom: '12px' }}>
+                        <div style={{ fontSize: '9px', color: '#CCC', marginBottom: '4px' }}>Image File</div>
+                        <input
+                          type="text"
+                          value={selectedImage.name}
+                          readOnly
+                          style={{
+                            width: '100%',
+                            padding: '6px',
+                            fontSize: '10px',
+                            background: 'rgba(255,255,255,0.1)',
+                            color: '#FFF',
+                            border: '1px solid rgba(255,255,255,0.2)',
+                            borderRadius: '4px',
+                            fontFamily: 'monospace'
+                          }}
+                        />
+                      </div>
+
+                      {/* Position (UV) */}
+                      <div style={{ marginBottom: '12px' }}>
+                        <div style={{ fontSize: '9px', color: '#CCC', marginBottom: '6px' }}>Position (UV)</div>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: '8px', color: '#999', marginBottom: '2px' }}>U: {Math.round((selectedImage.u || 0.5) * 100)}%</div>
+                            <input
+                              type="range"
+                              min="0"
+                              max="100"
+                              value={(selectedImage.u || 0.5) * 100}
+                              onChange={(e) => updateImportedImage(selectedImageId, { u: parseFloat(e.target.value) / 100 })}
+                              style={{ width: '100%' }}
+                            />
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: '8px', color: '#999', marginBottom: '2px' }}>V: {Math.round((selectedImage.v || 0.5) * 100)}%</div>
+                            <input
+                              type="range"
+                              min="0"
+                              max="100"
+                              value={(selectedImage.v || 0.5) * 100}
+                              onChange={(e) => updateImportedImage(selectedImageId, { v: parseFloat(e.target.value) / 100 })}
+                              style={{ width: '100%' }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Size (UV) */}
+                      <div style={{ marginBottom: '12px' }}>
+                        <div style={{ fontSize: '9px', color: '#CCC', marginBottom: '6px' }}>Size (UV)</div>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: '8px', color: '#999', marginBottom: '2px' }}>Width: {Math.round((selectedImage.uWidth || 0.25) * 100)}%</div>
+                            <input
+                              type="range"
+                              min="1"
+                              max="100"
+                              value={(selectedImage.uWidth || 0.25) * 100}
+                              onChange={(e) => {
+                                const newWidth = parseFloat(e.target.value) / 100;
+                                const updates: any = { uWidth: newWidth };
+                                if (selectedImage.sizeLinked) {
+                                  updates.uHeight = newWidth;
+                                }
+                                updateImportedImage(selectedImageId, updates);
+                              }}
+                              style={{ width: '100%' }}
+                            />
+                          </div>
+                          <button
+                            onClick={() => updateImportedImage(selectedImageId, { sizeLinked: !selectedImage.sizeLinked })}
+                            style={{
+                              padding: '4px 8px',
+                              fontSize: '8px',
+                              background: selectedImage.sizeLinked ? 'rgba(0,255,0,0.2)' : 'rgba(255,255,255,0.1)',
+                              color: selectedImage.sizeLinked ? '#0F0' : '#CCC',
+                              border: '1px solid rgba(255,255,255,0.2)',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}
+                          >
+                            🔗 {selectedImage.sizeLinked ? 'Linked' : 'Unlinked'}
+                          </button>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: '8px', color: '#999', marginBottom: '2px' }}>Height: {Math.round((selectedImage.uHeight || 0.25) * 100)}%</div>
+                            <input
+                              type="range"
+                              min="1"
+                              max="100"
+                              value={(selectedImage.uHeight || 0.25) * 100}
+                              onChange={(e) => {
+                                const newHeight = parseFloat(e.target.value) / 100;
+                                const updates: any = { uHeight: newHeight };
+                                if (selectedImage.sizeLinked) {
+                                  updates.uWidth = newHeight;
+                                }
+                                updateImportedImage(selectedImageId, updates);
+                              }}
+                              style={{ width: '100%' }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Rotation & Transform */}
+                      <div style={{ marginBottom: '12px' }}>
+                        <div style={{ fontSize: '9px', color: '#CCC', marginBottom: '6px' }}>Rotation & Transform</div>
+                        <div style={{ fontSize: '8px', color: '#999', marginBottom: '4px' }}>Angle: {selectedImage.rotation || 0}°</div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="360"
+                          value={selectedImage.rotation || 0}
+                          onChange={(e) => updateImportedImage(selectedImageId, { rotation: parseInt(e.target.value) })}
+                          style={{ width: '100%', marginBottom: '8px' }}
+                        />
+                        <div style={{ display: 'flex', gap: '4px', marginBottom: '8px' }}>
+                          <button
+                            onClick={() => updateImportedImage(selectedImageId, { rotation: 90 })}
+                            style={{
+                              flex: 1,
+                              padding: '6px',
+                              fontSize: '9px',
+                              background: 'rgba(255,255,255,0.1)',
+                              color: '#CCC',
+                              border: '1px solid rgba(255,255,255,0.2)',
+                              borderRadius: '4px',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            90°
+                          </button>
+                          <button
+                            onClick={() => updateImportedImage(selectedImageId, { rotation: 180 })}
+                            style={{
+                              flex: 1,
+                              padding: '6px',
+                              fontSize: '9px',
+                              background: 'rgba(255,255,255,0.1)',
+                              color: '#CCC',
+                              border: '1px solid rgba(255,255,255,0.2)',
+                              borderRadius: '4px',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            180°
+                          </button>
+                        </div>
+                        <div style={{ display: 'flex', gap: '4px' }}>
+                          <button
+                            onClick={() => updateImportedImage(selectedImageId, { horizontalFlip: !selectedImage.horizontalFlip })}
+                            style={{
+                              flex: 1,
+                              padding: '6px',
+                              fontSize: '9px',
+                              background: selectedImage.horizontalFlip ? 'rgba(0,150,255,0.3)' : 'rgba(255,255,255,0.1)',
+                              color: selectedImage.horizontalFlip ? '#FFF' : '#CCC',
+                              border: '1px solid rgba(255,255,255,0.2)',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '4px'
+                            }}
+                          >
+                            ↔️ H-Flip
+                          </button>
+                          <button
+                            onClick={() => updateImportedImage(selectedImageId, { verticalFlip: !selectedImage.verticalFlip })}
+                            style={{
+                              flex: 1,
+                              padding: '6px',
+                              fontSize: '9px',
+                              background: selectedImage.verticalFlip ? 'rgba(0,150,255,0.3)' : 'rgba(255,255,255,0.1)',
+                              color: selectedImage.verticalFlip ? '#FFF' : '#CCC',
+                              border: '1px solid rgba(255,255,255,0.2)',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '4px'
+                            }}
+                          >
+                            ↕️ V-Flip
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Opacity */}
+                      <div style={{ marginBottom: '12px' }}>
+                        <div style={{ fontSize: '9px', color: '#CCC', marginBottom: '4px' }}>Opacity: {Math.round((selectedImage.opacity || 1) * 100)}%</div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={(selectedImage.opacity || 1) * 100}
+                          onChange={(e) => updateImportedImage(selectedImageId, { opacity: parseInt(e.target.value) / 100 })}
+                          style={{ width: '100%' }}
+                        />
+                      </div>
+
+                      {/* Blend Mode */}
+                      <div style={{ marginBottom: '12px' }}>
+                        <div style={{ fontSize: '9px', color: '#CCC', marginBottom: '4px' }}>Blend Mode</div>
+                        <select
+                          value={selectedImage.blendMode || 'source-over'}
+                          onChange={(e) => updateImportedImage(selectedImageId, { blendMode: e.target.value as GlobalCompositeOperation })}
+                          style={{
+                            width: '100%',
+                            padding: '6px',
+                            fontSize: '10px',
+                            background: 'rgba(255,255,255,0.1)',
+                            color: '#FFF',
+                            border: '1px solid rgba(255,255,255,0.2)',
+                            borderRadius: '4px'
+                          }}
+                        >
+                          <option value="source-over">Normal</option>
+                          <option value="multiply">Multiply</option>
+                          <option value="screen">Screen</option>
+                          <option value="overlay">Overlay</option>
+                          <option value="soft-light">Soft Light</option>
+                          <option value="hard-light">Hard Light</option>
+                          <option value="color-dodge">Color Dodge</option>
+                          <option value="color-burn">Color Burn</option>
+                          <option value="darken">Darken</option>
+                          <option value="lighten">Lighten</option>
+                          <option value="difference">Difference</option>
+                          <option value="exclusion">Exclusion</option>
+                        </select>
+                      </div>
+
+                      {/* Action Buttons */}
+                      <div style={{ display: 'flex', gap: '4px', marginBottom: '12px' }}>
+                        <button
+                          onClick={() => updateImportedImage(selectedImageId, { visible: !selectedImage.visible })}
+                          style={{
+                            flex: 1,
+                            padding: '8px',
+                            fontSize: '10px',
+                            background: selectedImage.visible ? 'rgba(0,255,0,0.2)' : 'rgba(255,0,0,0.2)',
+                            color: selectedImage.visible ? '#0F0' : '#F00',
+                            border: '1px solid rgba(255,255,255,0.2)',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '4px'
+                          }}
+                        >
+                          {selectedImage.visible ? '👁️' : '🙈'} {selectedImage.visible ? 'Visible' : 'Hidden'}
+                        </button>
+                        <button
+                          onClick={() => updateImportedImage(selectedImageId, { locked: !selectedImage.locked })}
+                          style={{
+                            flex: 1,
+                            padding: '8px',
+                            fontSize: '10px',
+                            background: selectedImage.locked ? 'rgba(255,165,0,0.2)' : 'rgba(255,255,255,0.1)',
+                            color: selectedImage.locked ? '#FFA500' : '#CCC',
+                            border: '1px solid rgba(255,255,255,0.2)',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '4px'
+                          }}
+                        >
+                          {selectedImage.locked ? '🔒' : '🔓'} {selectedImage.locked ? 'Locked' : 'Unlocked'}
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (confirm('Are you sure you want to delete this image?')) {
+                              removeImportedImage(selectedImageId);
+                            }
+                          }}
+                          style={{
+                            flex: 1,
+                            padding: '8px',
+                            fontSize: '10px',
+                            background: 'rgba(255,0,0,0.2)',
+                            color: '#F00',
+                            border: '1px solid rgba(255,255,255,0.2)',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '4px'
+                          }}
+                        >
+                          🗑️ Delete
+                        </button>
+                      </div>
+
+                      {/* Utility Buttons */}
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button
+                          onClick={() => {
+                            updateImportedImage(selectedImageId, { 
+                              u: 0.5, 
+                              v: 0.5 
+                            });
+                          }}
+                          style={{
+                            flex: 1,
+                            padding: '8px',
+                            fontSize: '10px',
+                            background: 'rgba(0,150,255,0.2)',
+                            color: '#0096FF',
+                            border: '1px solid rgba(0,150,255,0.3)',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '4px'
+                          }}
+                        >
+                          🎯 Center
+                        </button>
+                        <button
+                          onClick={() => {
+                            updateImportedImage(selectedImageId, {
+                              uWidth: 0.25,
+                              uHeight: 0.25
+                            });
+                          }}
+                          style={{
+                            flex: 1,
+                            padding: '8px',
+                            fontSize: '10px',
+                            background: 'rgba(255,165,0,0.2)',
+                            color: '#FFA500',
+                            border: '1px solid rgba(255,165,0,0.3)',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '4px'
+                          }}
+                        >
+                          🔄 Reset Size
+                        </button>
+                      </div>
+
+                      {/* Keyboard Shortcuts Info */}
+                      <div style={{ 
+                        marginTop: '12px', 
+                        padding: '8px', 
+                        background: 'rgba(0,0,0,0.3)', 
+                        borderRadius: '4px',
+                        fontSize: '8px',
+                        color: '#999',
+                        lineHeight: '1.4'
+                      }}>
+                        <div style={{ fontWeight: '600', marginBottom: '4px', color: '#CCC' }}>Keyboard Shortcuts:</div>
+                        <div>• Click and drag to move image</div>
+                        <div>• Hold Shift while dragging for precise movement</div>
+                        <div>• Use mouse wheel to resize (when move tool active)</div>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+            ) : (
+              <div style={{ 
+                padding: '20px', 
+                textAlign: 'center', 
+                color: '#666',
+                fontSize: '11px'
+              }}>
+                No image selected. Import an image from the left panel to edit it here.
+              </div>
+            )}
           </div>
         )}
 

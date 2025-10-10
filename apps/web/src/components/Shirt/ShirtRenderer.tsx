@@ -124,10 +124,11 @@ export const ShirtRenderer: React.FC<ShirtRendererProps> = ({
         // Process and optimize the loaded model
         const modelData = processModelData(scene, modelUrl, modelType || 'gltf');
         
-        // Apply transformations
+        // Apply transformations (scale is handled by React Three Fiber group)
         scene.position.set(...modelPosition);
         scene.rotation.set(...modelRotation);
-        scene.scale.setScalar(modelScale);
+        // CRITICAL FIX: Don't scale the scene directly - let React Three Fiber handle it
+        // scene.scale.setScalar(modelScale); // REMOVED: Causes double scaling
 
         // Set up the model in the main app state
         useApp.setState({ modelScene: scene });

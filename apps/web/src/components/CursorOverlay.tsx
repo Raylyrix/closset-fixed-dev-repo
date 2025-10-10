@@ -7,7 +7,7 @@ type Props = {
   visible: boolean;
   tool: 'brush' | 'eraser' | 'fill' | 'picker' | 'smudge' | 'blur' | 'select' | 'transform' | 'move' | 'undo' | 'redo' | 'puffPrint' | 'line' | 'rect' | 'ellipse' | 'gradient' | 'embroidery' | 'vectorTools' | 'pen' | 'curvature' | 'addAnchor' | 'removeAnchor' | 'convertAnchor' | 'pathSelection' | 'text' | 'shapes';
   size: number;
-  shape?: 'round' | 'square' | 'airbrush' | 'calligraphy' | 'diamond' | 'triangle';
+  shape?: 'round' | 'square' | 'diamond' | 'triangle' | 'airbrush' | 'calligraphy' | 'spray' | 'texture' | 'watercolor' | 'oil' | 'charcoal' | 'pencil' | 'marker' | 'highlighter' | 'chalk' | 'ink' | 'pastel' | 'acrylic' | 'gouache' | 'stencil' | 'stamp' | 'blur' | 'smudge';
   angle?: number;
 };
 
@@ -20,7 +20,7 @@ export const CursorOverlay = memo(function CursorOverlay({ x, y, visible, tool, 
 
   const diameter = Math.max(6, Math.min(256, size));
   const isVectorTool = vectorMode || tool === 'vectorTools' || ['pen', 'curvature', 'addAnchor', 'removeAnchor', 'convertAnchor', 'pathSelection'].includes(tool);
-  const isCircle = (tool === 'brush' || tool === 'eraser' || tool === 'smudge' || tool === 'blur' || tool === 'puffPrint' || tool === 'line' || tool === 'rect' || tool === 'ellipse' || tool === 'gradient' || tool === 'embroidery' || tool === 'text' || tool === 'shapes') && shape !== 'square' && !isVectorTool;
+  const isCircle = (tool === 'brush' || tool === 'eraser' || tool === 'smudge' || tool === 'blur' || tool === 'puffPrint' || tool === 'line' || tool === 'rect' || tool === 'ellipse' || tool === 'gradient' || tool === 'embroidery') && shape !== 'square' && !isVectorTool;
   const border = (
     tool === 'eraser' ? '1px dashed rgba(255,255,255,0.95)'
     : tool === 'smudge' ? '2px double rgba(147,197,253,0.9)'
@@ -160,6 +160,17 @@ export const CursorOverlay = memo(function CursorOverlay({ x, y, visible, tool, 
         <div className="cursor-plus" style={{ transform: `translate(${x}px, ${y}px)` }}>
           <div className="plus-h" />
           <div className="plus-v" />
+        </div>
+      ) : tool === 'text' ? (
+        <div className="cursor-text" style={{ transform: `translate(${x}px, ${y}px)` }}>
+          <div className="text-cursor-border" style={{ width: diameter, height: diameter }} />
+          <div className="text-cursor-icon">
+            <div className="text-t-icon" />
+          </div>
+        </div>
+      ) : tool === 'shapes' ? (
+        <div className="cursor-shapes" style={{ transform: `translate(${x}px, ${y}px)` }}>
+          <div className="shapes-plus" />
         </div>
       ) : isCircle ? (
         <div

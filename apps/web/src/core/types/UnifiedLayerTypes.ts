@@ -18,7 +18,7 @@ export interface BrushStroke {
   hardness: number;
   flow: number;
   spacing: number;
-  shape: 'round' | 'square' | 'diamond' | 'triangle' | 'airbrush' | 'calligraphy';
+  shape: 'round' | 'square' | 'diamond' | 'triangle' | 'airbrush' | 'calligraphy' | 'spray' | 'texture' | 'watercolor' | 'oil' | 'charcoal' | 'pencil' | 'marker' | 'highlighter' | 'chalk' | 'ink' | 'pastel' | 'acrylic' | 'gouache' | 'stencil' | 'stamp' | 'blur' | 'smudge';
   blendMode: GlobalCompositeOperation;
   timestamp: number;
 }

@@ -54,7 +54,7 @@ export interface BrushSettings {
     opacity: number;
     blendMode: GlobalCompositeOperation;
   };
-  shape: 'round' | 'square' | 'diamond' | 'triangle' | 'airbrush' | 'calligraphy';
+  shape: 'round' | 'square' | 'diamond' | 'triangle' | 'airbrush' | 'calligraphy' | 'spray' | 'texture' | 'watercolor' | 'oil' | 'charcoal' | 'pencil' | 'marker' | 'highlighter' | 'chalk' | 'ink' | 'pastel' | 'acrylic' | 'gouache' | 'stencil' | 'stamp' | 'blur' | 'smudge';
   blendMode: GlobalCompositeOperation;
 }
 

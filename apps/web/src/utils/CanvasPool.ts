@@ -52,12 +52,12 @@ class CanvasPool {
     });
 
     if (ctx) {
-      ctx.imageSmoothingEnabled = config.imageSmoothingEnabled ?? this.defaultConfig.imageSmoothingEnabled!;
-      ctx.imageSmoothingQuality = config.imageSmoothingQuality ?? this.defaultConfig.imageSmoothingQuality!;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.globalAlpha = 1.0;
+      (ctx as CanvasRenderingContext2D).imageSmoothingEnabled = config.imageSmoothingEnabled ?? this.defaultConfig.imageSmoothingEnabled!;
+      (ctx as CanvasRenderingContext2D).imageSmoothingQuality = config.imageSmoothingQuality ?? this.defaultConfig.imageSmoothingQuality!;
+      (ctx as CanvasRenderingContext2D).lineCap = 'round';
+      (ctx as CanvasRenderingContext2D).lineJoin = 'round';
+      (ctx as CanvasRenderingContext2D).globalCompositeOperation = 'source-over';
+      (ctx as CanvasRenderingContext2D).globalAlpha = 1.0;
     }
   }
 

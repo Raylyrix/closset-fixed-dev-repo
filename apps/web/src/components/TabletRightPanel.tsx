@@ -365,7 +365,7 @@ const tabs = [
               </div>
               <select
                 value={brushShape}
-                onChange={(e) => setBrushShape(e.target.value as 'round' | 'square' | 'diamond' | 'triangle')}
+                onChange={(e) => setBrushShape(e.target.value as any)}
                 style={{
                   width: '100%',
                   padding: '12px',

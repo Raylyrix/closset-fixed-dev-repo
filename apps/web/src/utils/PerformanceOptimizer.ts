@@ -20,10 +20,12 @@ class PerformanceOptimizer {
   private frameCount = 0;
   private lastFPSUpdate = 0;
   private currentFPS = 60;
+  private currentPreset: 'performance' | 'balanced' | 'quality' | 'ultra' = 'balanced';
 
   constructor() {
     this.config = this.detectDeviceCapabilities();
-    console.log(`🚀 PerformanceOptimizer initialized for ${this.config.deviceTier} device`);
+    this.currentPreset = 'balanced'; // Default preset
+    console.log(`🚀 PerformanceOptimizer initialized for ${this.config.deviceTier} device with ${this.currentPreset} preset`);
   }
 
   private detectDeviceCapabilities(): PerformanceConfig {
@@ -156,6 +158,97 @@ class PerformanceOptimizer {
    */
   getConfig(): PerformanceConfig {
     return { ...this.config };
+  }
+
+  /**
+   * Update performance config dynamically
+   */
+  updateConfig(newConfig: Partial<PerformanceConfig>): void {
+    this.config = { ...this.config, ...newConfig };
+    console.log('🚀 Performance config updated:', this.config);
+    
+    // Force a re-render by triggering a custom event
+    window.dispatchEvent(new CustomEvent('performanceConfigUpdated', { 
+      detail: { config: this.config } 
+    }));
+  }
+
+  /**
+   * Set performance preset
+   */
+  setPreset(preset: 'performance' | 'balanced' | 'quality' | 'ultra'): void {
+    let config: Partial<PerformanceConfig> = {};
+    
+    switch (preset) {
+      case 'performance':
+        config = {
+          targetFPS: 60,
+          maxTextureUpdatesPerSecond: 12,
+          maxCanvasRedrawsPerSecond: 12,
+          enableAggressiveOptimizations: true,
+          deviceTier: 'low'
+        };
+        break;
+      case 'balanced':
+        config = {
+          targetFPS: 60,
+          maxTextureUpdatesPerSecond: 8,
+          maxCanvasRedrawsPerSecond: 8,
+          enableAggressiveOptimizations: false,
+          deviceTier: 'medium'
+        };
+        break;
+      case 'quality':
+        config = {
+          targetFPS: 45,
+          maxTextureUpdatesPerSecond: 4,
+          maxCanvasRedrawsPerSecond: 4,
+          enableAggressiveOptimizations: false,
+          deviceTier: 'high'
+        };
+        break;
+      case 'ultra':
+        config = {
+          targetFPS: 30,
+          maxTextureUpdatesPerSecond: 2,
+          maxCanvasRedrawsPerSecond: 2,
+          enableAggressiveOptimizations: false,
+          deviceTier: 'high'
+        };
+        break;
+    }
+    
+    // Store the current preset
+    this.currentPreset = preset;
+    console.log(`🚀 Performance preset set to: ${preset}`);
+    
+    this.updateConfig(config);
+    
+    // Force a re-render by triggering a custom event
+    window.dispatchEvent(new CustomEvent('performancePresetChanged', { 
+      detail: { preset, config: this.config } 
+    }));
+  }
+
+  /**
+   * Get current preset
+   */
+  getCurrentPreset(): 'performance' | 'balanced' | 'quality' | 'ultra' {
+    return this.currentPreset;
+  }
+
+  /**
+   * Get current FPS
+   */
+  getCurrentFPS(): number {
+    return this.currentFPS;
+  }
+
+  /**
+   * Get device tier
+   */
+  getDeviceTier(): 'low' | 'medium' | 'high' {
+    return this.config.deviceTier;
   }
 
   /**

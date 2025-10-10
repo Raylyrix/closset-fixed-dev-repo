@@ -8,6 +8,8 @@ import { VectorOverlay } from './VectorOverlay';
 import VectorToolbar from './VectorToolbar';
 import { useApp } from '../App';
 import { vectorStore } from '../vector/vectorState';
+import { PerformanceSettingsPopup } from './PerformanceSettingsPopup';
+import { performanceOptimizer } from '../utils/PerformanceOptimizer';
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -506,13 +508,36 @@ export function MainLayout({ children }: MainLayoutProps) {
   
   // Vector toolbar state
   const [showVectorToolbar, setShowVectorToolbar] = useState(false);
+  const [showPerformanceSettings, setShowPerformanceSettings] = useState(false);
+  const [showSymmetryDropdown, setShowSymmetryDropdown] = useState(false);
+  const [currentPerformancePreset, setCurrentPerformancePreset] = useState(performanceOptimizer.getCurrentPreset());
   const showGrid = useApp(s => s.showGrid);
   const setShowGrid = useApp(s => s.setShowGrid);
   const showRulers = useApp(s => s.showRulers);
   const setShowRulers = useApp(s => s.setShowRulers);
+  
+  // Listen for performance preset changes
+  useEffect(() => {
+    const handlePresetChange = () => {
+      setCurrentPerformancePreset(performanceOptimizer.getCurrentPreset());
+    };
+    
+    window.addEventListener('performancePresetChanged', handlePresetChange);
+    return () => window.removeEventListener('performancePresetChanged', handlePresetChange);
+  }, []);
+  
+  // Symmetry settings
+  const symmetryX = useApp(s => s.symmetryX);
+  const symmetryY = useApp(s => s.symmetryY);
+  const symmetryZ = useApp(s => s.symmetryZ);
+  const setSymmetryX = useApp(s => s.setSymmetryX);
+  const setSymmetryY = useApp(s => s.setSymmetryY);
+  const setSymmetryZ = useApp(s => s.setSymmetryZ);
 
   // Handle tool changes and sidebar switching
   useEffect(() => {
+    console.log('🔍 MainLayout Tool Change:', { activeTool, showRightPanel, activeToolSidebar });
+    
     // When a tool is selected, show its sidebar and hide others
     // Exclude basic tools and embroidery tool (handled separately)
     if (activeTool && 
@@ -521,12 +546,29 @@ export function MainLayout({ children }: MainLayoutProps) {
         activeTool !== 'fill' && 
         activeTool !== 'picker' &&
         activeTool !== 'embroidery') {
+      console.log('🔍 Setting activeToolSidebar to:', activeTool);
       setActiveToolSidebar(activeTool);
       setShowRightPanel(true);
     } else {
+      console.log('🔍 Clearing activeToolSidebar');
       setActiveToolSidebar(null);
     }
   }, [activeTool]);
+
+  // Close symmetry dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Element;
+      if (showSymmetryDropdown && !target.closest('.symmetry-dropdown-container')) {
+        setShowSymmetryDropdown(false);
+      }
+    };
+
+    if (showSymmetryDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showSymmetryDropdown]);
 
   // Resize handlers
   const handleLeftResizeStart = (e: React.MouseEvent) => {
@@ -644,7 +686,7 @@ export function MainLayout({ children }: MainLayoutProps) {
           justifyContent: 'space-between',
             padding: '0 16px',
           position: 'relative',
-          zIndex: 10001,
+          zIndex: 99999999998,
           fontSize: '11px',
           boxShadow: '0 2px 20px rgba(0, 0, 0, 0.3)',
           backdropFilter: 'blur(10px)',
@@ -686,17 +728,32 @@ export function MainLayout({ children }: MainLayoutProps) {
               🛠️ Tools
             </button>
             
-            <button style={{
-              padding: '8px 16px',
-              background: 'transparent',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
+            <button 
+              onClick={() => {
+                // FIXED: Toggle layers tab - switch to layers or clear it to show tool settings
+                if (activeToolSidebar === 'layers') {
+                  // If layers is active, deactivate it (will show tool settings instead)
+                  setActiveToolSidebar(null);
+                } else {
+                  // If layers is not active, activate it
+                  setShowRightPanel(true);
+                  setActiveToolSidebar('layers');
+                }
+              }}
+              style={{
+                padding: '8px 16px',
+                background: activeToolSidebar === 'layers' && showRightPanel
+                  ? '#FFFFFF'
+                  : 'transparent',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
                 borderRadius: '6px',
-              color: '#FFFFFF',
-              fontSize: '11px',
-              fontWeight: '600',
+                color: activeToolSidebar === 'layers' && showRightPanel ? '#000000' : '#FFFFFF',
+                fontSize: '11px',
+                fontWeight: '600',
                 cursor: 'pointer',
-              transition: 'all 0.3s ease'
-            }}>
+                transition: 'all 0.3s ease'
+              }}
+            >
               Layers
             </button>
             
@@ -717,6 +774,252 @@ export function MainLayout({ children }: MainLayoutProps) {
 
           {/* Right Section - View Controls */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', pointerEvents: 'auto' }}>
+            {/* Performance Settings Button */}
+            <button
+              onClick={() => setShowPerformanceSettings(true)}
+              style={{
+                padding: '6px 12px',
+                background: 'rgba(102, 126, 234, 0.1)',
+                border: '1px solid rgba(102, 126, 234, 0.3)',
+                borderRadius: '6px',
+                color: '#667eea',
+                fontSize: '10px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'all 0.3s ease',
+                pointerEvents: 'auto'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(102, 126, 234, 0.2)';
+                e.currentTarget.style.transform = 'translateY(-1px)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(102, 126, 234, 0.1)';
+                e.currentTarget.style.transform = 'translateY(0)';
+              }}
+            >
+              <span style={{ fontSize: '12px' }}>⚙️</span>
+              <span>Performance</span>
+              <span style={{ 
+                fontSize: '9px', 
+                opacity: 0.8,
+                fontWeight: '500',
+                textTransform: 'capitalize',
+                padding: '2px 6px',
+                background: 'rgba(102, 126, 234, 0.2)',
+                borderRadius: '4px'
+              }}>
+                ({currentPerformancePreset})
+              </span>
+            </button>
+
+            {/* Symmetry Dropdown Button */}
+            <div className="symmetry-dropdown-container" style={{ position: 'relative' }}>
+              <button
+                onClick={() => setShowSymmetryDropdown(!showSymmetryDropdown)}
+                style={{
+                  padding: '6px 12px',
+                  background: showSymmetryDropdown 
+                    ? 'rgba(255, 255, 255, 0.2)' 
+                    : 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '6px',
+                  color: showSymmetryDropdown ? '#ffffff' : '#a0aec0',
+                  fontSize: '10px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  transition: 'all 0.3s ease',
+                  pointerEvents: 'auto'
+                }}
+                onMouseEnter={(e) => {
+                  if (!showSymmetryDropdown) {
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                    e.currentTarget.style.transform = 'translateY(-1px)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!showSymmetryDropdown) {
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+                    e.currentTarget.style.transform = 'translateY(0)';
+                  }
+                }}
+              >
+                <span style={{ fontSize: '12px' }}>🔄</span>
+                <span>Symmetry</span>
+                <span style={{ fontSize: '8px', marginLeft: '2px' }}>
+                  {showSymmetryDropdown ? '▲' : '▼'}
+                </span>
+              </button>
+
+              {/* Symmetry Dropdown */}
+              {showSymmetryDropdown && (
+                <div style={{
+                  position: 'absolute',
+                  top: '100%',
+                  right: '0',
+                  marginTop: '4px',
+                  background: '#1a1a2e',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '8px',
+                  padding: '12px',
+                  minWidth: '180px',
+                  boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
+                  backdropFilter: 'blur(10px)',
+                  zIndex: 99999999999
+                }}>
+                  <div style={{
+                    fontSize: '11px',
+                    fontWeight: '600',
+                    color: '#ffffff',
+                    marginBottom: '12px',
+                    textAlign: 'center'
+                  }}>
+                    Symmetry Settings
+                  </div>
+
+                  {/* X-Axis Symmetry */}
+                  <div style={{ marginBottom: '8px' }}>
+                    <label style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      fontSize: '10px',
+                      color: '#a0aec0',
+                      cursor: 'pointer'
+                    }}>
+                      <input
+                        type="checkbox"
+                        checked={symmetryX}
+                        onChange={(e) => setSymmetryX(e.target.checked)}
+                        style={{ 
+                          accentColor: '#667eea',
+                          width: '14px',
+                          height: '14px'
+                        }}
+                      />
+                      <span>X-Axis Symmetry</span>
+                    </label>
+                  </div>
+
+                  {/* Y-Axis Symmetry */}
+                  <div style={{ marginBottom: '8px' }}>
+                    <label style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      fontSize: '10px',
+                      color: '#a0aec0',
+                      cursor: 'pointer'
+                    }}>
+                      <input
+                        type="checkbox"
+                        checked={symmetryY}
+                        onChange={(e) => setSymmetryY(e.target.checked)}
+                        style={{ 
+                          accentColor: '#667eea',
+                          width: '14px',
+                          height: '14px'
+                        }}
+                      />
+                      <span>Y-Axis Symmetry</span>
+                    </label>
+                  </div>
+
+                  {/* Z-Axis Symmetry */}
+                  <div style={{ marginBottom: '8px' }}>
+                    <label style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      fontSize: '10px',
+                      color: '#a0aec0',
+                      cursor: 'pointer'
+                    }}>
+                      <input
+                        type="checkbox"
+                        checked={symmetryZ}
+                        onChange={(e) => setSymmetryZ(e.target.checked)}
+                        style={{ 
+                          accentColor: '#667eea',
+                          width: '14px',
+                          height: '14px'
+                        }}
+                      />
+                      <span>Z-Axis Symmetry</span>
+                    </label>
+                  </div>
+
+                  {/* Quick Actions */}
+                  <div style={{
+                    borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+                    paddingTop: '8px',
+                    marginTop: '8px'
+                  }}>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      <button
+                        onClick={() => {
+                          setSymmetryX(true);
+                          setSymmetryY(true);
+                          setSymmetryZ(true);
+                        }}
+                        style={{
+                          flex: 1,
+                          padding: '4px 8px',
+                          background: 'rgba(102, 126, 234, 0.2)',
+                          border: '1px solid rgba(102, 126, 234, 0.3)',
+                          borderRadius: '4px',
+                          color: '#667eea',
+                          fontSize: '9px',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s ease'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = 'rgba(102, 126, 234, 0.3)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = 'rgba(102, 126, 234, 0.2)';
+                        }}
+                      >
+                        All
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSymmetryX(false);
+                          setSymmetryY(false);
+                          setSymmetryZ(false);
+                        }}
+                        style={{
+                          flex: 1,
+                          padding: '4px 8px',
+                          background: 'rgba(255, 255, 255, 0.1)',
+                          border: '1px solid rgba(255, 255, 255, 0.2)',
+                          borderRadius: '4px',
+                          color: '#a0aec0',
+                          fontSize: '9px',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s ease'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                        }}
+                      >
+                        None
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* View Controls Group */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px', background: 'rgba(255, 255, 255, 0.05)', borderRadius: '6px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
             <button
@@ -938,81 +1241,9 @@ export function MainLayout({ children }: MainLayoutProps) {
                             break;
                             
                           case 'puffPrint':
-                            console.log('🎨 Applying puff print tool to', sampledPoints.length, 'points');
-                            // Apply puff print to each sampled point
-                            const puffCanvas = appState.puffCanvas;
-                            const displacementCanvas = appState.displacementCanvas;
-                            const puffBrushSize = appState.puffBrushSize || 20;
-                            const puffBrushOpacity = appState.puffBrushOpacity || 1.0;
-                            const puffColor = appState.puffColor || '#ff69b4';
-                            const puffHeight = appState.puffHeight || 2.0;
-                            
-                            console.log('🎨 Puff settings:', { puffCanvas: !!puffCanvas, displacementCanvas: !!displacementCanvas, puffBrushSize, puffBrushOpacity, puffColor, puffHeight });
-                            
-                            if (puffCanvas && displacementCanvas) {
-                              const puffCtx = puffCanvas.getContext('2d');
-                              const dispCtx = displacementCanvas.getContext('2d');
-                              
-                              if (puffCtx && dispCtx) {
-                                console.log('🎨 Drawing continuous puff stroke');
-                                
-                                // Create continuous puff stroke
-                                puffCtx.save();
-                                puffCtx.globalCompositeOperation = 'source-over';
-                                puffCtx.globalAlpha = puffBrushOpacity;
-                                puffCtx.strokeStyle = puffColor;
-                                puffCtx.lineWidth = puffBrushSize;
-                                puffCtx.lineCap = 'round';
-                                puffCtx.lineJoin = 'round';
-                                puffCtx.shadowColor = puffColor;
-                                puffCtx.shadowBlur = puffBrushSize / 2;
-                                
-                                puffCtx.beginPath();
-                                sampledPoints.forEach((point: any, index: number) => {
-                                  const x = Math.round(point.u * puffCanvas.width);
-                                  const y = Math.round(point.v * puffCanvas.height);
-                                  
-                                  if (index === 0) {
-                                    puffCtx.moveTo(x, y);
-                                  } else {
-                                    puffCtx.lineTo(x, y);
-                                  }
-                                  
-                                  console.log(`🎨 Drawing puff point ${index}:`, { x, y, u: point.u, v: point.v });
-                                });
-                                puffCtx.stroke();
-                                puffCtx.restore();
-                                
-                                // Create continuous displacement stroke
-                                dispCtx.save();
-                                dispCtx.globalCompositeOperation = 'source-over';
-                                const displacementValue = Math.floor(128 + (puffHeight / 10) * 127);
-                                dispCtx.strokeStyle = `rgb(${displacementValue}, ${displacementValue}, ${displacementValue})`;
-                                dispCtx.lineWidth = puffBrushSize;
-                                dispCtx.lineCap = 'round';
-                                dispCtx.lineJoin = 'round';
-                                
-                                dispCtx.beginPath();
-                                sampledPoints.forEach((point: any, index: number) => {
-                                  const x = Math.round(point.u * puffCanvas.width);
-                                  const y = Math.round(point.v * puffCanvas.height);
-                                  
-                                  if (index === 0) {
-                                    dispCtx.moveTo(x, y);
-                                  } else {
-                                    dispCtx.lineTo(x, y);
-                                  }
-                                });
-                                dispCtx.stroke();
-                                dispCtx.restore();
-                                
-                                console.log('🎨 Continuous puff stroke completed');
-                              } else {
-                                console.log('⚠️ No canvas contexts found for puff/displacement');
-                              }
-                            } else {
-                              console.log('⚠️ Puff or displacement canvas not found');
-                            }
+                            console.log('🎨 REMOVED: Duplicate puff print implementation - using VectorToolbar instead');
+                            // This implementation was causing conflicts with the main puff print system
+                            // The VectorToolbar.tsx now handles vector mode puff print correctly
                             break;
                             
                           case 'embroidery':
@@ -1351,6 +1582,12 @@ export function MainLayout({ children }: MainLayoutProps) {
           )}
         </div>
       </div>
+
+      {/* Performance Settings Popup */}
+      <PerformanceSettingsPopup 
+        isOpen={showPerformanceSettings}
+        onClose={() => setShowPerformanceSettings(false)}
+      />
 
     </div>
   );

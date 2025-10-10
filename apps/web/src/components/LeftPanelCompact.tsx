@@ -1,7 +1,5 @@
 import { useEffect, useState } from 'react';
 import { useApp } from '../App';
-import { useLayerManager } from '../stores/LayerManager';
-import { LayerPanel } from './LayerPanel';
 import { SERVER_URL, upscalePng } from '../api';
 import { exportMeshAsGLB } from '../exporters';
 import { useModelStore } from '../stores/domainStores';
@@ -14,6 +12,7 @@ export function LeftPanelCompact() {
   const modelChoice = useApp(s => s.modelChoice);
   const activeTool = useApp(s => s.activeTool);
   const setActiveTool = useApp(s => s.setActiveTool);
+  const importedImages = useApp(s => s.importedImages);
   const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
@@ -23,6 +22,12 @@ export function LeftPanelCompact() {
       console.log('LeftPanelCompact: Initializing device-optimized composed canvas');
       const optimalSize = performanceOptimizer.getOptimalCanvasSize();
       useApp.getState().initCanvases(optimalSize.width, optimalSize.height);
+      
+      // CRITICAL: Generate base layer after canvas initialization to capture original model texture
+      setTimeout(() => {
+        console.log('LeftPanelCompact: Generating base layer after canvas init');
+        useApp.getState().generateBaseLayer();
+      }, 200);
     }
     // PERFORMANCE: Removed automatic composition trigger - let painting system handle it
   }, [layers.length, composedCanvas]);
@@ -90,22 +95,24 @@ export function LeftPanelCompact() {
             { id: 'puffPrint', icon: '☁️', name: 'Puff' },
             { id: 'embroidery', icon: '🧵', name: 'Embroidery' },
             { id: 'text', icon: '📝', name: 'Text' },
-            { id: 'shapes', icon: '🔷', name: 'Shapes' }
+            { id: 'shapes', icon: '🔷', name: 'Shapes' },
+            { id: 'image', icon: '📷', name: 'Image' }
           ].map(tool => (
             <button
               key={tool.id}
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                console.log(`🔘 ${tool.name} button clicked!`);
+                console.log(`🔘 ${tool.name} button clicked! Current activeTool:`, activeTool);
                 
                 // Toggle behavior: if clicking the same tool, deactivate it
                 if (activeTool === tool.id) {
                   console.log(`🔄 Deactivating ${tool.name} tool`);
                   setActiveTool('brush'); // Default to brush when deactivating
                 } else {
-                  console.log(`✅ Activating ${tool.name} tool`);
+                  console.log(`✅ Activating ${tool.name} tool (${tool.id})`);
                   setActiveTool(tool.id as any);
+                  console.log(`🔍 After setActiveTool, activeTool should be:`, tool.id);
                 }
               }}
               style={{
@@ -270,24 +277,19 @@ export function LeftPanelCompact() {
           marginBottom: '6px',
           textAlign: 'center'
         }}>
-          {useModelStore(s => s.modelScale).toFixed(2)}×
+          {useApp(s => s.modelScale).toFixed(2)}×
         </div>
         
         {/* Scale Slider */}
         <input 
           type="range" 
           min={0.25} 
-          max={2} 
-          step={0.05} 
-          value={useModelStore(s => s.modelScale)} 
+          max={10} 
+          step={0.1} 
+          value={useApp(s => s.modelScale)} 
           onChange={(e) => {
             const newScale = Number(e.target.value);
-            const currentState = useModelStore.getState();
-            useModelStore.getState().updateTransform(
-              newScale,
-              currentState.modelPosition,
-              currentState.modelRotation
-            );
+            useApp.setState({ modelScale: newScale });
           }}
           style={{ 
             width: '100%', 
@@ -309,20 +311,15 @@ export function LeftPanelCompact() {
           color: '#a0aec0'
         }}>
           <span>25%</span>
-          <span>100%</span>
-          <span>200%</span>
+          <span>500%</span>
+          <span>1000%</span>
         </div>
         
-        {/* Quick Scale Buttons */}
+        {/* Quick Scale Buttons - Row 1 */}
         <div style={{ display: 'flex', gap: '4px', marginTop: '8px' }}>
           <button 
             onClick={() => {
-              const currentState = useModelStore.getState();
-              useModelStore.getState().updateTransform(
-                0.5,
-                currentState.modelPosition,
-                currentState.modelRotation
-              );
+              useApp.setState({ modelScale: 0.5 });
             }}
             style={{
               flex: 1,
@@ -342,12 +339,7 @@ export function LeftPanelCompact() {
           </button>
           <button 
             onClick={() => {
-              const currentState = useModelStore.getState();
-              useModelStore.getState().updateTransform(
-                1,
-                currentState.modelPosition,
-                currentState.modelRotation
-              );
+              useApp.setState({ modelScale: 1.0 });
             }}
             style={{
               flex: 1,
@@ -367,12 +359,7 @@ export function LeftPanelCompact() {
           </button>
           <button 
             onClick={() => {
-              const currentState = useModelStore.getState();
-              useModelStore.getState().updateTransform(
-                1.5,
-                currentState.modelPosition,
-                currentState.modelRotation
-              );
+              useApp.setState({ modelScale: 2.0 });
             }}
             style={{
               flex: 1,
@@ -388,20 +375,75 @@ export function LeftPanelCompact() {
               backdropFilter: 'blur(10px)'
             }}
           >
-            150%
+            200%
+          </button>
+        </div>
+        
+        {/* Quick Scale Buttons - Row 2 */}
+        <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
+          <button 
+            onClick={() => {
+              useApp.setState({ modelScale: 5.0 });
+            }}
+            style={{
+              flex: 1,
+              padding: '4px 6px',
+              fontSize: '9px',
+              fontWeight: '600',
+              background: 'rgba(255, 255, 255, 0.05)',
+              color: '#a0aec0',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              transition: 'all 0.3s ease',
+              backdropFilter: 'blur(10px)'
+            }}
+          >
+            500%
+          </button>
+          <button 
+            onClick={() => {
+              useApp.setState({ modelScale: 7.5 });
+            }}
+            style={{
+              flex: 1,
+              padding: '4px 6px',
+              fontSize: '9px',
+              fontWeight: '600',
+              background: 'rgba(255, 255, 255, 0.05)',
+              color: '#a0aec0',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              transition: 'all 0.3s ease',
+              backdropFilter: 'blur(10px)'
+            }}
+          >
+            750%
+          </button>
+          <button 
+            onClick={() => {
+              useApp.setState({ modelScale: 10.0 });
+            }}
+            style={{
+              flex: 1,
+              padding: '4px 6px',
+              fontSize: '9px',
+              fontWeight: '600',
+              background: 'rgba(255, 255, 255, 0.05)',
+              color: '#a0aec0',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              transition: 'all 0.3s ease',
+              backdropFilter: 'blur(10px)'
+            }}
+          >
+            1000%
           </button>
         </div>
       </div>
 
-      {/* Professional Layer Management */}
-      <div style={{
-        flex: 1,
-        display: 'flex',
-        flexDirection: 'column',
-        minHeight: 0
-      }}>
-        <LayerPanel />
-      </div>
 
       {/* Compact Export */}
       <div style={{

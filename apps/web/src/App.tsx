@@ -7,7 +7,12 @@ import localforage from 'localforage';
 import LZString from 'lz-string';
 import { aiPerformanceManager } from './utils/AIPerformanceManager';
 import { canvasPool } from './utils/CanvasPool';
+import { adaptivePerformanceManager } from './utils/AdaptivePerformanceManager';
 import { performanceOptimizer } from './utils/PerformanceOptimizer';
+import { useAdvancedLayerStore } from './core/AdvancedLayerSystem';
+import { LayerModelSynchronizer } from './core/LayerModelSync';
+import { UnifiedLayerBridge } from './core/UnifiedLayerBridge';
+import { ToolLayerManager } from './core/ToolLayerManager';
 import ShirtRefactored from './components/ShirtRefactored'; // Use new refactored component
 import { RightPanel } from './components/RightPanelNew.tsx'; // Use new UI component
 // PERFORMANCE FIX: Removed Brush3DIntegration import to prevent conflicts with existing painting system
@@ -28,8 +33,7 @@ import { vectorStore } from './vector/vectorState';
 import { puffVectorEngine, PuffVectorEngineState } from './vector/PuffVectorEngine';
 import { renderStitchType } from './utils/stitchRendering';
 import VectorEditorOverlay from './vector/VectorEditorOverlay';
-import { AdvancedPuffPrintTool } from './components/AdvancedPuffPrintTool';
-import { AdvancedPuffPrintManager } from './components/AdvancedPuffPrintManager';
+// import { UnifiedPuffPrintSystem } from './components/UnifiedPuffPrintSystem'; // Disabled - using ShirtRefactored puff system
 import { AdvancedPuff3DSystem } from './utils/AdvancedPuff3DSystem';
 import { AdvancedUVSystem } from './utils/AdvancedUVSystem';
 import { AdvancedPuffGenerator } from './utils/AdvancedPuffGenerator';
@@ -173,7 +177,7 @@ interface AppState {
   brushOpacity: number;
   brushHardness: number;
   brushSpacing: number;
-  brushShape: 'round' | 'square' | 'diamond' | 'triangle' | 'airbrush' | 'calligraphy';
+  brushShape: 'round' | 'square' | 'diamond' | 'triangle' | 'airbrush' | 'calligraphy' | 'spray' | 'texture' | 'watercolor' | 'oil' | 'charcoal' | 'pencil' | 'marker' | 'highlighter' | 'chalk' | 'ink' | 'pastel' | 'acrylic' | 'gouache' | 'stencil' | 'stamp' | 'blur' | 'smudge';
   brushRotation: number;
   brushDynamics: boolean;
   brushSymmetry: boolean;
@@ -230,14 +234,30 @@ interface AppState {
     id: string;
     name: string;
     dataUrl: string;
-    x: number;
-    y: number;
-    width: number;
-    height: number;
+    // UV coordinates (0-1 range) - PRIMARY for texture mapping
+    u: number;          // UV X center (0-1)
+    v: number;          // UV Y center (0-1)
+    uWidth: number;     // Width in UV space (0-1)
+    uHeight: number;    // Height in UV space (0-1)
+    // Legacy pixel coordinates - DEPRECATED but kept for migration
+    x?: number;
+    y?: number;
+    width?: number;
+    height?: number;
+    // Common properties
     visible: boolean;
     opacity: number;
+    rotation: number;   // degrees
+    locked: boolean;    // prevent accidental edits
+    // Size linking and flip properties
+    sizeLinked: boolean;    // link width/height scaling
+    horizontalFlip: boolean; // flip horizontally
+    verticalFlip: boolean;   // flip vertically
+    // Blending properties
+    blendMode: GlobalCompositeOperation; // canvas blend mode
   }>;
   selectedImageId: string | null;
+  setSelectedImageId: (id: string | null) => void;
   
   // Shape settings
   shapeMode: 'fill' | 'stroke' | 'both';
@@ -321,7 +341,7 @@ interface AppState {
   activeLayerId: string | null;
   composedCanvas: HTMLCanvasElement | null;
   composedVersion: number;
-  baseTexture: HTMLImageElement | null;
+  baseTexture: HTMLImageElement | HTMLCanvasElement | null;
   
   // Decals
   decals: Decal[];
@@ -394,7 +414,7 @@ interface AppState {
   setBrushOpacity: (opacity: number) => void;
   setBrushHardness: (hardness: number) => void;
   setBrushSpacing: (spacing: number) => void;
-  setBrushShape: (shape: 'round' | 'square' | 'diamond' | 'triangle') => void;
+  setBrushShape: (shape: 'round' | 'square' | 'diamond' | 'triangle' | 'airbrush' | 'calligraphy' | 'spray' | 'texture' | 'watercolor' | 'oil' | 'charcoal' | 'pencil' | 'marker' | 'highlighter' | 'chalk' | 'ink' | 'pastel' | 'acrylic' | 'gouache' | 'stencil' | 'stamp' | 'blur' | 'smudge') => void;
   setBrushRotation: (rotation: number) => void;
   setBrushDynamics: (dynamics: boolean) => void;
   setBrushSymmetry: (symmetry: boolean) => void;
@@ -461,6 +481,7 @@ interface AppState {
   finishVectorPath: () => void;
   cancelVectorPath: () => void;
   clearVectorPaths: () => void;
+  emergencyClearVectorPaths: () => boolean;
   recordPuffHistory: (snapshot?: PuffVectorEngineState) => void;
   restorePuffHistoryBackward: () => boolean;
   restorePuffHistoryForward: () => boolean;
@@ -559,10 +580,10 @@ interface AppState {
   moveLayerUp: (layerId: string) => void;
   moveLayerDown: (layerId: string) => void;
   duplicateLayer: (layerId: string) => string;
-  composeLayers: () => void;
+  composeLayers: (forceClear?: boolean) => void;
   composeDisplacementMaps: () => HTMLCanvasElement | null;
   commit: () => void;
-  setBaseTexture: (texture: HTMLImageElement | null) => void;
+  setBaseTexture: (texture: HTMLImageElement | HTMLCanvasElement | null) => void;
   generateBaseLayer: () => void;
   addDecalFromFile: (file: File) => Promise<string>;
   forceRerender: () => void;
@@ -1377,13 +1398,24 @@ try {
   },
   addVectorAnchor: ({ u, v }) => {
     let { activePathId, vectorPaths, selectedAnchor } = get();
+    
+    // PERFORMANCE: Check if we're adding too many anchor points
+    const totalPoints = vectorPaths.reduce((sum, path) => sum + path.points.length, 0);
+    const maxPoints = adaptivePerformanceManager.getMaxElements('text'); // Use text limit as proxy for vector points
+    
+    if (totalPoints >= maxPoints) {
+      console.warn(`⚠️ Maximum vector points limit reached (${maxPoints}). Please reduce anchor points or clear some paths.`);
+      return;
+    }
+    
     // Ensure active path exists
     if (!activePathId) {
       activePathId = get().startVectorPath();
       vectorPaths = get().vectorPaths;
     }
     const targetId = selectedAnchor && selectedAnchor.pathId ? selectedAnchor.pathId : activePathId!;
-    if (process.env.NODE_ENV !== 'production') console.log('[Vector] addVectorAnchor', { targetId, uv: { u, v } });
+    if (process.env.NODE_ENV !== 'production') console.log('[Vector] addVectorAnchor', { targetId, uv: { u, v }, totalPoints: totalPoints + 1 });
+    
     set(state => ({
       vectorPaths: state.vectorPaths.map(p => {
         if (p.id !== targetId) return p;
@@ -1397,6 +1429,7 @@ try {
         }
       }),
     }));
+    
     // Update selection to the newly inserted point
     const pNow = get().vectorPaths.find(p => p.id === targetId)!;
     let newIndex = pNow.points.length - 1;
@@ -1404,7 +1437,13 @@ try {
       newIndex = Math.min(get().selectedAnchor!.anchorIndex + 1, pNow.points.length - 1);
     }
     set({ selectedAnchor: { pathId: targetId, anchorIndex: newIndex }, selectedAnchors: [{ pathId: targetId, anchorIndex: newIndex }], activePathId: targetId });
-    get().composeLayers();
+    
+    // PERFORMANCE: Debounce composeLayers to prevent overwhelming the system
+    const addVectorAnchorFn = get().addVectorAnchor;
+    clearTimeout((addVectorAnchorFn as any).composeTimeout);
+    (addVectorAnchorFn as any).composeTimeout = setTimeout(() => {
+      get().composeLayers();
+    }, 100); // Debounce by 100ms
   },
   moveVectorAnchor: ({ u, v }) => {
     const sel = get().selectedAnchor;
@@ -1550,6 +1589,22 @@ try {
     puffVectorEngine.clear();
     get().clearPuffHistory();
     get().composeLayers();
+  },
+
+  // PERFORMANCE: Emergency cleanup for too many vector points
+  emergencyClearVectorPaths: () => {
+    const { vectorPaths } = get();
+    const totalPoints = vectorPaths.reduce((sum, path) => sum + path.points.length, 0);
+    
+    if (totalPoints > 1000) {
+      console.warn('🚨 Emergency vector cleanup: Too many anchor points detected, clearing all vector paths');
+      set({ vectorPaths: [], activePathId: null, selectedAnchor: null });
+      puffVectorEngine.clear();
+      get().clearPuffHistory();
+      get().composeLayers();
+      return true;
+    }
+    return false;
   },
 
   recordPuffHistory: (snapshot) => {
@@ -1717,8 +1772,8 @@ try {
       const paintDispCtx = paintDisplacementCanvas.getContext('2d', { willReadFrequently: true })!;
       paintDispCtx.imageSmoothingEnabled = true;
       paintDispCtx.imageSmoothingQuality = 'high';
-      // Fill with neutral gray (no displacement)
-      paintDispCtx.fillStyle = 'rgb(128, 128, 128)';
+      // CRITICAL FIX: Fill with black (0) for no displacement
+      paintDispCtx.fillStyle = 'rgb(0, 0, 0)';
       paintDispCtx.fillRect(0, 0, paint.width, paint.height);
       
       const newLayer = { id: 'paint', name: 'Paint', visible: true, canvas: paint, history: [], future: [], order: 0, displacementCanvas: paintDisplacementCanvas };
@@ -1973,7 +2028,9 @@ try {
     const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-    ctx.fillStyle = 'transparent';
+    // CRITICAL FIX: Initialize with solid background instead of transparent
+    // This prevents texture composition issues with transparent pixels
+    ctx.fillStyle = 'rgba(0, 0, 0, 0)'; // Transparent black (alpha = 0)
     ctx.fillRect(0, 0, width, height);
     const id = Math.random().toString(36).slice(2);
     const layerName = name || `Layer ${id.slice(0, 4)}`;
@@ -1984,8 +2041,8 @@ try {
     const dispCtx = displacementCanvas.getContext('2d', { willReadFrequently: true })!;
     dispCtx.imageSmoothingEnabled = true;
     dispCtx.imageSmoothingQuality = 'high';
-    // Fill with neutral gray (no displacement)
-    dispCtx.fillStyle = 'rgb(128, 128, 128)';
+    // CRITICAL FIX: Fill with black (0) for no displacement
+    dispCtx.fillStyle = 'rgb(0, 0, 0)';
     dispCtx.fillRect(0, 0, width, height);
     
     const layer: Layer = { id, name: layerName, visible: true, canvas, history: [], future: [], order: get().layers.length, displacementCanvas };
@@ -2109,6 +2166,13 @@ try {
     // Save state for undo/redo
     get().saveState(`Delete Layer: ${layerName} (${layerToolType})`);
     
+    // UNIFIED BRIDGE: Notify the unified layer bridge
+    const bridge = (window as any).unifiedLayerBridge;
+    if (bridge && bridge.isInitialized) {
+      console.log('🔄 Notifying unified bridge of layer deletion');
+      bridge.handleLayerDelete(id);
+    }
+    
     console.log(`🎨 Successfully deleted ${layerToolType} layer: ${layerName}`);
   },
 
@@ -2171,8 +2235,8 @@ try {
     const paintDispCtx = paintDisplacementCanvas.getContext('2d', { willReadFrequently: true })!;
     paintDispCtx.imageSmoothingEnabled = true;
     paintDispCtx.imageSmoothingQuality = 'high';
-    // Fill with neutral gray (no displacement)
-    paintDispCtx.fillStyle = 'rgb(128, 128, 128)';
+    // CRITICAL FIX: Fill with black (0) for no displacement, not gray (128)
+    paintDispCtx.fillStyle = 'rgb(0, 0, 0)'; // Black = no displacement
     paintDispCtx.fillRect(0, 0, paint.width, paint.height);
     
     const layers = [
@@ -2188,10 +2252,111 @@ try {
   },
 
   // Imported image management methods
+  setSelectedImageId: (id: string | null) => {
+    console.log('📷 Setting selected image:', id);
+    set({ selectedImageId: id });
+  },
+
   addImportedImage: (image: any) => {
     console.log('📷 Adding imported image:', image.name);
-    set(state => ({ importedImages: [...state.importedImages, image] }));
-    get().composeLayers();
+    
+    // Convert pixel coords to UV if needed (migration support)
+    const pixelToUV = (pixel: any, canvasWidth: number, canvasHeight: number) => {
+      const centerX = pixel.x + pixel.width / 2;
+      const centerY = pixel.y + pixel.height / 2;
+      return {
+        u: centerX / canvasWidth,
+        v: centerY / canvasHeight,
+        uWidth: pixel.width / canvasWidth,
+        uHeight: pixel.height / canvasHeight
+      };
+    };
+    
+    let imageWithUV = { ...image };
+    if (typeof image.u !== 'number' || typeof image.v !== 'number') {
+      const canvasSize = 2048; // Standard texture size
+      const uvCoords = pixelToUV(
+        {
+          x: image.x || 512,
+          y: image.y || 512,
+          width: image.width || 512,
+          height: image.height || 512
+        },
+        canvasSize,
+        canvasSize
+      );
+      imageWithUV = { ...image, ...uvCoords };
+    }
+    
+    // Ensure all required properties exist
+    const imageWithDefaults = {
+      ...imageWithUV,
+      rotation: imageWithUV.rotation || 0,
+      locked: imageWithUV.locked ?? false,
+      // Size linking and flip properties
+      sizeLinked: imageWithUV.sizeLinked ?? true,    // Default to linked
+      horizontalFlip: imageWithUV.horizontalFlip ?? false,
+      verticalFlip: imageWithUV.verticalFlip ?? false,
+      // Blending properties
+      blendMode: imageWithUV.blendMode || 'source-over', // Default to normal blend
+      // Keep legacy coords for backward compatibility
+      x: imageWithUV.x,
+      y: imageWithUV.y,
+      width: imageWithUV.width,
+      height: imageWithUV.height
+    };
+    
+    console.log('📷 Image with UV coordinates:', {
+      name: imageWithDefaults.name,
+      uv: { u: imageWithDefaults.u, v: imageWithDefaults.v },
+      size: { uWidth: imageWithDefaults.uWidth, uHeight: imageWithDefaults.uHeight }
+    });
+    
+    // Pre-load and cache the image before adding to state
+    if (!(window as any).__imageCache) {
+      (window as any).__imageCache = new Map<string, HTMLImageElement>();
+    }
+    const imageCache = (window as any).__imageCache;
+    
+    const imageElement = new Image();
+    imageElement.src = imageWithDefaults.dataUrl;
+    imageCache.set(imageWithDefaults.id, imageElement);
+    
+    console.log('📷 Pre-loading image:', imageWithDefaults.name);
+    
+    // Wait for image to load, then add to state and render
+    const loadAndRender = () => {
+      set(state => ({ 
+        importedImages: [...state.importedImages, imageWithDefaults],
+        selectedImageId: imageWithDefaults.id // Auto-select newly added image
+      }));
+      
+      console.log('📷 Image added to state, triggering render');
+      
+      // CRITICAL: Trigger composeLayers first (to draw image), then updateModelTexture (same as text)
+      setTimeout(() => {
+        const { composeLayers } = get();
+        composeLayers(); // Draw image to composedCanvas
+        if ((window as any).updateModelTexture) {
+          (window as any).updateModelTexture(true, false); // Apply to model
+        }
+      }, 50);
+    };
+    
+    // If image already loaded (from cache/data URL), render immediately
+    if (imageElement.complete && imageElement.naturalHeight !== 0) {
+      console.log('📷 Image already loaded, rendering immediately');
+      loadAndRender();
+    } else {
+      // Wait for image to load
+      imageElement.onload = () => {
+        console.log('📷 Image loaded, rendering now');
+        loadAndRender();
+      };
+      imageElement.onerror = () => {
+        console.error('📷 Failed to load image:', imageWithDefaults.name);
+      };
+    }
   },
 
   updateImportedImage: (id: string, updates: any) => {
@@ -2201,16 +2366,72 @@ try {
         img.id === id ? { ...img, ...updates } : img
       )
     }));
-    get().composeLayers();
+    
+    // PERFORMANCE: Throttled live update (same as text system)
+    // This updates the composedCanvas and then refreshes the model texture
+    if (!(window as any).__imageUpdateThrottle) {
+      (window as any).__imageUpdateThrottle = {
+        lastUpdate: 0,
+        pendingUpdate: null
+      };
+    }
+    
+    const throttle = (window as any).__imageUpdateThrottle;
+    const now = Date.now();
+    const throttleDelay = 16; // 60fps for smooth updates
+    
+    if (now - throttle.lastUpdate >= throttleDelay) {
+      // Update immediately (same as text)
+      throttle.lastUpdate = now;
+      setTimeout(() => {
+        const { composeLayers } = get();
+        composeLayers(true); // Force clear and redraw composedCanvas with updated image
+        if ((window as any).updateModelTexture) {
+          (window as any).updateModelTexture(true, false); // Update model from composedCanvas
+        }
+      }, 10);
+    } else {
+      // Schedule delayed update
+      if (throttle.pendingUpdate) {
+        clearTimeout(throttle.pendingUpdate);
+      }
+      throttle.pendingUpdate = setTimeout(() => {
+        throttle.lastUpdate = Date.now();
+        const { composeLayers } = get();
+        composeLayers(true); // Force clear and redraw composedCanvas with updated image
+        if ((window as any).updateModelTexture) {
+          (window as any).updateModelTexture(true, false);
+        }
+        throttle.pendingUpdate = null;
+      }, throttleDelay);
+    }
   },
 
   removeImportedImage: (id: string) => {
     console.log('📷 Removing imported image:', id);
+    
+    // Clear from image cache
+    if ((window as any).__imageCache) {
+      (window as any).__imageCache.delete(id);
+      console.log('📷 Cleared image from cache:', id);
+    }
+    
     set(state => ({ 
       importedImages: state.importedImages.filter(img => img.id !== id),
       selectedImageId: state.selectedImageId === id ? null : state.selectedImageId
     }));
-    get().composeLayers();
+    
+    // CRITICAL: Call composeLayers first to redraw composedCanvas without the deleted image
+    // Then call updateModelTexture to apply the updated composedCanvas to the model
+    setTimeout(() => {
+      console.log('📷 Re-composing layers after image deletion');
+      const { composeLayers } = get();
+      composeLayers(true); // Force clear and redraw composedCanvas without the deleted image
+      
+      if ((window as any).updateModelTexture) {
+        (window as any).updateModelTexture(true, false); // Apply updated composedCanvas to model
+      }
+    }, 50);
   },
 
   // Layer management methods
@@ -2414,6 +2635,13 @@ try {
         console.log('🔄 Triggered texture update after layer reorder');
       }, 50);
       
+      // UNIFIED BRIDGE: Notify the unified layer bridge
+      const bridge = (window as any).unifiedLayerBridge;
+      if (bridge && bridge.isInitialized) {
+        console.log('🔄 Notifying unified bridge of layer reorder');
+        bridge.handleLayerReorder(layerId, 'up');
+      }
+      
       console.log(`🎨 Moved layer ${layerId} up`);
     } else {
       console.log('🎨 Cannot move layer up - already at top or not found');
@@ -2454,6 +2682,13 @@ try {
         console.log('🔄 Triggered texture update after layer reorder');
       }, 50);
       
+      // UNIFIED BRIDGE: Notify the unified layer bridge
+      const bridge = (window as any).unifiedLayerBridge;
+      if (bridge && bridge.isInitialized) {
+        console.log('🔄 Notifying unified bridge of layer reorder');
+        bridge.handleLayerReorder(layerId, 'down');
+      }
+      
       console.log(`🎨 Moved layer ${layerId} down`);
     }
   },
@@ -2483,8 +2718,8 @@ try {
         if (layerToDuplicate.displacementCanvas) {
           newDispCtx.drawImage(layerToDuplicate.displacementCanvas, 0, 0);
         } else {
-          // Fill with neutral gray if no displacement canvas exists
-          newDispCtx.fillStyle = 'rgb(128, 128, 128)';
+          // CRITICAL FIX: Fill with black (0) for no displacement
+          newDispCtx.fillStyle = 'rgb(0, 0, 0)';
           newDispCtx.fillRect(0, 0, newDisplacementCanvas.width, newDisplacementCanvas.height);
         }
         
@@ -2525,11 +2760,49 @@ try {
       console.log('🔄 Triggered texture update after layer duplication');
     }, 50);
     
+    // UNIFIED BRIDGE: Notify the unified layer bridge
+    const bridge = (window as any).unifiedLayerBridge;
+    if (bridge && bridge.isInitialized) {
+      console.log('🔄 Notifying unified bridge of layer duplication');
+      bridge.handleLayerCreate('raster', newLayerName, {
+        id: newLayerId,
+        visible: true,
+        opacity: 1.0,
+        blendMode: 'normal',
+        order: layers.length,
+        toolType: (layerToDuplicate as any).toolType || 'general',
+        canvas: newLayer?.canvas,
+        displacementCanvas: newLayer?.displacementCanvas
+      });
+    }
+    
     console.log(`🎨 Duplicated layer: ${layerId} -> ${newLayerId}`);
     return newLayerId;
   },
 
-  composeLayers: () => {
+  composeLayers: (forceClear = false) => {
+    // PERFORMANCE: Check for too many vector points and emergency cleanup
+    const { vectorPaths } = get();
+    const totalVectorPoints = vectorPaths.reduce((sum, path) => sum + path.points.length, 0);
+    
+    if (totalVectorPoints > 2000) {
+      console.warn('🚨 Too many vector points detected, performing emergency cleanup');
+      get().emergencyClearVectorPaths();
+      return; // Exit early to prevent further issues
+    }
+    
+    // PERFORMANCE: Use adaptive performance settings
+    const performanceSettings = adaptivePerformanceManager.getEffectiveSettings();
+    
+    // PERFORMANCE: Throttling based on adaptive settings
+    const now = Date.now();
+    const throttleInterval = 1000 / performanceSettings.maxFPS;
+    const composeLayersFn = get().composeLayers;
+    if ((composeLayersFn as any).lastCall && (now - (composeLayersFn as any).lastCall) < throttleInterval) {
+      return;
+    }
+    (composeLayersFn as any).lastCall = now;
+    
     try {
       let { layers, composedCanvas, decals, textElements, activeLayerId, baseTexture, activeTool, vectorPaths, vectorMode } = get();
       
@@ -2540,8 +2813,8 @@ try {
       
       if (!composedCanvas) {
         console.warn('No composed canvas available for layer composition - getting from pool');
-        // PERFORMANCE FIX: Use device-optimized canvas size
-        const optimalSize = performanceOptimizer.getOptimalCanvasSize();
+        // PERFORMANCE FIX: Use adaptive canvas size
+        const optimalSize = adaptivePerformanceManager.getOptimalCanvasSize();
         const newComposedCanvas = canvasPool.getCanvas(optimalSize);
         useApp.setState({ composedCanvas: newComposedCanvas });
         // Update the local variable to use the new canvas
@@ -2568,12 +2841,13 @@ try {
         return;
       }
     
-      // PERFORMANCE FIX: Use high-quality canvas context settings for better color preservation
+      // PERFORMANCE FIX: Use consistent canvas context settings (same as layer canvas)
       const ctx = composedCanvas.getContext('2d', { 
-        willReadFrequently: true,
-        alpha: true,
-        desynchronized: false
+        willReadFrequently: true
       })!;
+      
+      // Save context state before making any changes
+      ctx.save();
       
       // Enable high-quality rendering with color preservation
       ctx.imageSmoothingEnabled = true;
@@ -2585,33 +2859,51 @@ try {
       ctx.globalCompositeOperation = 'source-over';
       ctx.globalAlpha = 1.0;
       
-    // Always clear the composed canvas to ensure erasure is properly reflected
-    // PERFORMANCE: Reduced logging
-    if (Math.random() < 0.01) {
-      console.log('🎨 Clearing composed canvas for fresh composition');
-    }
-    ctx.clearRect(0, 0, composedCanvas.width, composedCanvas.height);
+    // CRITICAL FIX: Preserve original model texture - don't clear the canvas
+    // The composed canvas should already have the original model texture
+    // We only need to compose tool layers on top of it
     
-    // Draw base texture if available
-    if (baseTexture) {
-      // PERFORMANCE: Reduced logging
-      if (Math.random() < 0.01) {
-        console.log('🎨 Drawing base texture');
+    // CRITICAL FIX: Smart canvas management - avoid clearing when possible
+    // Only clear canvas when absolutely necessary to prevent texture fading
+    const canvasHasContent = composedCanvas.width > 0 && composedCanvas.height > 0;
+    const hasImportedImages = get().importedImages?.length > 0;
+    
+    // Only clear if canvas is empty OR if we're doing image operations AND canvas needs refresh
+    const shouldClear = !canvasHasContent || (forceClear && hasImportedImages);
+    
+    if (shouldClear) {
+      console.log('🎨 Clearing canvas:', !canvasHasContent ? 'empty canvas' : 'image operation refresh');
+      ctx.clearRect(0, 0, composedCanvas.width, composedCanvas.height);
+      
+      if (baseTexture) {
+        console.log('🎨 Restoring base texture after clear');
+        console.log('🎨 Base texture details:', {
+          type: baseTexture.constructor.name,
+          width: baseTexture.width,
+          height: baseTexture.height,
+          hasContent: baseTexture.width > 0 && baseTexture.height > 0
+        });
+        
+        ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = 'source-over';
+        
+        // Preserve original texture quality by drawing at original size
+        // Center the texture on the canvas
+        const centerX = (composedCanvas.width - baseTexture.width) / 2;
+        const centerY = (composedCanvas.height - baseTexture.height) / 2;
+        
+        ctx.drawImage(baseTexture, centerX, centerY, baseTexture.width, baseTexture.height);
+        console.log('🎨 Base texture restored to canvas');
+        
+        // DEBUG: Check if the restoration worked
+        const imageData = ctx.getImageData(composedCanvas.width/2, composedCanvas.height/2, 1, 1);
+        const pixel = imageData.data;
+        console.log('🎨 DEBUG: Composed canvas center pixel after base texture restoration:', `rgba(${pixel[0]}, ${pixel[1]}, ${pixel[2]}, ${pixel[3]})`);
+      } else {
+        console.log('🎨 No base texture available for restoration');
       }
-      
-      ctx.globalAlpha = 1;
-      ctx.globalCompositeOperation = 'source-over';
-      
-      // Preserve original texture quality by drawing at original size
-      // Center the texture on the canvas
-      const centerX = (composedCanvas.width - baseTexture.width) / 2;
-      const centerY = (composedCanvas.height - baseTexture.height) / 2;
-      
-      ctx.drawImage(baseTexture, centerX, centerY, baseTexture.width, baseTexture.height);
-      // PERFORMANCE: Reduced logging
-      if (Math.random() < 0.01) {
-        console.log('🎨 Base texture drawn at original resolution');
-      }
+    } else {
+      console.log('🎨 Preserving existing canvas content (original model texture)');
     }
     
     // Draw paint layers on top (WITHOUT clearing the base!)
@@ -2641,10 +2933,25 @@ try {
         
         ctx.save();
         
-        // Apply layer-specific properties
+        // Apply layer-specific properties with proper blend modes
         const layerOpacity = (layer as any).opacity || 1.0;
-        const layerBlendMode = (layer as any).blendMode || 'source-over';
         const layerToolType = (layer as any).toolType;
+        
+        // CRITICAL FIX: Use proper blend modes for correct rendering
+        let layerBlendMode: GlobalCompositeOperation = 'source-over'; // Default
+        
+        // Set appropriate blend mode based on tool type
+        if (layerToolType === 'brush' || layerToolType === 'paint') {
+          layerBlendMode = 'source-over'; // Normal blending for brush strokes
+        } else if (layerToolType === 'puffPrint') {
+          layerBlendMode = 'source-over'; // Normal blending for puff print
+        } else if (layerToolType === 'embroidery') {
+          layerBlendMode = 'source-over'; // Normal blending for embroidery
+        } else if (layerToolType === 'eraser') {
+          layerBlendMode = 'destination-out'; // Remove content
+        } else {
+          layerBlendMode = 'source-over'; // Safe default for normal rendering
+        }
         
         ctx.globalAlpha = layerOpacity;
         ctx.globalCompositeOperation = layerBlendMode;
@@ -2652,15 +2959,6 @@ try {
         ctx.shadowBlur = 0;
         ctx.shadowOffsetX = 0;
         ctx.shadowOffsetY = 0;
-        
-        // Apply tool-specific rendering if needed
-        if (layerToolType === 'puffPrint') {
-          // Special handling for puff print layers
-          ctx.globalCompositeOperation = 'source-over';
-        } else if (layerToolType === 'embroidery') {
-          // Special handling for embroidery layers
-          ctx.globalCompositeOperation = 'source-over';
-        }
         
         ctx.drawImage(layer.canvas, 0, 0);
         
@@ -2936,25 +3234,176 @@ try {
     // Draw imported images
     const importedImages = get().importedImages || [];
     console.log('📷 Drawing imported images:', importedImages.length);
+    
+    // Use global image cache (same as ShirtRefactored.tsx)
+    if (!(window as any).__imageCache) {
+      (window as any).__imageCache = new Map<string, HTMLImageElement>();
+    }
+    const imageCache = (window as any).__imageCache;
+    
     for (const img of importedImages) {
       if (!img.visible) continue;
       
       try {
-        // Load image from data URL
-        const image = new Image();
-        image.src = img.dataUrl;
+        // Get cached image or create and cache it
+        let imageElement = imageCache.get(img.id);
+        
+        if (!imageElement) {
+          imageElement = new Image();
+          imageElement.src = img.dataUrl;
+          imageCache.set(img.id, imageElement);
+          console.log('📷 Cached image in composeLayers:', img.name);
+        }
         
         // Only draw if image is loaded
-        if (image.complete && image.naturalWidth > 0) {
-          ctx.save();
-          ctx.globalAlpha = img.opacity;
-          ctx.globalCompositeOperation = 'source-over';
+        if (imageElement.complete && imageElement.naturalWidth > 0) {
+          // DEBUG: Check image element properties
+          console.log('📷 Image element details:', {
+            name: img.name,
+            complete: imageElement.complete,
+            naturalWidth: imageElement.naturalWidth,
+            naturalHeight: imageElement.naturalHeight,
+            width: imageElement.width,
+            height: imageElement.height,
+            src: imageElement.src.substring(0, 50) + '...'
+          });
+          // Convert UV to pixel coordinates
+          // CRITICAL: Flip V coordinate for proper texture mapping (same as text system)
+          const pixelWidth = (img.uWidth || 0.25) * composedCanvas.width;
+          const pixelHeight = (img.uHeight || 0.25) * composedCanvas.height;
+          const centerX = (img.u || 0.5) * composedCanvas.width;
+          const centerY = (1 - (img.v || 0.5)) * composedCanvas.height; // Flip V axis
+          const pixelX = centerX - pixelWidth / 2;
+          const pixelY = centerY - pixelHeight / 2;
           
-          // Draw image at specified position and size
-          ctx.drawImage(image, img.x, img.y, img.width, img.height);
-          console.log('📷 Drew imported image:', img.name, 'at', img.x, img.y, img.width, img.height);
+          // DEBUG: Check canvas state before drawing image
+          const imageDataBefore = ctx.getImageData(composedCanvas.width/2, composedCanvas.height/2, 1, 1);
+          const pixelBefore = imageDataBefore.data;
+          console.log('📷 DEBUG: Canvas center pixel before drawing image:', `rgba(${pixelBefore[0]}, ${pixelBefore[1]}, ${pixelBefore[2]}, ${pixelBefore[3]})`);
+          
+          ctx.save();
+          // Use image opacity and blend mode for proper rendering
+          ctx.globalAlpha = img.opacity || 1.0;
+          ctx.globalCompositeOperation = img.blendMode || 'source-over';
+          
+          // Apply transformations (rotation and flips) - CRITICAL: Only affect the image, not the entire canvas
+          ctx.translate(centerX, centerY);
+          
+          // Apply rotation if needed
+          if (img.rotation && img.rotation !== 0) {
+            ctx.rotate((img.rotation * Math.PI) / 180);
+          }
+          
+          // Apply horizontal flip if needed - CRITICAL: Only flip the image, not the entire canvas
+          if (img.horizontalFlip) {
+            ctx.scale(-1, 1);
+          }
+          
+          // Apply vertical flip if needed - CRITICAL: Only flip the image, not the entire canvas
+          if (img.verticalFlip) {
+            ctx.scale(1, -1);
+          }
+          
+          // Draw image at UV-based position (adjusted for transformations)
+          // CRITICAL: Draw image centered at origin after transformations
+          ctx.drawImage(imageElement, -pixelWidth/2, -pixelHeight/2, pixelWidth, pixelHeight);
+          console.log('📷 Drew imported image (UV):', img.name, 'UV:', { u: img.u, v: img.v }, 'Pixel:', { x: Math.round(pixelX), y: Math.round(pixelY) });
+          
+          // Draw border and resize anchors for selected image
+          const { selectedImageId } = get();
+          if (selectedImageId === img.id) {
+            // Draw glowing border around the image
+            ctx.save();
+            ctx.globalAlpha = 1.0;
+            ctx.globalCompositeOperation = 'source-over';
+            
+            // Create glowing border effect with RED color
+            const borderWidth = 3;
+            const glowIntensity = 12;
+            
+            // Outer glow (RED)
+            ctx.shadowColor = '#ff0000';
+            ctx.shadowBlur = glowIntensity;
+            ctx.strokeStyle = '#ff0000';
+            ctx.lineWidth = borderWidth;
+            ctx.strokeRect(-pixelWidth/2 - borderWidth/2, -pixelHeight/2 - borderWidth/2, pixelWidth + borderWidth, pixelHeight + borderWidth);
+            
+            // Inner border for definition
+            ctx.shadowBlur = 0;
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(-pixelWidth/2 - borderWidth/2, -pixelHeight/2 - borderWidth/2, pixelWidth + borderWidth, pixelHeight + borderWidth);
+            
+            // Draw resize anchors at corners and edges (RED)
+            const anchorSize = 10; // Increased from 8 to 10 for better visibility
+            const anchorColor = '#ff0000';
+            const anchorStrokeColor = '#ffffff';
+            
+            ctx.fillStyle = anchorColor;
+            ctx.strokeStyle = anchorStrokeColor;
+            ctx.lineWidth = 2;
+            
+            // Corner anchors (squares)
+            // Top-left corner
+            ctx.fillRect(-pixelWidth/2 - anchorSize/2, -pixelHeight/2 - anchorSize/2, anchorSize, anchorSize);
+            ctx.strokeRect(-pixelWidth/2 - anchorSize/2, -pixelHeight/2 - anchorSize/2, anchorSize, anchorSize);
+            
+            // Top-right corner
+            ctx.fillRect(pixelWidth/2 - anchorSize/2, -pixelHeight/2 - anchorSize/2, anchorSize, anchorSize);
+            ctx.strokeRect(pixelWidth/2 - anchorSize/2, -pixelHeight/2 - anchorSize/2, anchorSize, anchorSize);
+            
+            // Bottom-left corner
+            ctx.fillRect(-pixelWidth/2 - anchorSize/2, pixelHeight/2 - anchorSize/2, anchorSize, anchorSize);
+            ctx.strokeRect(-pixelWidth/2 - anchorSize/2, pixelHeight/2 - anchorSize/2, anchorSize, anchorSize);
+            
+            // Bottom-right corner
+            ctx.fillRect(pixelWidth/2 - anchorSize/2, pixelHeight/2 - anchorSize/2, anchorSize, anchorSize);
+            ctx.strokeRect(pixelWidth/2 - anchorSize/2, pixelHeight/2 - anchorSize/2, anchorSize, anchorSize);
+            
+            // Edge anchors (rectangles for better visibility on edges)
+            const edgeAnchorWidth = anchorSize;
+            const edgeAnchorHeight = anchorSize;
+            
+            // Top edge anchor
+            ctx.fillRect(-edgeAnchorWidth/2, -pixelHeight/2 - edgeAnchorHeight/2, edgeAnchorWidth, edgeAnchorHeight);
+            ctx.strokeRect(-edgeAnchorWidth/2, -pixelHeight/2 - edgeAnchorHeight/2, edgeAnchorWidth, edgeAnchorHeight);
+            
+            // Bottom edge anchor
+            ctx.fillRect(-edgeAnchorWidth/2, pixelHeight/2 - edgeAnchorHeight/2, edgeAnchorWidth, edgeAnchorHeight);
+            ctx.strokeRect(-edgeAnchorWidth/2, pixelHeight/2 - edgeAnchorHeight/2, edgeAnchorWidth, edgeAnchorHeight);
+            
+            // Left edge anchor
+            ctx.fillRect(-pixelWidth/2 - edgeAnchorWidth/2, -edgeAnchorHeight/2, edgeAnchorWidth, edgeAnchorHeight);
+            ctx.strokeRect(-pixelWidth/2 - edgeAnchorWidth/2, -edgeAnchorHeight/2, edgeAnchorWidth, edgeAnchorHeight);
+            
+            // Right edge anchor
+            ctx.fillRect(pixelWidth/2 - edgeAnchorWidth/2, -edgeAnchorHeight/2, edgeAnchorWidth, edgeAnchorHeight);
+            ctx.strokeRect(pixelWidth/2 - edgeAnchorWidth/2, -edgeAnchorHeight/2, edgeAnchorWidth, edgeAnchorHeight);
+            
+            ctx.restore();
+          }
+          
+          // DEBUG: Check canvas state after drawing image
+          const imageDataAfter = ctx.getImageData(composedCanvas.width/2, composedCanvas.height/2, 1, 1);
+          const pixelAfter = imageDataAfter.data;
+          console.log('📷 DEBUG: Canvas center pixel after drawing image:', `rgba(${pixelAfter[0]}, ${pixelAfter[1]}, ${pixelAfter[2]}, ${pixelAfter[3]})`);
           
           ctx.restore();
+          
+          // DEBUG: Check canvas state after restore
+          const imageDataRestore = ctx.getImageData(composedCanvas.width/2, composedCanvas.height/2, 1, 1);
+          const pixelRestore = imageDataRestore.data;
+          console.log('📷 DEBUG: Canvas center pixel after restore:', `rgba(${pixelRestore[0]}, ${pixelRestore[1]}, ${pixelRestore[2]}, ${pixelRestore[3]})`);
+        } else {
+          // Image not loaded yet, set up onload handler to trigger recompose
+          console.log('📷 Image not loaded yet, setting up onload handler:', img.name);
+          imageElement.onload = () => {
+            console.log('📷 Image loaded, triggering composeLayers:', img.name);
+            get().composeLayers();
+            if ((window as any).updateModelTexture) {
+              (window as any).updateModelTexture(true, false);
+            }
+          };
         }
       } catch (error) {
         console.error('📷 Error drawing imported image:', img.name, error);
@@ -3117,6 +3566,15 @@ try {
         error as Error,
         { component: 'App', function: 'composeLayers' }
       );
+    } finally {
+      // Restore context state to prevent affecting other operations
+      const { composedCanvas: finalCanvas } = get();
+      if (finalCanvas) {
+        const ctx = finalCanvas.getContext('2d');
+        if (ctx) {
+          ctx.restore();
+        }
+      }
     }
   },
 
@@ -3142,8 +3600,9 @@ try {
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
       
-      // Clear canvas and fill with neutral gray (no displacement)
-      ctx.fillStyle = 'rgb(128, 128, 128)';
+      // CRITICAL FIX: Fill with black (0) for no displacement, not gray (128)
+      // With black base and bias=0, only painted areas will be displaced
+      ctx.fillStyle = 'rgb(0, 0, 0)'; // Black = no displacement
       ctx.fillRect(0, 0, width, height);
       
       // Ensure all layers have an order property (migration for existing layers)
@@ -3240,12 +3699,16 @@ try {
 
     console.log('🎨 Generating base layer from model...');
     
-    // Create a base texture for the model
-    const ctx = composedCanvas.getContext('2d');
+    // CRITICAL FIX: Create a separate canvas for the original model texture
+    // Don't modify the composedCanvas - it might already have tool effects
+    const baseTextureCanvas = document.createElement('canvas');
+    baseTextureCanvas.width = composedCanvas.width;
+    baseTextureCanvas.height = composedCanvas.height;
+    const ctx = baseTextureCanvas.getContext('2d');
     if (!ctx) return;
     
-    // Clear the canvas
-    ctx.clearRect(0, 0, composedCanvas.width, composedCanvas.height);
+    // Clear the base texture canvas
+    ctx.clearRect(0, 0, baseTextureCanvas.width, baseTextureCanvas.height);
     
     // Try to extract texture from the model
     let modelTexture: THREE.Texture | null = null;
@@ -3302,12 +3765,12 @@ try {
         try {
           console.log('🎨 Drawing texture to base layer');
           console.log('🎨 Original texture size:', textureImage.width, 'x', textureImage.height);
-          console.log('🎨 Canvas size:', composedCanvas.width, 'x', composedCanvas.height);
+          console.log('🎨 Canvas size:', baseTextureCanvas.width, 'x', baseTextureCanvas.height);
           
           // Preserve original texture quality by drawing at original size
           // Center the texture on the canvas
-          const centerX = (composedCanvas.width - textureImage.width) / 2;
-          const centerY = (composedCanvas.height - textureImage.height) / 2;
+          const centerX = (baseTextureCanvas.width - textureImage.width) / 2;
+          const centerY = (baseTextureCanvas.height - textureImage.height) / 2;
           
           ctx.drawImage(textureImage, centerX, centerY, textureImage.width, textureImage.height);
           console.log('🎨 Successfully drew model texture as base layer at original resolution');
@@ -3315,29 +3778,41 @@ try {
           console.log('🎨 Failed to draw texture, using fallback:', error);
           // Fallback to white background
           ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, composedCanvas.width, composedCanvas.height);
+          ctx.fillRect(0, 0, baseTextureCanvas.width, baseTextureCanvas.height);
         }
       } else {
         // Fallback to white background if no texture found
         console.log('🎨 No usable texture found, using white background');
         ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, composedCanvas.width, composedCanvas.height);
+        ctx.fillRect(0, 0, baseTextureCanvas.width, baseTextureCanvas.height);
       }
     } else {
       // Fallback to white background if no texture found
       console.log('🎨 No model texture found, using white background');
       ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, composedCanvas.width, composedCanvas.height);
+      ctx.fillRect(0, 0, baseTextureCanvas.width, baseTextureCanvas.height);
     }
     
-    // Create an image from the canvas
-    const image = new Image();
-    image.onload = () => {
-      console.log('Base texture generated successfully');
-      get().setBaseTexture(image);
-      get().composeLayers(); // Trigger layer composition
-    };
-    image.src = composedCanvas.toDataURL();
+    // CRITICAL FIX: Store the original model texture directly as canvas
+    // This avoids the Image conversion which might lose data
+    console.log('🎨 Storing base texture canvas directly');
+    get().setBaseTexture(baseTextureCanvas as any);
+    
+    // CRITICAL FIX: Copy the original texture to the composed canvas
+    // This preserves the original model texture as the base layer
+    const composedCtx = composedCanvas.getContext('2d');
+    if (composedCtx) {
+      composedCtx.clearRect(0, 0, composedCanvas.width, composedCanvas.height);
+      composedCtx.drawImage(baseTextureCanvas, 0, 0);
+      console.log('🎨 Original model texture copied to composed canvas');
+      
+      // DEBUG: Check if the composed canvas has content
+      const imageData = composedCtx.getImageData(composedCanvas.width/2, composedCanvas.height/2, 1, 1);
+      const pixel = imageData.data;
+      console.log('🎨 DEBUG: Composed canvas center pixel after base texture copy:', `rgba(${pixel[0]}, ${pixel[1]}, ${pixel[2]}, ${pixel[3]})`);
+    }
+    
+    console.log('🎨 Base texture generation complete');
   },
 
   addDecalFromFile: async (file: File) => {
@@ -3426,8 +3901,8 @@ try {
       const layerDispCtx = layerDisplacementCanvas.getContext('2d', { willReadFrequently: true })!;
       layerDispCtx.imageSmoothingEnabled = true;
       layerDispCtx.imageSmoothingQuality = 'high';
-      // Fill with neutral gray (no displacement)
-      layerDispCtx.fillStyle = 'rgb(128, 128, 128)';
+      // CRITICAL FIX: Fill with black (0) for no displacement
+      layerDispCtx.fillStyle = 'rgb(0, 0, 0)';
       layerDispCtx.fillRect(0, 0, canvas.width, canvas.height);
       
       layers.push({ id: lp.id, name: lp.name, visible: lp.visible, canvas, history: [], future: [], order: layers.length, displacementCanvas: layerDisplacementCanvas });
@@ -3705,8 +4180,8 @@ try {
         const layerDispCtx = layerDisplacementCanvas.getContext('2d', { willReadFrequently: true })!;
         layerDispCtx.imageSmoothingEnabled = true;
         layerDispCtx.imageSmoothingQuality = 'high';
-        // Fill with neutral gray (no displacement)
-        layerDispCtx.fillStyle = 'rgb(128, 128, 128)';
+        // CRITICAL FIX: Fill with black (0) for no displacement
+        layerDispCtx.fillStyle = 'rgb(0, 0, 0)';
         layerDispCtx.fillRect(0, 0, canvas.width, canvas.height);
         
         layers.push({
@@ -4001,9 +4476,12 @@ export function App() {
     setTool('puffPrint');
   };
 
-  // Initialize canvases
+  // Initialize canvases with reduced resolution for better performance
   useEffect(() => {
-    useApp.getState().initCanvases(2048, 2048);
+    // PERFORMANCE: Reduce canvas resolution from 2048x2048 to 1024x1024 for 4x better performance
+    // PERFORMANCE: Use adaptive canvas size based on detected environment
+    const optimalSize = adaptivePerformanceManager.getOptimalCanvasSize();
+    useApp.getState().initCanvases(optimalSize.width, optimalSize.height);
   }, []);
 
   // Initialize AI Performance Manager
@@ -4041,6 +4519,20 @@ export function App() {
       window.removeEventListener('clearUnusedLayers', handleClearUnusedLayers);
       window.removeEventListener('emergencyMemoryCleanup', handleEmergencyMemoryCleanup);
     };
+  }, []);
+
+  // DISABLED: Unified Layer Bridge and Tool Layer Manager
+  // These systems were conflicting with the new texture preservation system
+  // They were calling composeLayers() which was clearing the original model texture
+  useEffect(() => {
+    console.log('🔄 Layer synchronization systems DISABLED to preserve original model texture');
+    console.log('🔄 Using new layered texture system instead');
+    
+    // Make bridge available globally for debugging but don't initialize
+    (window as any).unifiedLayerBridge = null;
+    (window as any).toolLayerManager = null;
+    
+    console.log('🔄 Texture preservation system active - original model texture will be preserved');
   }, []);
 
   // Automatic project state caching
@@ -4241,11 +4733,11 @@ export function App() {
           )}
           <CursorManager wrapRef={wrapRef} drawingActive={drawingActive} />
           <ToolRouter active={true} />
-          <AdvancedPuffPrintTool
+          {/* UnifiedPuffPrintSystem disabled - using ShirtRefactored puff system instead */}
+          {/* <UnifiedPuffPrintSystem
             active={useApp(s => s.activeTool === 'puffPrint')}
             onError={(error) => console.error('Puff Print Error:', error)}
-          />
-          <AdvancedPuffPrintManager />
+          /> */}
                 </div>
       </ResponsiveLayout>
 

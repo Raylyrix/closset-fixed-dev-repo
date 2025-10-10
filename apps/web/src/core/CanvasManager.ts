@@ -172,8 +172,8 @@ export class CanvasManager {
     // Clear displacement canvas
     ctx.clearRect(0, 0, displacementCanvas.width, displacementCanvas.height);
     
-    // Fill with neutral gray (no displacement)
-    ctx.fillStyle = 'rgb(128, 128, 128)';
+    // CRITICAL FIX: Fill with black (0) for no displacement
+    ctx.fillStyle = 'rgb(0, 0, 0)';
     ctx.fillRect(0, 0, displacementCanvas.width, displacementCanvas.height);
     
     // Process puff print layers
