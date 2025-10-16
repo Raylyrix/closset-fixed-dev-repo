@@ -2899,8 +2899,8 @@ try {
       console.error('🎨 Error in V2 layer composition:', error);
     }
   },
-    // PERFORMANCE: Check for too many vector points and emergency cleanup
-    const { vectorPaths } = get();
+
+  composeDisplacementMaps: () => {
     const totalVectorPoints = vectorPaths.reduce((sum, path) => sum + path.points.length, 0);
     
     if (totalVectorPoints > 2000) {
