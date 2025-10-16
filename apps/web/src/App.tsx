@@ -8,11 +8,7 @@ import LZString from 'lz-string';
 import { unifiedPerformanceManager } from './utils/UnifiedPerformanceManager';
 import { canvasPool } from './utils/CanvasPool';
 import { useAdvancedLayerStoreV2 } from './core/AdvancedLayerSystemV2';
-import { useAdvancedLayerStore } from './core/AdvancedLayerSystem';
 import { useAutomaticLayerManager } from './core/AutomaticLayerManager';
-import { LayerModelSynchronizer } from './core/LayerModelSync';
-import { UnifiedLayerBridge } from './core/UnifiedLayerBridge';
-import { ToolLayerManager } from './core/ToolLayerManager';
 import ShirtRefactored from './components/ShirtRefactored'; // Use new refactored component
 import { RightPanelCompact } from './components/RightPanelCompact.tsx'; // Use compact UI component with layers and universal select
 // PERFORMANCE FIX: Removed Brush3DIntegration import to prevent conflicts with existing painting system
@@ -2879,6 +2875,30 @@ try {
   },
 
   composeLayers: (forceClear = false) => {
+    console.log('🎨 composeLayers called - using V2 system');
+    
+    try {
+      // Use V2 system for layer composition
+      const { composeLayers: v2ComposeLayers } = useAdvancedLayerStoreV2.getState();
+      const composedCanvas = v2ComposeLayers();
+      
+      if (composedCanvas) {
+        // Update the composed canvas in the app state
+        set({ composedCanvas });
+        console.log('🎨 Layer composition completed using V2 system');
+        
+        // Trigger texture update
+        const textureEvent = new CustomEvent('forceTextureUpdate', {
+          detail: { source: 'layer-composition-v2' }
+        });
+        window.dispatchEvent(textureEvent);
+      } else {
+        console.warn('🎨 V2 layer composition returned null');
+      }
+    } catch (error) {
+      console.error('🎨 Error in V2 layer composition:', error);
+    }
+  },
     // PERFORMANCE: Check for too many vector points and emergency cleanup
     const { vectorPaths } = get();
     const totalVectorPoints = vectorPaths.reduce((sum, path) => sum + path.points.length, 0);
@@ -5010,7 +5030,6 @@ export function App() {
     // Make layer stores available globally for debugging
     (window as any).useApp = useApp;
     (window as any).useAdvancedLayerStoreV2 = useAdvancedLayerStoreV2;
-    (window as any).useAdvancedLayerStore = useAdvancedLayerStore;
     
     // Log initial performance settings
     const preset = unifiedPerformanceManager.getCurrentPreset();

@@ -1,9 +1,10 @@
 import React from 'react';
 import { HexColorPicker } from 'react-colorful';
 import { useApp } from '../App';
-import { useLayerManager } from '../stores/LayerManager';
-import { layerIntegration } from '../services/LayerIntegration';
-import { useAdvancedLayerStore } from '../core/AdvancedLayerSystem';
+// REMOVED: Conflicting layer systems - using AdvancedLayerSystemV2 only
+// import { useLayerManager } from '../stores/LayerManager';
+// import { layerIntegration } from '../services/LayerIntegration';
+// import { useAdvancedLayerStore } from '../core/AdvancedLayerSystem';
 import { useAdvancedLayerStoreV2, AdvancedLayer, LayerGroup, BlendMode, LayerEffect, LayerMask } from '../core/AdvancedLayerSystemV2';
 import { useAutomaticLayerManager } from '../core/AutomaticLayerManager';
 import { useLayerSelectionSystem } from '../core/LayerSelectionSystem';
@@ -4190,8 +4191,8 @@ export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps)
               <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
                 <button
                   onClick={() => {
-                    const { createLayer } = useLayerManager.getState();
-                    createLayer('raster', 'New Paint Layer');
+                    const { createLayer } = useAdvancedLayerStoreV2.getState();
+                    createLayer('paint', 'New Paint Layer');
                   }}
                   style={{
                     padding: '4px 8px',
@@ -4208,7 +4209,7 @@ export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps)
                 </button>
                 <button
                   onClick={() => {
-                    const { createLayer } = useLayerManager.getState();
+                    const { createLayer } = useAdvancedLayerStoreV2.getState();
                     createLayer('puff', 'New Puff Layer');
                   }}
                   style={{
@@ -4226,7 +4227,7 @@ export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps)
                 </button>
                 <button
                   onClick={() => {
-                    const { createLayer } = useLayerManager.getState();
+                    const { createLayer } = useAdvancedLayerStoreV2.getState();
                     createLayer('vector', 'New Vector Layer');
                   }}
                   style={{
@@ -4244,7 +4245,7 @@ export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps)
                 </button>
                 <button
                   onClick={() => {
-                    const { createLayer } = useLayerManager.getState();
+                    const { createLayer } = useAdvancedLayerStoreV2.getState();
                     createLayer('embroidery', 'New Embroidery Layer');
                   }}
                   style={{
@@ -4281,16 +4282,10 @@ export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps)
                 color: '#a0aec0'
               }}>
                 {(() => {
-                  const { layers, layerOrder } = useLayerManager.getState();
+                  const { layers } = useAdvancedLayerStoreV2.getState();
                   const totalLayers = advancedLayerOrder.length;
-                  const visibleLayers = layerOrder.filter(id => {
-                    const layer = layers.get(id);
-                    return layer && layer.visible;
-                  }).length;
-                  const lockedLayers = layerOrder.filter(id => {
-                    const layer = layers.get(id);
-                    return layer && layer.locked;
-                  }).length;
+                  const visibleLayers = layers.filter(layer => layer.visible).length;
+                  const lockedLayers = layers.filter(layer => layer.locked).length;
                   
                   return (
                     <div>
@@ -4315,7 +4310,7 @@ export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps)
               <div style={{ display: 'flex', gap: '4px' }}>
                 <button
                   onClick={() => {
-                    const { composeLayers } = useLayerManager.getState();
+                    const { composeLayers } = useApp.getState();
                     composeLayers();
                   }}
                   style={{
@@ -4334,8 +4329,9 @@ export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps)
                 </button>
                 <button
                   onClick={() => {
-                    const { invalidateComposition } = useLayerManager.getState();
-                    invalidateComposition();
+                    // Force layer composition update
+                    const { composeLayers } = useApp.getState();
+                    composeLayers(true);
                   }}
                   style={{
                     flex: 1,

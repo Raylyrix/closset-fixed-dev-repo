@@ -13,12 +13,14 @@ import { unifiedPerformanceManager } from '../utils/UnifiedPerformanceManager';
 // Import new modular components
 import { ShirtRenderer } from './Shirt/ShirtRenderer';
 // import { UVMapper } from './Shirt/UVMapper'; // TEMPORARILY DISABLED TO DEBUG
-import { useLayerManager } from '../stores/LayerManager';
-import { useAdvancedLayerStore } from '../core/AdvancedLayerSystem';
-import { layerBridge } from '../core/LayerSystemBridge';
-import { LAYER_SYSTEM_CONFIG } from '../config/LayerConfig';
-import { layerPersistenceManager } from '../core/LayerPersistenceManager';
+// REMOVED: Conflicting layer systems - using AdvancedLayerSystemV2 only
+// import { useLayerManager } from '../stores/LayerManager';
+// import { useAdvancedLayerStore } from '../core/AdvancedLayerSystem';
+// import { layerBridge } from '../core/LayerSystemBridge';
+// import { LAYER_SYSTEM_CONFIG } from '../config/LayerConfig';
+// import { layerPersistenceManager } from '../core/LayerPersistenceManager';
 import { useAutomaticLayerManager } from '../core/AutomaticLayerManager';
+import { useAdvancedLayerStoreV2 } from '../core/AdvancedLayerSystemV2';
 // import { Brush3DIntegration } from './Brush3DIntegrationNew'; // Using existing useApp painting system instead
 
 // Import selection system
@@ -1598,19 +1600,39 @@ export function ShirtRefactored({
       return;
     }
     
-    // Enhanced layer management - get or create active layer for current tool
+    // Enhanced layer management - get or create active layer for current tool using V2 system
     let layer;
-    if (LAYER_SYSTEM_CONFIG.USE_ADVANCED_LAYERS) {
-      try {
-        layer = layerBridge.getOrCreateActiveLayer(activeTool);
-      } catch (error) {
-        console.warn('🎨 Advanced layer system failed, using fallback:', error);
-        // Fallback to original system
-        const getOrCreateActiveLayer = useApp.getState().getOrCreateActiveLayer;
-        layer = getOrCreateActiveLayer ? getOrCreateActiveLayer(activeTool) : null;
+    try {
+      // Use AdvancedLayerSystemV2 directly
+      const { layers, activeLayerId, createLayer } = useAdvancedLayerStoreV2.getState();
+      
+      // Check if we have an active layer
+      if (activeLayerId) {
+        const activeLayer = layers.find(l => l.id === activeLayerId);
+        if (activeLayer && activeLayer.visible) {
+          layer = {
+            id: activeLayer.id,
+            name: activeLayer.name,
+            canvas: activeLayer.content.canvas || document.createElement('canvas')
+          };
+        }
       }
-    } else {
-      // Use original system
+      
+      // Create a new layer if none exists
+      if (!layer) {
+        const layerId = createLayer('paint', `${activeTool.charAt(0).toUpperCase() + activeTool.slice(1)} Layer`);
+        const newLayer = layers.find(l => l.id === layerId);
+        if (newLayer) {
+          layer = {
+            id: newLayer.id,
+            name: newLayer.name,
+            canvas: newLayer.content.canvas || document.createElement('canvas')
+          };
+        }
+      }
+    } catch (error) {
+      console.warn('🎨 Advanced layer system V2 failed, using fallback:', error);
+      // Fallback to original system
       const getOrCreateActiveLayer = useApp.getState().getOrCreateActiveLayer;
       layer = getOrCreateActiveLayer ? getOrCreateActiveLayer(activeTool) : null;
     }
@@ -1975,17 +1997,38 @@ export function ShirtRefactored({
       // Draw with symmetry
       drawWithSymmetry(drawBrushAt);
       
-      // Track brush stroke for layer management
+      // Track brush stroke for layer management using V2 system
       let currentLayer;
-      if (LAYER_SYSTEM_CONFIG.USE_ADVANCED_LAYERS) {
-        try {
-          currentLayer = layerBridge.getOrCreateActiveLayer(activeTool);
-        } catch (error) {
-          console.warn('🎨 Advanced layer system failed, using fallback:', error);
-          const getOrCreateActiveLayer = useApp.getState().getOrCreateActiveLayer;
-          currentLayer = getOrCreateActiveLayer ? getOrCreateActiveLayer(activeTool) : null;
+      try {
+        // Use AdvancedLayerSystemV2 directly
+        const { layers, activeLayerId, createLayer } = useAdvancedLayerStoreV2.getState();
+        
+        // Check if we have an active layer
+        if (activeLayerId) {
+          const activeLayer = layers.find(l => l.id === activeLayerId);
+          if (activeLayer && activeLayer.visible) {
+            currentLayer = {
+              id: activeLayer.id,
+              name: activeLayer.name,
+              canvas: activeLayer.content.canvas || document.createElement('canvas')
+            };
+          }
         }
-      } else {
+        
+        // Create a new layer if none exists
+        if (!currentLayer) {
+          const layerId = createLayer('paint', `${activeTool.charAt(0).toUpperCase() + activeTool.slice(1)} Layer`);
+          const newLayer = layers.find(l => l.id === layerId);
+          if (newLayer) {
+            currentLayer = {
+              id: newLayer.id,
+              name: newLayer.name,
+              canvas: newLayer.content.canvas || document.createElement('canvas')
+            };
+          }
+        }
+      } catch (error) {
+        console.warn('🎨 Advanced layer system V2 failed, using fallback:', error);
         const getOrCreateActiveLayer = useApp.getState().getOrCreateActiveLayer;
         currentLayer = getOrCreateActiveLayer ? getOrCreateActiveLayer(activeTool) : null;
       }
@@ -2000,9 +2043,9 @@ export function ShirtRefactored({
           timestamp: Date.now()
         };
         
-        // Add to brush strokes array
-        const currentStrokes = useApp.getState().brushStrokes || [];
-        useApp.setState({ brushStrokes: [...currentStrokes, newStroke] });
+        // Add brush stroke to V2 system
+        const { addBrushStroke } = useAdvancedLayerStoreV2.getState();
+        addBrushStroke(currentLayer.id, newStroke);
         
         console.log('🎨 Brush stroke tracked and linked to layer:', currentLayer.id, newStroke);
         
@@ -2776,17 +2819,38 @@ export function ShirtRefactored({
         if (shouldCreateStitch) {
           (window as any).lastEmbroideryStitchTime = now;
 
-        // Create embroidery stitch record with layer ID
+        // Create embroidery stitch record with layer ID using V2 system
         let currentLayer;
-        if (LAYER_SYSTEM_CONFIG.USE_ADVANCED_LAYERS) {
-          try {
-            currentLayer = layerBridge.getOrCreateActiveLayer(activeTool);
-          } catch (error) {
-            console.warn('🎨 Advanced layer system failed, using fallback:', error);
-            const getOrCreateActiveLayer = useApp.getState().getOrCreateActiveLayer;
-            currentLayer = getOrCreateActiveLayer ? getOrCreateActiveLayer(activeTool) : null;
+        try {
+          // Use AdvancedLayerSystemV2 directly
+          const { layers, activeLayerId, createLayer } = useAdvancedLayerStoreV2.getState();
+          
+          // Check if we have an active layer
+          if (activeLayerId) {
+            const activeLayer = layers.find(l => l.id === activeLayerId);
+            if (activeLayer && activeLayer.visible) {
+              currentLayer = {
+                id: activeLayer.id,
+                name: activeLayer.name,
+                canvas: activeLayer.content.canvas || document.createElement('canvas')
+              };
+            }
           }
-        } else {
+          
+          // Create a new layer if none exists
+          if (!currentLayer) {
+            const layerId = createLayer('embroidery', `${activeTool.charAt(0).toUpperCase() + activeTool.slice(1)} Layer`);
+            const newLayer = layers.find(l => l.id === layerId);
+            if (newLayer) {
+              currentLayer = {
+                id: newLayer.id,
+                name: newLayer.name,
+                canvas: newLayer.content.canvas || document.createElement('canvas')
+              };
+            }
+          }
+        } catch (error) {
+          console.warn('🎨 Advanced layer system V2 failed, using fallback:', error);
           const getOrCreateActiveLayer = useApp.getState().getOrCreateActiveLayer;
           currentLayer = getOrCreateActiveLayer ? getOrCreateActiveLayer(activeTool) : null;
         }
@@ -3307,23 +3371,13 @@ export function ShirtRefactored({
     const initializeLayerSystem = async () => {
       console.log('🎨 ShirtRefactored: Initializing layer system...');
       
-      // First, ensure layers are loaded from storage
-      await layerPersistenceManager.initialize();
-      
-      // Then initialize the appropriate layer system
-      if (LAYER_SYSTEM_CONFIG.USE_ADVANCED_LAYERS) {
-        try {
-          layerBridge.initialize();
-          console.log('🎨 Advanced layer system initialized');
-        } catch (error) {
-          console.warn('🎨 Layer bridge initialization failed, using fallback:', error);
-        }
-      } else {
-        console.log('🎨 Using original layer system');
-        
-        // Check if layers were loaded
-        const persistence = await layerPersistenceManager.checkPersistence();
-        console.log('🎨 Layer persistence status:', persistence);
+      // Initialize AdvancedLayerSystemV2
+      try {
+        console.log('🎨 Initializing AdvancedLayerSystemV2');
+        // V2 system initializes automatically, just log success
+        console.log('🎨 AdvancedLayerSystemV2 initialized successfully');
+      } catch (error) {
+        console.warn('🎨 AdvancedLayerSystemV2 initialization failed:', error);
       }
     };
     

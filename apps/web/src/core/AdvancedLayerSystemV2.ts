@@ -37,6 +37,33 @@ export interface LayerMask {
   inverted: boolean;
 }
 
+// Brush stroke interface
+export interface BrushStroke {
+  id: string;
+  layerId: string;
+  points: { x: number; y: number }[];
+  color: string;
+  size: number;
+  opacity: number;
+  timestamp: number;
+}
+
+// Text element interface
+export interface TextElement {
+  id: string;
+  layerId: string;
+  text: string;
+  x: number;
+  y: number;
+  u: number;
+  v: number;
+  fontSize: number;
+  fontFamily: string;
+  color: string;
+  opacity: number;
+  timestamp: number;
+}
+
 // Layer content (varies by type)
 export interface LayerContent {
   canvas?: HTMLCanvasElement; // For paint layers
@@ -45,6 +72,8 @@ export interface LayerContent {
   vectorData?: any; // For vector layers
   puffData?: any; // For puff layers
   embroideryData?: any; // For embroidery layers
+  brushStrokes?: BrushStroke[]; // For paint layers
+  textElements?: TextElement[]; // For text layers
 }
 
 // Main Layer interface
@@ -152,6 +181,19 @@ interface AdvancedLayerStoreV2 {
   // Content management
   updateLayerContent: (id: string, content: Partial<LayerContent>) => void;
   getLayerBounds: (id: string) => { x: number; y: number; width: number; height: number } | null;
+  
+  // Brush strokes
+  addBrushStroke: (layerId: string, stroke: BrushStroke) => void;
+  removeBrushStroke: (layerId: string, strokeId: string) => void;
+  getBrushStrokes: (layerId: string) => BrushStroke[];
+  
+  // Text elements
+  addTextElement: (layerId: string, textElement: TextElement) => void;
+  removeTextElement: (layerId: string, textElementId: string) => void;
+  getTextElements: (layerId: string) => TextElement[];
+  
+  // Layer composition
+  composeLayers: () => HTMLCanvasElement | null;
 }
 
 // Helper functions
@@ -743,9 +785,167 @@ export const useAdvancedLayerStoreV2 = create<AdvancedLayerStoreV2>()(
       const state = get();
       const layer = state.layers.find(layer => layer.id === id);
       return layer?.bounds || null;
+    },
+    
+    // Brush strokes
+    addBrushStroke: (layerId: string, stroke: BrushStroke) => {
+      set(state => ({
+        layers: state.layers.map(layer =>
+          layer.id === layerId
+            ? {
+                ...layer,
+                content: {
+                  ...layer.content,
+                  brushStrokes: [...(layer.content.brushStrokes || []), stroke]
+                },
+                updatedAt: new Date()
+              }
+            : layer
+        )
+      }));
+      
+      console.log(`🖌️ Added brush stroke to layer ${layerId}`);
+    },
+    
+    removeBrushStroke: (layerId: string, strokeId: string) => {
+      set(state => ({
+        layers: state.layers.map(layer =>
+          layer.id === layerId
+            ? {
+                ...layer,
+                content: {
+                  ...layer.content,
+                  brushStrokes: (layer.content.brushStrokes || []).filter(stroke => stroke.id !== strokeId)
+                },
+                updatedAt: new Date()
+              }
+            : layer
+        )
+      }));
+      
+      console.log(`🗑️ Removed brush stroke ${strokeId} from layer ${layerId}`);
+    },
+    
+    getBrushStrokes: (layerId: string) => {
+      const state = get();
+      const layer = state.layers.find(layer => layer.id === layerId);
+      return layer?.content.brushStrokes || [];
+    },
+    
+    // Text elements
+    addTextElement: (layerId: string, textElement: TextElement) => {
+      set(state => ({
+        layers: state.layers.map(layer =>
+          layer.id === layerId
+            ? {
+                ...layer,
+                content: {
+                  ...layer.content,
+                  textElements: [...(layer.content.textElements || []), textElement]
+                },
+                updatedAt: new Date()
+              }
+            : layer
+        )
+      }));
+      
+      console.log(`📝 Added text element to layer ${layerId}`);
+    },
+    
+    removeTextElement: (layerId: string, textElementId: string) => {
+      set(state => ({
+        layers: state.layers.map(layer =>
+          layer.id === layerId
+            ? {
+                ...layer,
+                content: {
+                  ...layer.content,
+                  textElements: (layer.content.textElements || []).filter(text => text.id !== textElementId)
+                },
+                updatedAt: new Date()
+              }
+            : layer
+        )
+      }));
+      
+      console.log(`🗑️ Removed text element ${textElementId} from layer ${layerId}`);
+    },
+    
+    getTextElements: (layerId: string) => {
+      const state = get();
+      const layer = state.layers.find(layer => layer.id === layerId);
+      return layer?.content.textElements || [];
+    },
+    
+    // Layer composition
+    composeLayers: () => {
+      const state = get();
+      const composedCanvas = document.createElement('canvas');
+      composedCanvas.width = 1536;
+      composedCanvas.height = 1536;
+      const ctx = composedCanvas.getContext('2d');
+      
+      if (!ctx) return null;
+      
+      // Sort layers by order
+      const sortedLayers = [...state.layers].sort((a, b) => a.order - b.order);
+      
+      for (const layer of sortedLayers) {
+        if (!layer.visible) continue;
+        
+        ctx.save();
+        ctx.globalAlpha = layer.opacity;
+        ctx.globalCompositeOperation = layer.blendMode === 'normal' ? 'source-over' : 'source-over';
+        
+        // Draw layer canvas if it exists
+        if (layer.content.canvas) {
+          ctx.drawImage(layer.content.canvas, 0, 0);
+        }
+        
+        // Draw brush strokes
+        const brushStrokes = layer.content.brushStrokes || [];
+        for (const stroke of brushStrokes) {
+          if (stroke.points && stroke.points.length > 0) {
+            ctx.save();
+            ctx.strokeStyle = stroke.color;
+            ctx.lineWidth = stroke.size;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.globalAlpha = stroke.opacity;
+            
+            ctx.beginPath();
+            for (let i = 0; i < stroke.points.length; i++) {
+              const point = stroke.points[i];
+              if (i === 0) {
+                ctx.moveTo(point.x, point.y);
+              } else {
+                ctx.lineTo(point.x, point.y);
+              }
+            }
+            ctx.stroke();
+            ctx.restore();
+          }
+        }
+        
+        // Draw text elements
+        const textElements = layer.content.textElements || [];
+        for (const textEl of textElements) {
+          ctx.save();
+          ctx.font = `${textEl.fontSize}px ${textEl.fontFamily}`;
+          ctx.fillStyle = textEl.color;
+          ctx.globalAlpha = textEl.opacity;
+          ctx.fillText(textEl.text, textEl.x, textEl.y);
+          ctx.restore();
+        }
+        
+        ctx.restore();
+      }
+      
+      console.log('🎨 Composed layers using V2 system');
+      return composedCanvas;
     }
   }))
 );
 
 // Export types
-export type { AdvancedLayer, LayerGroup, LayerEffect, LayerMask, LayerTransform, LayerContent };
+export type { AdvancedLayer, LayerGroup, LayerEffect, LayerMask, LayerTransform, LayerContent, BrushStroke, TextElement };
