@@ -118,6 +118,7 @@ export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps)
     moveLayerDown: moveLayerDown,
     moveLayerToTop: moveAdvancedLayerToTop,
     moveLayerToBottom: moveAdvancedLayerToBottom,
+    reorderLayers: reorderLayers,
     createGroup: createGroup,
     deleteGroup: deleteAdvancedGroup,
     addToGroup: addToGroup,
@@ -6520,6 +6521,13 @@ export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps)
                       setActiveLayer(layer.id);
                       console.log('🎨 Selected layer:', layer.name);
                     }}
+                    onDoubleClick={() => {
+                      const newName = prompt('Rename layer:', layer.name);
+                      if (newName && newName.trim() !== '' && newName !== layer.name) {
+                        renameAdvancedLayer(layer.id, newName.trim());
+                        console.log('🎨 Renamed layer:', layer.name, 'to', newName.trim());
+                      }
+                    }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <span style={{ opacity: layer.visible ? 1 : 0.3 }}>
@@ -6542,9 +6550,84 @@ export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps)
                       </span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <span style={{ fontSize: '7px', color: '#999' }}>
+                      {/* Layer Opacity Slider */}
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={Math.round(layer.opacity * 100)}
+                        onChange={(e) => {
+                          const opacity = parseInt(e.target.value) / 100;
+                          setLayerOpacity(layer.id, opacity);
+                          console.log('🎨 Set layer opacity:', layer.name, opacity);
+                        }}
+                        style={{
+                          width: '30px',
+                          height: '2px',
+                          background: 'rgba(255, 255, 255, 0.2)',
+                          outline: 'none',
+                          cursor: 'pointer'
+                        }}
+                        title={`Opacity: ${Math.round(layer.opacity * 100)}%`}
+                      />
+                      <span style={{ fontSize: '7px', color: '#999', minWidth: '25px' }}>
                         {Math.round(layer.opacity * 100)}%
                       </span>
+                      
+                      {/* Layer Reordering Controls */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const currentIndex = advancedLayers.findIndex(l => l.id === layer.id);
+                            if (currentIndex < advancedLayers.length - 1) {
+                              const newOrder = [...advancedLayers.map(l => l.id)];
+                              [newOrder[currentIndex], newOrder[currentIndex + 1]] = [newOrder[currentIndex + 1], newOrder[currentIndex]];
+                              reorderLayers(newOrder);
+                              console.log('🎨 Moved layer up:', layer.name);
+                            }
+                          }}
+                          disabled={advancedLayers.findIndex(l => l.id === layer.id) >= advancedLayers.length - 1}
+                          style={{
+                            padding: '1px 2px',
+                            fontSize: '6px',
+                            background: 'transparent',
+                            border: 'none',
+                            color: '#999',
+                            cursor: 'pointer',
+                            opacity: advancedLayers.findIndex(l => l.id === layer.id) >= advancedLayers.length - 1 ? 0.3 : 1
+                          }}
+                          title="Move layer up"
+                        >
+                          ▲
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const currentIndex = advancedLayers.findIndex(l => l.id === layer.id);
+                            if (currentIndex > 0) {
+                              const newOrder = [...advancedLayers.map(l => l.id)];
+                              [newOrder[currentIndex], newOrder[currentIndex - 1]] = [newOrder[currentIndex - 1], newOrder[currentIndex]];
+                              reorderLayers(newOrder);
+                              console.log('🎨 Moved layer down:', layer.name);
+                            }
+                          }}
+                          disabled={advancedLayers.findIndex(l => l.id === layer.id) <= 0}
+                          style={{
+                            padding: '1px 2px',
+                            fontSize: '6px',
+                            background: 'transparent',
+                            border: 'none',
+                            color: '#999',
+                            cursor: 'pointer',
+                            opacity: advancedLayers.findIndex(l => l.id === layer.id) <= 0 ? 0.3 : 1
+                          }}
+                          title="Move layer down"
+                        >
+                          ▼
+                        </button>
+                      </div>
+                      
                       <button
                         onClick={(e) => {
                           e.stopPropagation();

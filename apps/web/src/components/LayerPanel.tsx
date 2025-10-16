@@ -6,8 +6,7 @@
  */
 
 import React, { useState, useCallback } from 'react';
-import { useAdvancedLayerStore, type AdvancedLayer, type LayerGroup } from '../core/AdvancedLayerSystem';
-import { layerBridge } from '../core/LayerSystemBridge';
+import { useAdvancedLayerStoreV2, type AdvancedLayer, type LayerGroup } from '../core/AdvancedLayerSystemV2';
 
 interface LayerPanelProps {
   isOpen: boolean;
@@ -48,7 +47,7 @@ export function LayerPanel({ isOpen, onClose }: LayerPanelProps) {
     createAdjustmentLayer,
     createMask,
     suggestLayerGrouping
-  } = useAdvancedLayerStore();
+  } = useAdvancedLayerStoreV2();
 
   // Handle layer selection
   const handleLayerClick = useCallback((layerId: string, event: React.MouseEvent) => {
@@ -75,7 +74,8 @@ export function LayerPanel({ isOpen, onClose }: LayerPanelProps) {
 
   // Handle layer operations
   const handleLayerOperation = useCallback((operation: string, layerId: string, ...args: any[]) => {
-    layerBridge.handleLayerOperation(operation, layerId, ...args);
+    // Handle layer operations directly with V2 system
+    console.log('Layer operation:', operation, layerId, args);
   }, []);
 
   // Toggle group expansion

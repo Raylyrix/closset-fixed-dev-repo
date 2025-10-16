@@ -21,6 +21,7 @@ import { ShirtRenderer } from './Shirt/ShirtRenderer';
 // import { layerPersistenceManager } from '../core/LayerPersistenceManager';
 import { useAutomaticLayerManager } from '../core/AutomaticLayerManager';
 import { useAdvancedLayerStoreV2 } from '../core/AdvancedLayerSystemV2';
+import { createDisplacementCanvas, createNormalCanvas, CANVAS_CONFIG } from '../constants/CanvasSizes';
 // import { Brush3DIntegration } from './Brush3DIntegrationNew'; // Using existing useApp painting system instead
 
 // Import selection system
@@ -187,23 +188,32 @@ export function ShirtRefactored({
   const setControlsEnabled = useApp(s => s.setControlsEnabled);
   console.log('🎯 ShirtRefactored: Brush tool state set up');
   
-  // Get brush settings from useApp store
+  // Get all brush settings in a single useApp call to reduce re-renders
   console.log('🎯 ShirtRefactored: Getting brush settings...');
-  const brushColor = useApp(s => s.brushColor);
-  const brushSize = useApp(s => s.brushSize);
-  const brushOpacity = useApp(s => s.brushOpacity);
-  console.log('🎯 ShirtRefactored: Brush settings obtained:', { brushColor, brushSize, brushOpacity });
-  const brushHardness = useApp(s => s.brushHardness);
-  const brushFlow = useApp(s => s.brushFlow);
-  const brushShape = useApp(s => s.brushShape);
-  const brushSpacing = useApp(s => s.brushSpacing);
-  const blendMode = useApp(s => s.blendMode);
-  console.log('🎯 ShirtRefactored: Additional brush settings obtained');
-  const getActiveLayer = useApp(s => s.getActiveLayer);
-  // Use advanced layer system through bridge
-  const modelScene = useApp(s => s.modelScene);
+  const brushSettings = useApp(s => ({
+    brushColor: s.brushColor,
+    brushSize: s.brushSize,
+    brushOpacity: s.brushOpacity,
+    brushHardness: s.brushHardness,
+    brushFlow: s.brushFlow,
+    brushShape: s.brushShape,
+    brushSpacing: s.brushSpacing,
+    blendMode: s.blendMode,
+    getActiveLayer: s.getActiveLayer,
+    modelScene: s.modelScene
+  }));
+  
+  console.log('🎯 ShirtRefactored: Brush settings obtained:', brushSettings);
+  
+  // Destructure brush settings for easier access
+  const { brushColor, brushSize, brushOpacity, brushHardness, brushFlow, brushShape, brushSpacing, blendMode, getActiveLayer, modelScene } = brushSettings;
+  
   const modelScale = useModelStore(s => s.modelScale);
-  console.log('🎯 ShirtRefactored: Layer and model scene obtained:', { hasActiveLayer: !!getActiveLayer, hasModelScene: !!modelScene, modelScale });
+  console.log('🎯 ShirtRefactored: Layer and model scene obtained:', { 
+    hasActiveLayer: !!brushSettings.getActiveLayer, 
+    hasModelScene: !!brushSettings.modelScene, 
+    modelScale 
+  });
 
   // Create displacement map for puff print 3D effects
   console.log('🎯 ShirtRefactored: About to define createDisplacementMap function...');
@@ -445,9 +455,7 @@ export function ShirtRefactored({
     // Get or create displacement canvas (reuse if exists)
     let displacementCanvas = useApp.getState().displacementCanvas;
     if (!displacementCanvas) {
-      displacementCanvas = document.createElement('canvas');
-      displacementCanvas.width = 2048;
-      displacementCanvas.height = 2048;
+      displacementCanvas = createDisplacementCanvas();
       useApp.setState({ displacementCanvas });
     }
     
@@ -5798,26 +5806,22 @@ export function ShirtRefactored({
     }
     
     // Pre-create displacement and normal map canvases
-    const displacementCanvas = document.createElement('canvas');
-    displacementCanvas.width = 2048;
-    displacementCanvas.height = 2048;
+    const displacementCanvas = createDisplacementCanvas();
     const dispCtx = displacementCanvas.getContext('2d');
     if (dispCtx) {
       // CRITICAL FIX: Fill with black (0) for no displacement on initial load
-      dispCtx.clearRect(0, 0, 2048, 2048);
+      dispCtx.clearRect(0, 0, CANVAS_CONFIG.DISPLACEMENT.width, CANVAS_CONFIG.DISPLACEMENT.height);
       dispCtx.fillStyle = 'rgb(0, 0, 0)';
-      dispCtx.fillRect(0, 0, 2048, 2048);
+      dispCtx.fillRect(0, 0, CANVAS_CONFIG.DISPLACEMENT.width, CANVAS_CONFIG.DISPLACEMENT.height);
       console.log('🎨 Pre-created black displacement map canvas (no displacement)');
     }
     
-    const normalCanvas = document.createElement('canvas');
-    normalCanvas.width = 2048;
-    normalCanvas.height = 2048;
+    const normalCanvas = createNormalCanvas();
     const normalCtx = normalCanvas.getContext('2d');
     if (normalCtx) {
       // Fill with default normal (pointing up)
       normalCtx.fillStyle = 'rgb(128, 128, 255)';
-      normalCtx.fillRect(0, 0, 2048, 2048);
+      normalCtx.fillRect(0, 0, CANVAS_CONFIG.NORMAL.width, CANVAS_CONFIG.NORMAL.height);
       console.log('🎨 Pre-created normal map canvas');
     }
     

@@ -10,7 +10,7 @@
  */
 
 import * as THREE from 'three';
-import { useAdvancedLayerStore } from '../core/AdvancedLayerSystem';
+import { useAdvancedLayerStoreV2 } from '../core/AdvancedLayerSystemV2';
 import { LayerEffectRenderer } from '../core/LayerEffects';
 
 // ============================================================================

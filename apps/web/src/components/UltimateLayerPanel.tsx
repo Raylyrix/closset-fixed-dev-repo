@@ -12,7 +12,7 @@
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { useAdvancedLayerStore, LayerType, BlendMode, AdvancedLayer } from '../core/AdvancedLayerSystem';
+import { useAdvancedLayerStoreV2, LayerType, BlendMode, AdvancedLayer } from '../core/AdvancedLayerSystemV2';
 import { useApp } from '../App';
 
 export function UltimateLayerPanel() {

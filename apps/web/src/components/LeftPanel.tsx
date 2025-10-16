@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useApp } from '../App';
-import { useAdvancedLayerStore } from '../core/AdvancedLayerSystem';
+import { useAdvancedLayerStoreV2 } from '../core/AdvancedLayerSystemV2';
 import { EnhancedLayerPanel } from './EnhancedLayerPanel';
 import { LAYER_SYSTEM_CONFIG } from '../config/LayerConfig';
 import { layerPersistenceManager } from '../core/LayerPersistenceManager';

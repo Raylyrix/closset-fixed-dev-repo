@@ -5,7 +5,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../App';
-import { useAdvancedLayerStore, LayerUtils, type AdvancedLayer, type LayerGroup, type BlendMode } from '../core/AdvancedLayerSystem';
+import { useAdvancedLayerStoreV2, LayerUtils, type AdvancedLayer, type LayerGroup, type BlendMode } from '../core/AdvancedLayerSystemV2';
 import { Section } from './Section';
 
 interface LayerItemProps {

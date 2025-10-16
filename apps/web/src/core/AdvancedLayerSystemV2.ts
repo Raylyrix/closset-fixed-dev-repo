@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
+import { createLayerCanvas, createComposedCanvas, createDisplacementCanvas, CANVAS_CONFIG } from '../constants/CanvasSizes';
+import { useApp } from '../App';
 
 // Layer Types
 export type LayerType = 'paint' | 'puff' | 'vector' | 'text' | 'image' | 'embroidery' | 'adjustment' | 'group';
@@ -143,6 +145,7 @@ interface AdvancedLayerStoreV2 {
   setLayerOpacity: (id: string, opacity: number) => void;
   setLayerBlendMode: (id: string, blendMode: BlendMode) => void;
   setLayerLocked: (id: string, locked: boolean) => void;
+  setLayerTransform: (id: string, transform: Partial<LayerTransform>) => void;
   
   // Ordering
   moveLayerUp: (id: string) => void;
@@ -241,9 +244,7 @@ const createDefaultContent = (type: LayerType): LayerContent => {
   switch (type) {
     case 'paint':
       // CRITICAL FIX: Create actual canvas for paint layers with correct size
-      const canvas = document.createElement('canvas');
-      canvas.width = 1536; // Match composed canvas size
-      canvas.height = 1536; // Match composed canvas size
+      const canvas = createLayerCanvas();
       return { canvas };
     case 'text':
       return { text: '' };
@@ -450,6 +451,20 @@ export const useAdvancedLayerStoreV2 = create<AdvancedLayerStoreV2>()(
       }));
       
       console.log(`🔒 Set layer ${id} locked: ${locked}`);
+    },
+    
+    setLayerTransform: (id: string, transform: Partial<LayerTransform>) => {
+      set(state => ({
+        layers: state.layers.map(layer => 
+          layer.id === id ? { 
+            ...layer, 
+            transform: { ...layer.transform, ...transform },
+            updatedAt: new Date()
+          } : layer
+        )
+      }));
+      
+      console.log(`🔄 Set layer ${id} transform:`, transform);
     },
     
     // Ordering
@@ -880,12 +895,22 @@ export const useAdvancedLayerStoreV2 = create<AdvancedLayerStoreV2>()(
     // Layer composition
     composeLayers: () => {
       const state = get();
-      const composedCanvas = document.createElement('canvas');
-      composedCanvas.width = 1536;
-      composedCanvas.height = 1536;
+      const composedCanvas = createComposedCanvas();
       const ctx = composedCanvas.getContext('2d');
       
       if (!ctx) return null;
+      
+      // CRITICAL: Preserve the base model texture first
+      const appState = useApp.getState();
+      if (appState.baseTexture) {
+        ctx.drawImage(appState.baseTexture, 0, 0, composedCanvas.width, composedCanvas.height);
+        console.log('🎨 Preserved base model texture in composition');
+      } else {
+        // Fill with white background if no base texture
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, composedCanvas.width, composedCanvas.height);
+        console.log('🎨 No base texture found, filled with white background');
+      }
       
       // Sort layers by order
       const sortedLayers = [...state.layers].sort((a, b) => a.order - b.order);

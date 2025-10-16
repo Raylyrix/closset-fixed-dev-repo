@@ -7,7 +7,7 @@
 
 import { useRef, useEffect, useCallback } from 'react';
 import { useApp } from '../App';
-import { useAdvancedLayerStore } from '../core/AdvancedLayerSystem';
+import { useAdvancedLayerStoreV2 } from '../core/AdvancedLayerSystemV2';
 import { UnifiedLayerBridge } from './UnifiedLayerBridge';
 
 // ============================================================================

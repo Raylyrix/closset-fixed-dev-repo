@@ -1,5 +1,5 @@
 import React from 'react';
-import { useAdvancedLayerStore } from '../core/AdvancedLayerSystem';
+import { useAdvancedLayerStoreV2 } from '../core/AdvancedLayerSystemV2';
 
 const DualViewPanel: React.FC = () => {
   const {

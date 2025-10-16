@@ -7,8 +7,7 @@
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { useApp } from '../App';
-import { useAdvancedLayerStore } from '../core/AdvancedLayerSystem';
-import { layerBridge } from '../core/LayerSystemBridge';
+import { useAdvancedLayerStoreV2 } from '../core/AdvancedLayerSystemV2';
 import { TransformGizmo } from './TransformGizmo';
 
 interface UniversalSelectToolProps {
@@ -46,7 +45,7 @@ export function UniversalSelectTool({ active }: UniversalSelectToolProps) {
     setControlsEnabled
   } = useApp();
 
-  const { layers, selectedLayerIds, setActiveLayer } = useAdvancedLayerStore();
+  const { layers, selectedLayerIds, setActiveLayer } = useAdvancedLayerStoreV2();
 
   // Initialize when tool becomes active
   useEffect(() => {
@@ -286,21 +285,17 @@ export function UniversalSelectTool({ active }: UniversalSelectToolProps) {
     const suggestions = [];
     
     if (selectionState.selectedElements.length > 0) {
-      const { suggestLayerGrouping } = useAdvancedLayerStore.getState();
+      const { autoGroupLayers } = useAdvancedLayerStoreV2.getState();
       const layerIds = selectionState.selectedElements
         .filter(el => el.type === 'layer')
         .map(el => el.id);
       
       if (layerIds.length > 1) {
-        const groupingSuggestions = suggestLayerGrouping(layerIds);
-        suggestions.push(...groupingSuggestions.map(name => ({
+        suggestions.push({
           type: 'group',
-          name: `Group as "${name}"`,
-          action: () => {
-            const groupId = createGroup(name, layerIds);
-            console.log(`Created group: ${name}`);
-          }
-        })));
+          label: 'Group Selected Layers',
+          action: () => autoGroupLayers()
+        });
       }
     }
     
@@ -337,17 +332,15 @@ export function UniversalSelectTool({ active }: UniversalSelectToolProps) {
           break;
         case 'layer':
           // Update layer transform
-          const { updateLayer } = useAdvancedLayerStore.getState();
-          updateLayer(element.id, {
-            transform: {
-              x: (transform.x || 0),
-              y: (transform.y || 0),
-              scaleX: transform.scaleX || 1,
-              scaleY: transform.scaleY || 1,
-              rotation: transform.rotation || 0,
-              skewX: 0,
-              skewY: 0
-            }
+          const { setLayerTransform } = useAdvancedLayerStoreV2.getState();
+          setLayerTransform(element.id, {
+            x: (transform.x || 0),
+            y: (transform.y || 0),
+            scaleX: transform.scaleX || 1,
+            scaleY: transform.scaleY || 1,
+            rotation: transform.rotation || 0,
+            skewX: 0,
+            skewY: 0
           });
           break;
       }
@@ -391,7 +384,7 @@ export function UniversalSelectTool({ active }: UniversalSelectToolProps) {
               deleteShapeElement(element.id);
               break;
             case 'layer':
-              const { deleteLayer } = useAdvancedLayerStore.getState();
+              const { deleteLayer } = useAdvancedLayerStoreV2.getState();
               deleteLayer(element.id);
               break;
           }

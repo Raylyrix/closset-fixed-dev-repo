@@ -13,9 +13,9 @@
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { useAdvancedLayerStore } from '../core/AdvancedLayerSystem';
+import { useAdvancedLayerStoreV2 } from '../core/AdvancedLayerSystemV2';
 import { LayerEffectRenderer, EffectPresets } from '../core/LayerEffects';
-import { LayerEffect, BlendMode } from '../core/AdvancedLayerSystem';
+import { LayerEffect, BlendMode } from '../core/AdvancedLayerSystemV2';
 import { useUnifiedLayerBridge } from '../core/UnifiedLayerBridge';
 import { useToolLayerManager } from '../core/ToolLayerManager';
 
@@ -77,7 +77,7 @@ export function AdvancedLayerPanel({
     deleteGroup,
     toggleGroupCollapse,
     updateLayer
-  } = useAdvancedLayerStore();
+  } = useAdvancedLayerStoreV2();
 
   // Use unified layer bridge for cross-system operations
   const {
@@ -326,7 +326,7 @@ export function AdvancedLayerPanel({
       }}>
         <div style={{ display: 'flex', gap: '4px' }}>
           <button
-            onClick={() => useAdvancedLayerStore.setState({ showLayerEffects: !showLayerEffects })}
+            onClick={() => useAdvancedLayerStoreV2.setState({ showLayerEffects: !showLayerEffects })}
             style={{
               background: showLayerEffects ? '#4a90e2' : 'none',
               border: 'none',
@@ -340,7 +340,7 @@ export function AdvancedLayerPanel({
             Effects
           </button>
           <button
-            onClick={() => useAdvancedLayerStore.setState({ showLayerMasks: !showLayerMasks })}
+            onClick={() => useAdvancedLayerStoreV2.setState({ showLayerMasks: !showLayerMasks })}
             style={{
               background: showLayerMasks ? '#4a90e2' : 'none',
               border: 'none',
@@ -374,7 +374,7 @@ function LayerItem({
   onActivate, 
   onUpdate 
 }: LayerItemProps) {
-  const layer = useAdvancedLayerStore(state => state.layers.get(layerId));
+  const layer = useAdvancedLayerStoreV2(state => state.layers.find(l => l.id === layerId));
   const [isExpanded, setIsExpanded] = useState(true);
   const [showEffects, setShowEffects] = useState(false);
 

@@ -32,8 +32,8 @@ const defaultLayerCreationRules: LayerCreationRule[] = [
     eventType: 'brush-start',
     layerType: 'paint',
     shouldCreateNewLayer: (event, currentLayer) => {
-      // Create new layer if no active layer or if current layer is locked
-      return !currentLayer || currentLayer.locked || currentLayer.type !== 'paint';
+      // Always create new layer for brush strokes to enable separate editing
+      return true;
     },
     getLayerName: (event) => `Brush Stroke ${Date.now()}`
   },
