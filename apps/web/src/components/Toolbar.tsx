@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useApp } from '../App';
 import { CustomSelect } from './CustomSelect';
 import { PuffPrintManager } from './PuffPrintManager';
+import { PerformanceSettings } from './PerformanceSettings';
 
 const tools = [
   { id: 'brush', label: 'Brush' },
@@ -21,7 +22,7 @@ const tools = [
   { id: 'puffPrint', label: 'Puff Print' },
   { id: 'patternMaker', label: 'Pattern Maker' },
   { id: 'embroidery', label: 'Embroidery' },
-  { id: 'advancedSelection', label: 'Selection' },
+  { id: 'universalSelect', label: 'Universal Select' },
   { id: 'vectorTools', label: 'Vector' },
   { id: 'aiAssistant', label: 'AI Assistant' },
   { id: 'printExport', label: 'Export' },
@@ -57,6 +58,7 @@ export function Toolbar() {
   const [checkpoints, setCheckpoints] = useState<CheckpointMeta[]>([]);
   const [selectedId, setSelectedId] = useState<string>('');
   const [saving, setSaving] = useState(false);
+  const [showPerformanceSettings, setShowPerformanceSettings] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const refresh = async () => {
@@ -127,6 +129,14 @@ export function Toolbar() {
           <div className="toolbar-group">
             <button className="btn" onClick={openModelManager} type="button">Models</button>
             <button className="btn" onClick={openBackgroundManager} type="button">Backgrounds</button>
+              <button
+                className="btn"
+                onClick={() => setShowPerformanceSettings(true)}
+                type="button"
+                style={{ backgroundColor: '#007acc', color: '#ffffff' }}
+              >
+                🚀 Performance
+              </button>
             <PuffPrintManager />
           </div>
 
@@ -184,8 +194,14 @@ export function Toolbar() {
 
         </div>
       </div>
-    </div>
-  );
-}
+      
+      {/* Performance Settings Modal */}
+          <PerformanceSettings
+            isOpen={showPerformanceSettings}
+            onClose={() => setShowPerformanceSettings(false)}
+          />
+        </div>
+      );
+    }
 
 

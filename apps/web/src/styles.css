@@ -1,6 +1,14 @@
 /* Import Layout Styles */
 @import './styles/layout.css';
 
+/* Hide scrollbars for panels while keeping scroll functionality */
+.left-panel-container::-webkit-scrollbar,
+.right-panel-container::-webkit-scrollbar,
+.tablet-left-panel-container::-webkit-scrollbar,
+.tablet-right-panel-container::-webkit-scrollbar {
+  display: none;
+}
+
 :root { --bg: #0b0c10; --panel: #111217cc; --muted: #9aa1a9; --accent: #67e8f9; --text: #e5e7eb; --panel-border: #1b1e25; }
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; background: radial-gradient(1200px 600px at 20% -10%, #0f172a 0%, #0a0c10 60%, #0a0c10 100%); color: var(--text); font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
@@ -32,6 +40,19 @@ button, input, select { font: inherit; }
 .canvas-wrap { position: absolute; inset: 0; }
 .canvas-wrap.drawing { cursor: none; }
 .canvas-wrap.drawing canvas, .canvas-wrap.drawing * { cursor: none !important; }
+
+/* Text tool cursor overrides - ensure these have higher specificity */
+.canvas-wrap canvas.cursor-move { cursor: move !important; }
+.canvas-wrap canvas.cursor-text { cursor: text !important; }
+.canvas-wrap canvas.cursor-pointer { cursor: pointer !important; }
+.canvas-wrap canvas.cursor-nw-resize { cursor: nw-resize !important; }
+.canvas-wrap canvas.cursor-ne-resize { cursor: ne-resize !important; }
+.canvas-wrap canvas.cursor-sw-resize { cursor: sw-resize !important; }
+.canvas-wrap canvas.cursor-se-resize { cursor: se-resize !important; }
+.canvas-wrap canvas.cursor-n-resize { cursor: n-resize !important; }
+.canvas-wrap canvas.cursor-s-resize { cursor: s-resize !important; }
+.canvas-wrap canvas.cursor-w-resize { cursor: w-resize !important; }
+.canvas-wrap canvas.cursor-e-resize { cursor: e-resize !important; }
 .cursor-overlay { position: absolute; inset: 0; pointer-events: none; z-index: 10000; }
 .cursor-circle { position: absolute; border-radius: 999px; box-shadow: 0 0 0 1px rgba(0,0,0,0.4) inset; }
 .cursor-crosshair { 

@@ -161,114 +161,90 @@ const VectorToolbar: React.FC<VectorToolbarProps> = ({ isVisible, onClose }) => 
           });
           ctx.stroke();
         } else if (currentTool === 'puffPrint') {
-          // FIXED: Apply puff print to layer canvas like regular puff print (not just displacement)
-          console.log('🎨 FIXED: Applying puff print to path with', sampledPoints.length, 'points');
+          // ========== SMOOTH VECTOR PUFF PRINT ==========
+          console.log('🎨 Vector puff print - ultra-smooth displacement');
           
-          // Get puff settings
           const puffBrushSize = appState.puffBrushSize || 20;
-          const puffBrushOpacity = appState.puffBrushOpacity || 1.0;
           const puffColor = appState.puffColor || '#ff69b4';
-          const puffHeight = appState.puffHeight || 2.0;
+          const puffHeight = appState.puffHeight || 1.0;
+          const puffSoftness = appState.puffSoftness || 0.8;
           
-          // Get the active layer canvas (like regular puff print does)
-          const activeLayerId = appState.activeLayerId;
-          const layers = appState.layers;
-          const activeLayer = layers.find((l: any) => l.id === activeLayerId);
-          
-          if (!activeLayer || !activeLayer.canvas) {
-            console.log('⚠️ No active layer canvas found for puff print');
+          const activeLayer = appState.layers.find((l: any) => l.id === appState.activeLayerId);
+          if (!activeLayer?.canvas || !activeLayer?.displacementCanvas) {
+            console.log('⚠️ No active layer or displacement canvas');
             return;
           }
           
-          const layerCtx = activeLayer.canvas.getContext('2d');
-          if (!layerCtx) return;
+          const layerCtx = activeLayer.canvas.getContext('2d', { willReadFrequently: true });
+          const dispCtx = activeLayer.displacementCanvas.getContext('2d', { willReadFrequently: true });
           
-          // Apply puff to each sampled point on the LAYER CANVAS (for visible texture)
-          sampledPoints.forEach((point: any, index: number) => {
+          if (!layerCtx || !dispCtx) return;
+          
+          const puffRadius = puffBrushSize / 2;
+          const centerHeight = Math.floor(255 * puffHeight);
+          
+          sampledPoints.forEach((point: any) => {
             const x = Math.round(point.u * activeLayer.canvas.width);
             const y = Math.round(point.v * activeLayer.canvas.height);
             
-            // Draw puff color to layer canvas (like regular puff print)
-            layerCtx.save();
+            // STEP 1: Draw puff color
             layerCtx.globalCompositeOperation = 'source-over';
-            layerCtx.globalAlpha = 1.0; // Full opacity for solid puff color
-            
-            const puffSize = puffBrushSize / 2; // Use radius
-            const gradient = layerCtx.createRadialGradient(x, y, 0, x, y, puffSize);
-            gradient.addColorStop(0, puffColor);
-            gradient.addColorStop(1, puffColor); // Solid edge, no transparency
-            
-            layerCtx.fillStyle = gradient;
+            layerCtx.globalAlpha = 1.0;
+            layerCtx.fillStyle = puffColor;
             layerCtx.beginPath();
-            layerCtx.arc(x, y, puffSize, 0, Math.PI * 2);
+            layerCtx.arc(x, y, puffRadius, 0, Math.PI * 2);
             layerCtx.fill();
-            layerCtx.restore();
+            
+            // STEP 2: Draw ultra-smooth displacement with lighten blend
+            dispCtx.globalCompositeOperation = 'lighten'; // Prevents spikes
+            
+            const grad = dispCtx.createRadialGradient(x, y, 0, x, y, puffRadius);
+            
+            // 12-stop cosine gradient for perfect smoothness
+            const stops = 12;
+            for (let i = 0; i <= stops; i++) {
+              const t = i / stops;
+              const cosValue = Math.cos((1 - t) * Math.PI / 2);
+              const height = Math.floor(centerHeight * cosValue * puffSoftness);
+              grad.addColorStop(t, `rgb(${height}, ${height}, ${height})`);
+            }
+            grad.addColorStop(1, 'rgb(0, 0, 0)');
+            
+            dispCtx.fillStyle = grad;
+            dispCtx.beginPath();
+            dispCtx.arc(x, y, puffRadius, 0, Math.PI * 2);
+            dispCtx.fill();
+            
+            dispCtx.globalCompositeOperation = 'source-over'; // Reset
           });
           
-          // Also create displacement maps for 3D effect
-          const displacementCanvas = appState.displacementCanvas;
-          if (displacementCanvas) {
-            const dispCtx = displacementCanvas.getContext('2d');
-            if (dispCtx) {
-              sampledPoints.forEach((point: any, index: number) => {
-                const x = Math.round(point.u * displacementCanvas.width);
-                const y = Math.round(point.v * displacementCanvas.height);
-                
-                // Create displacement map with proper grayscale values
-                dispCtx.save();
-                dispCtx.globalCompositeOperation = 'source-over';
-                
-                const displacementRange = puffHeight * 50;
-                const maxDisplacement = Math.min(255, 128 + displacementRange);
-                const minDisplacement = Math.max(0, 128 - displacementRange * 0.1);
-                
-                const puffSize = puffBrushSize / 2;
-                const dispGradient = dispCtx.createRadialGradient(x, y, 0, x, y, puffSize);
-                dispGradient.addColorStop(0, `rgb(${maxDisplacement}, ${maxDisplacement}, ${maxDisplacement})`);
-                dispGradient.addColorStop(0.7, `rgb(${minDisplacement}, ${minDisplacement}, ${minDisplacement})`);
-                dispGradient.addColorStop(1, `rgb(128, 128, 128)`);
-                
-                dispCtx.fillStyle = dispGradient;
-                dispCtx.beginPath();
-                dispCtx.arc(x, y, puffSize, 0, Math.PI * 2);
-                dispCtx.fill();
-                dispCtx.restore();
-              });
-            }
-          }
-          
-          console.log('🎨 FIXED: Puff texture drawn to layer canvas and displacement maps created');
-          
-          // Update the layer in state
-          const updatedLayers = layers.map((l: any) => 
-            l.id === activeLayerId ? { ...l, canvas: activeLayer.canvas } : l
-          );
-          appState.layers = updatedLayers;
-          
-          console.log('✅ FIXED: Finished applying puff print to path with both texture and displacement');
+          console.log('✅ Vector puff print - smooth displacement applied');
         }
         
         ctx.restore();
       });
       
-      // Trigger composition with longer delay to ensure vector tools finish
+      // Trigger composition and updates
       setTimeout(() => {
-        console.log('🎨 Triggering composeLayers after vector tool application');
+        console.log('🎨 Composing layers after vector tool application');
         appState.composeLayers();
         
-        // FIXED: Also trigger texture update for puff print to ensure both texture and displacement are applied
         if (currentTool === 'puffPrint') {
-          console.log('🎨 FIXED: Triggering texture update for vector puff print');
-          // Dispatch custom event to trigger texture update
+          console.log('🎨 Vector puff - triggering 3D displacement application');
+          // Trigger texture update
           window.dispatchEvent(new CustomEvent('forceModelTextureUpdate'));
           
-          // Also trigger displacement map composition
-          const { composeDisplacementMaps } = appState;
-          if (composeDisplacementMaps) {
-            composeDisplacementMaps();
+          // Compose displacement maps
+          const composedDisp = appState.composeDisplacementMaps();
+          
+          // Apply displacement to model (same as regular puff print)
+          if (composedDisp) {
+            window.dispatchEvent(new CustomEvent('applyPuffDisplacement', { 
+              detail: { displacementCanvas: composedDisp } 
+            }));
           }
         }
-      }, 200);
+      }, 100);
     }
   };
   

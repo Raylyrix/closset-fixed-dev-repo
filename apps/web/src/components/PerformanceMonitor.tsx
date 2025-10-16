@@ -1,104 +1,95 @@
 /**
- * PERFORMANCE MONITOR COMPONENT
+ * 🚀 Performance Monitor Component
  * 
- * Displays real-time performance metrics for debugging
- * Only shown in development mode
+ * Shows real-time performance metrics in the corner of the screen
  */
 
 import React, { useState, useEffect } from 'react';
-import { performanceOptimizer } from '../utils/PerformanceOptimizer';
+import { unifiedPerformanceManager } from '../utils/UnifiedPerformanceManager';
 
-interface PerformanceMetrics {
-  fps: number;
-  deviceTier: 'low' | 'medium' | 'high';
-  textureUpdatesPerSecond: number;
-  canvasRedrawsPerSecond: number;
-  memoryUsage?: number;
-}
-
-export const PerformanceMonitor: React.FC = () => {
-  const [metrics, setMetrics] = useState<PerformanceMetrics>({
-    fps: 60,
-    deviceTier: 'medium',
-    textureUpdatesPerSecond: 4,
-    canvasRedrawsPerSecond: 4
-  });
+export function PerformanceMonitor() {
+  const [metrics, setMetrics] = useState(unifiedPerformanceManager.getPerformanceMetrics());
+  const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
-    if (process.env.NODE_ENV !== 'development') return;
+    const interval = setInterval(() => {
+      setMetrics(unifiedPerformanceManager.getPerformanceMetrics());
+    }, 1000);
 
-    const updateMetrics = () => {
-      const config = performanceOptimizer.getConfig();
-      setMetrics({
-        fps: (performanceOptimizer as any).currentFPS || 60,
-        deviceTier: config.deviceTier,
-        textureUpdatesPerSecond: config.maxTextureUpdatesPerSecond,
-        canvasRedrawsPerSecond: config.maxCanvasRedrawsPerSecond,
-        memoryUsage: (performance as any).memory?.usedJSHeapSize
-      });
-    };
-
-    const interval = setInterval(updateMetrics, 1000);
     return () => clearInterval(interval);
   }, []);
 
-  if (process.env.NODE_ENV !== 'development') return null;
-
-  const getFPSColor = (fps: number) => {
-    if (fps >= 55) return '#4ade80'; // green
-    if (fps >= 30) return '#fbbf24'; // yellow
-    return '#ef4444'; // red
+  const getStatusColor = (fps: number) => {
+    if (fps >= 55) return '#22c55e'; // Green
+    if (fps >= 45) return '#84cc16'; // Yellow-green
+    if (fps >= 30) return '#f59e0b'; // Orange
+    return '#ef4444'; // Red
   };
 
-  const formatMemory = (bytes?: number) => {
-    if (!bytes) return 'N/A';
-    return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  const getStatusText = (fps: number) => {
+    if (fps >= 55) return 'Excellent';
+    if (fps >= 45) return 'Good';
+    if (fps >= 30) return 'Fair';
+    return 'Poor';
   };
+
+  const statusColor = getStatusColor(metrics.averageFPS);
+  const statusText = getStatusText(metrics.averageFPS);
 
   return (
-    <div style={{
-      position: 'fixed',
-      top: '10px',
-      right: '10px',
-      background: 'rgba(0, 0, 0, 0.8)',
-      color: '#fff',
-      padding: '10px',
-      borderRadius: '8px',
-      fontSize: '12px',
-      fontFamily: 'monospace',
-      zIndex: 1000,
-      minWidth: '200px'
-    }}>
-      <div style={{ fontWeight: 'bold', marginBottom: '8px', color: '#60a5fa' }}>
-        🚀 Performance Monitor
+    <div
+      style={{
+        position: 'fixed',
+        top: '10px',
+        right: '10px',
+        zIndex: 1000,
+        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+        color: '#ffffff',
+        padding: '8px 12px',
+        borderRadius: '6px',
+        fontSize: '12px',
+        fontFamily: 'monospace',
+        border: `1px solid ${statusColor}`,
+        cursor: 'pointer',
+        userSelect: 'none',
+        minWidth: '120px'
+      }}
+      onClick={() => setIsVisible(!isVisible)}
+      title="Click to toggle detailed view"
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div
+          style={{
+            width: '8px',
+            height: '8px',
+            borderRadius: '50%',
+            backgroundColor: statusColor
+          }}
+        />
+        <div>
+          <div style={{ fontWeight: 'bold' }}>
+            {Math.round(metrics.averageFPS)} FPS
+          </div>
+          <div style={{ color: '#888888', fontSize: '10px' }}>
+            {statusText}
+          </div>
+        </div>
       </div>
-      
-      <div style={{ marginBottom: '4px' }}>
-        FPS: <span style={{ color: getFPSColor(metrics.fps) }}>{metrics.fps}</span>
-      </div>
-      
-      <div style={{ marginBottom: '4px' }}>
-        Device: <span style={{ color: '#fbbf24' }}>{metrics.deviceTier}</span>
-      </div>
-      
-      <div style={{ marginBottom: '4px' }}>
-        Texture Updates: {metrics.textureUpdatesPerSecond}/s
-      </div>
-      
-      <div style={{ marginBottom: '4px' }}>
-        Canvas Redraws: {metrics.canvasRedrawsPerSecond}/s
-      </div>
-      
-      <div style={{ marginBottom: '4px' }}>
-        Memory: {formatMemory(metrics.memoryUsage)}
-      </div>
-      
-      <div style={{ fontSize: '10px', color: '#9ca3af', marginTop: '8px' }}>
-        Dev Mode Only
-      </div>
+
+      {isVisible && (
+        <div
+          style={{
+            marginTop: '8px',
+            paddingTop: '8px',
+            borderTop: '1px solid #333333',
+            fontSize: '10px'
+          }}
+        >
+          <div>Current: {Math.round(metrics.currentFPS)} FPS</div>
+          <div>Frame Drops: {metrics.frameDrops}</div>
+          <div>Preset: {unifiedPerformanceManager.getPresetName()}</div>
+        </div>
+      )}
     </div>
   );
-};
-
-export default PerformanceMonitor;
-
+}

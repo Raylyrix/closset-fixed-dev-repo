@@ -3,12 +3,23 @@ import { HexColorPicker } from 'react-colorful';
 import { useApp } from '../App';
 import { useLayerManager } from '../stores/LayerManager';
 import { layerIntegration } from '../services/LayerIntegration';
+import { useAdvancedLayerStore } from '../core/AdvancedLayerSystem';
+import { useAdvancedLayerStoreV2, AdvancedLayer, LayerGroup, BlendMode, LayerEffect, LayerMask } from '../core/AdvancedLayerSystemV2';
+import { useAutomaticLayerManager } from '../core/AutomaticLayerManager';
+import { useLayerSelectionSystem } from '../core/LayerSelectionSystem';
 
 interface RightPanelCompactProps {
   activeToolSidebar?: string | null;
 }
 
 export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps) {
+  // Panel height state for resizing
+  const [toolSettingsHeight, setToolSettingsHeight] = React.useState(400);
+  const [isResizing, setIsResizing] = React.useState(false);
+  const [dragStartY, setDragStartY] = React.useState(0);
+  const [dragStartHeight, setDragStartHeight] = React.useState(0);
+
+  // Legacy stores
   const {
     brushColor,
     brushSize,
@@ -82,6 +93,78 @@ export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps)
     updateImportedImage,
     removeImportedImage
   } = useApp();
+
+  // Advanced Layer Store V2
+  const {
+    layers: advancedLayers,
+    groups: advancedGroups,
+    layerOrder: advancedLayerOrder,
+    selectedLayerIds: advancedSelectedLayerIds,
+    activeLayerId: advancedActiveLayerId,
+    createLayer: createAdvancedLayer,
+    deleteLayer: deleteLayer,
+    duplicateLayer: duplicateLayer,
+    renameLayer: renameAdvancedLayer,
+    selectLayer: selectAdvancedLayer,
+    selectLayers: selectAdvancedLayers,
+    clearSelection: clearAdvancedSelection,
+    setActiveLayer: setActiveLayer,
+    setLayerVisibility: setAdvancedLayerVisibility,
+    setLayerOpacity: setLayerOpacity,
+    setLayerBlendMode: setLayerBlendMode,
+    setLayerLocked: setAdvancedLayerLocked,
+    moveLayerUp: moveLayerUp,
+    moveLayerDown: moveLayerDown,
+    moveLayerToTop: moveAdvancedLayerToTop,
+    moveLayerToBottom: moveAdvancedLayerToBottom,
+    createGroup: createGroup,
+    deleteGroup: deleteAdvancedGroup,
+    addToGroup: addToGroup,
+    removeFromGroup: removeFromGroup,
+    toggleGroupCollapse: toggleAdvancedGroupCollapse,
+    autoGroupLayers: autoGroupAdvancedLayers,
+    addEffect,
+    removeEffect,
+    updateEffect,
+    addMask,
+    removeMask,
+    updateMask,
+    toggleMaskEnabled,
+    toggleMaskInverted,
+    generateLayerName: generateAdvancedLayerName
+  } = useAdvancedLayerStoreV2();
+
+  // Automatic Layer Manager
+  const {
+    enableAutoCreation,
+    disableAutoCreation,
+    triggerBrushStart,
+    triggerBrushEnd,
+    triggerTextCreated,
+    triggerShapeCreated,
+    triggerImageImported,
+    triggerPuffApplied,
+    triggerEmbroideryApplied,
+    triggerVectorCreated,
+    isEnabled: autoCreationEnabled,
+    eventHistory,
+    layers: autoManagerLayers,
+    activeLayerId: autoManagerActiveLayerId,
+    selectedLayerIds: autoManagerSelectedLayerIds
+  } = useAutomaticLayerManager();
+
+  // Selection System
+  const {
+    selectedElements,
+    activeElement,
+    selectionMode,
+    clearSelection,
+    setSelectionMode,
+    moveElement,
+    resizeElement,
+  } = useLayerSelectionSystem();
+
+  // Remove old Advanced Layer Store usage - using V2 only
 
   const [activeTab, setActiveTab] = React.useState('brush');
   const [userSelectedTab, setUserSelectedTab] = React.useState(false); // Track if user manually selected a tab
@@ -262,43 +345,79 @@ export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps)
     });
   }, [brushColorMode, brushGradient, puffColorMode, puffGradient, embroideryColorMode, embroideryGradient, textColorMode, textGradient, shapesColorMode, shapesGradient]);
 
-  const tabs = [
-    { id: 'brush', label: 'Brush', icon: '🖌️' },
-    { id: 'puff', label: 'Puff', icon: '☁️' },
-    { id: 'embroidery', label: 'Embroidery', icon: '🧵' },
-    { id: 'text', label: 'Text', icon: '📝' },
-    { id: 'shapes', label: 'Shapes', icon: '🔷' },
-    { id: 'image', label: 'Image', icon: '📷' },
-    { id: 'picker', label: 'Picker', icon: '🎯' },
-    { id: 'symmetry', label: 'Symmetry', icon: '🔄' },
-    { id: 'layers', label: 'Layers', icon: '🎨' }
-  ];
+  // Removed old tabs system - now using activeTool-based display
 
-  // Auto-activate tool settings when tool changes (only if user hasn't manually selected)
+  // PRIORITY 1: Use activeToolSidebar prop from MainLayout if provided
   React.useEffect(() => {
-    if (activeTool && !userSelectedTab) {
-      // Map tools to their corresponding tab IDs
-      const toolToTabMap: { [key: string]: string } = {
-        'brush': 'brush',
-        'eraser': 'brush',
-        'fill': 'brush',
-        'picker': 'picker',
-        'puffPrint': 'puff',
-        'embroidery': 'embroidery',
-        'text': 'text',
-        'shapes': 'shapes',
-        'image': 'image',
-        'symmetry': 'symmetry',
-        'layers': 'layers'
-      };
-      
-      const correspondingTab = toolToTabMap[activeTool];
-      if (correspondingTab && tabs.find(tab => tab.id === correspondingTab)) {
-        setActiveTab(correspondingTab);
-        console.log('🎯 Auto-activated tab:', correspondingTab, 'for tool:', activeTool);
-      }
+    if (activeToolSidebar) {
+      console.log('🎯 Activated tool from activeToolSidebar prop:', activeToolSidebar);
+      setActiveTab(activeToolSidebar as any);
     }
-  }, [activeTool, tabs, userSelectedTab]);
+  }, [activeToolSidebar]);
+
+  // Resize handlers
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setIsResizing(true);
+    setDragStartY(e.clientY);
+    setDragStartHeight(toolSettingsHeight);
+    e.preventDefault();
+  };
+
+  const handleMouseMove = React.useCallback((e: MouseEvent) => {
+    if (!isResizing) return;
+    
+    const deltaY = e.clientY - dragStartY;
+    const newHeight = Math.max(200, Math.min(600, dragStartHeight + deltaY));
+    setToolSettingsHeight(newHeight);
+  }, [isResizing, dragStartY, dragStartHeight]);
+
+  const handleMouseUp = React.useCallback(() => {
+    setIsResizing(false);
+  }, []);
+
+  React.useEffect(() => {
+    if (isResizing) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+      };
+    }
+  }, [isResizing, handleMouseMove, handleMouseUp]);
+
+  // Helper functions for tool display
+  const getToolIcon = (tool: string) => {
+    const toolIcons: { [key: string]: string } = {
+      'brush': '🖌️',
+      'eraser': '🧽',
+      'fill': '🪣',
+      'picker': '🎨',
+      'puffPrint': '☁️',
+      'embroidery': '🧵',
+      'text': '📝',
+      'shapes': '🔷',
+      'image': '📷',
+      'universalSelect': '🎯'
+    };
+    return toolIcons[tool] || '🛠️';
+  };
+
+  const getToolName = (tool: string) => {
+    const toolNames: { [key: string]: string } = {
+      'brush': 'Brush',
+      'eraser': 'Eraser',
+      'fill': 'Fill',
+      'picker': 'Picker',
+      'puffPrint': 'Puff Print',
+      'embroidery': 'Embroidery',
+      'text': 'Text',
+      'shapes': 'Shapes',
+      'image': 'Image',
+      'universalSelect': 'Select'
+    };
+    return toolNames[tool] || 'Tool';
+  };
 
   return (
     <div style={{
@@ -313,16 +432,37 @@ export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps)
       backdropFilter: 'blur(10px)'
     }}>
 
-      {/* Tab Content */}
+      {/* Tool Settings Panel (Top) */}
       <div style={{
-        flex: 1,
-        padding: '12px',
-        overflowY: 'auto',
+        height: `${toolSettingsHeight}px`,
         background: 'rgba(255, 255, 255, 0.02)',
-        backdropFilter: 'blur(10px)'
+        backdropFilter: 'blur(10px)',
+        borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+        display: 'flex',
+        flexDirection: 'column'
       }}>
+        {/* Tool Settings Header */}
+        <div style={{
+          padding: '8px 12px',
+          background: 'rgba(255, 255, 255, 0.05)',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+          fontSize: '10px',
+          color: '#a0aec0',
+          fontWeight: '700',
+          textTransform: 'uppercase',
+          letterSpacing: '1px'
+        }}>
+          {activeTool ? `${getToolIcon(activeTool)} ${getToolName(activeTool)} Settings` : 'Tool Settings'}
+        </div>
+
+        {/* Tool Settings Content */}
+        <div style={{
+          flex: 1,
+          padding: '12px',
+          overflowY: 'auto'
+        }}>
         {/* Brush Settings */}
-        {activeTab === 'brush' && (
+        {(activeTool === 'brush' || activeTool === 'eraser' || activeTool === 'fill') && (
           <div onClick={(e) => e.stopPropagation()}>
             <div style={{
               fontSize: '11px',
@@ -739,7 +879,7 @@ export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps)
         )}
 
         {/* Puff Print Settings */}
-        {activeTab === 'puff' && (
+        {activeTool === 'puffPrint' && (
           <div onClick={(e) => e.stopPropagation()}>
             <div style={{
               fontSize: '10px',
@@ -1086,7 +1226,7 @@ export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps)
         )}
 
         {/* Embroidery Settings */}
-        {activeTab === 'embroidery' && (
+        {activeTool === 'embroidery' && (
           <div onClick={(e) => e.stopPropagation()}>
             <div style={{
               fontSize: '10px',
@@ -1388,10 +1528,29 @@ export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps)
                   fontSize: '9px'
                 }}
               >
-                <option value="straight">Straight</option>
-                <option value="zigzag">Zigzag</option>
-                <option value="satin">Satin</option>
-                <option value="fill">Fill</option>
+                <option value="satin">Satin Stitch</option>
+                <option value="cross-stitch">Cross Stitch</option>
+                <option value="chain">Chain Stitch</option>
+                <option value="french-knot">French Knot</option>
+                <option value="french_knot">French Knot (Alt)</option>
+                <option value="seed">Seed Stitch</option>
+                <option value="backstitch">Backstitch</option>
+                <option value="running">Running Stitch</option>
+                <option value="stem">Stem Stitch</option>
+                <option value="split">Split Stitch</option>
+                <option value="cable">Cable Stitch</option>
+                <option value="coral">Coral Stitch</option>
+                <option value="feather">Feather Stitch</option>
+                <option value="fly">Fly Stitch</option>
+                <option value="herringbone">Herringbone</option>
+                <option value="lazy-daisy">Lazy Daisy</option>
+                <option value="long-short">Long & Short</option>
+                <option value="padded-satin">Padded Satin</option>
+                <option value="pistil">Pistil Stitch</option>
+                <option value="satin-fill">Satin Fill</option>
+                <option value="straight">Straight Stitch</option>
+                <option value="whip">Whip Stitch</option>
+                <option value="zigzag">Zigzag Stitch</option>
               </select>
             </div>
 
@@ -1424,7 +1583,7 @@ export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps)
         )}
 
         {/* Text Settings */}
-        {activeTab === 'text' && (
+        {activeTool === 'text' && (
           <div onClick={(e) => e.stopPropagation()}>
             <div style={{
               fontSize: '10px',
@@ -1437,36 +1596,84 @@ export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps)
               📝 Text Tools
             </div>
 
-            {/* Text Selection */}
+            {/* Instructions (when no text exists) */}
+            {(() => {
+              const { textElements } = useApp.getState();
+              
+              // Show instructions ONLY if no text exists at all
+              if (textElements.length === 0) {
+                return (
+                  <div style={{ 
+                    marginBottom: '12px', 
+                    padding: '12px', 
+                    background: 'rgba(255,255,255,0.05)', 
+                    borderRadius: '6px',
+                    border: '1px dashed rgba(255,255,255,0.2)'
+                  }}>
+                    <div style={{ fontSize: '10px', color: '#FFF', marginBottom: '6px', fontWeight: '600' }}>
+                      ✏️ How to Use Text Tool
+                    </div>
+                    <div style={{ fontSize: '8px', color: '#CCC', lineHeight: '1.4' }}>
+                      1. Click on the model to create new text<br/>
+                      2. Click on existing text to select and edit it<br/>
+                      3. Drag selected text to move it<br/>
+                      4. Drag corner anchors to resize
+                    </div>
+                  </div>
+                );
+              }
+              return null;
+            })()}
+
+            {/* Text Selection Dropdown (always show if text exists) */}
             {(() => {
               const { textElements, activeTextId, selectTextElement } = useApp.getState();
-              return (
-            <div style={{ marginBottom: '8px' }}>
-                  <div style={{ fontSize: '9px', color: '#CCC', marginBottom: '4px' }}>
-                    Select Text to Edit
+              
+              // Show selector if any text exists
+              if (textElements.length > 0) {
+                return (
+                  <div style={{ marginBottom: '8px' }}>
+                    <div style={{ fontSize: '9px', color: '#CCC', marginBottom: '4px' }}>
+                      Select Text to Edit
+                    </div>
+                    <select
+                      value={activeTextId || ''}
+                      onChange={(e) => {
+                        const selectedId = e.target.value || null;
+                        selectTextElement(selectedId);
+                        
+                        // CRITICAL: Trigger texture update to show selection border
+                        if (selectedId) {
+                          setTimeout(() => {
+                            const { composeLayers } = useApp.getState();
+                            composeLayers();
+                            if ((window as any).updateModelTexture) {
+                              (window as any).updateModelTexture(true, false);
+                            }
+                          }, 50);
+                        }
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '4px',
+                        background: '#000000',
+                        color: '#FFFFFF',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '4px',
+                        fontSize: '9px'
+                      }}
+                    >
+                      <option value="">-- Click text on model to select --</option>
+                      {textElements.map((text, index) => (
+                        <option key={text.id} value={text.id}>
+                          {index + 1}. "{text.text}" ({text.fontSize}px)
+                        </option>
+                      ))}
+                    </select>
                   </div>
-                  <select
-                    value={activeTextId || ''}
-                    onChange={(e) => selectTextElement(e.target.value || null)}
-                    style={{
-                      width: '100%',
-                      padding: '4px',
-                      background: '#000000',
-                      color: '#FFFFFF',
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
-                      borderRadius: '4px',
-                      fontSize: '9px'
-                    }}
-                  >
-                    <option value="">-- Select text to edit --</option>
-                    {textElements.map((text, index) => (
-                      <option key={text.id} value={text.id}>
-                        {index + 1}. "{text.text}" ({text.fontSize}px)
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              );
+                );
+              }
+              return null;
             })()}
 
             {/* Google Fonts Loader */}
@@ -1708,6 +1915,255 @@ export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps)
                       }}
                       style={{ width: '100%', accentColor: '#0066CC' }}
                     />
+                    
+                    {/* Precise Font Size Input */}
+                    <div style={{ display: 'flex', gap: '4px', marginTop: '4px', alignItems: 'center' }}>
+                      <span style={{ fontSize: '8px', color: '#999', minWidth: '30px' }}>Size:</span>
+                      <input
+                        type="number"
+                        min="8"
+                        max="1000"
+                        value={activeText.fontSize}
+                        onChange={(e) => {
+                          const newSize = parseInt(e.target.value) || 8;
+                          updateTextElement(activeTextId, { fontSize: Math.max(8, Math.min(1000, newSize)) });
+                        }}
+                        style={{
+                          flex: '1',
+                          padding: '4px',
+                fontSize: '9px',
+                          background: '#1a1a1a',
+                          border: '1px solid #444',
+                          borderRadius: '3px',
+                          color: '#FFF',
+                          width: '60px'
+                        }}
+                      />
+                      <span style={{ fontSize: '8px', color: '#999' }}>px</span>
+                    </div>
+                  </div>
+                  
+                  {/* Position Controls */}
+                  <div style={{ marginBottom: '6px' }}>
+                    <div style={{ fontSize: '8px', color: '#CCC', marginBottom: '4px' }}>Position</div>
+                    <div style={{ display: 'flex', gap: '4px', marginBottom: '4px' }}>
+                      <div style={{ flex: '1' }}>
+                        <div style={{ fontSize: '8px', color: '#999', marginBottom: '2px' }}>X:</div>
+              <input
+                          type="number"
+                          min="0"
+                          max="1"
+                          step="0.001"
+                          value={(activeText.u || 0.5).toFixed(3)}
+                          onChange={(e) => {
+                            const newU = parseFloat(e.target.value);
+                            if (!isNaN(newU)) {
+                              updateTextElement(activeTextId, { u: Math.max(0, Math.min(1, newU)) });
+                            }
+                          }}
+                style={{
+                  width: '100%',
+                            padding: '4px',
+                            fontSize: '9px',
+                            background: '#1a1a1a',
+                            border: '1px solid #444',
+                            borderRadius: '3px',
+                            color: '#FFF'
+                          }}
+                        />
+                      </div>
+                      <div style={{ flex: '1' }}>
+                        <div style={{ fontSize: '8px', color: '#999', marginBottom: '2px' }}>Y:</div>
+                        <input
+                          type="number"
+                          min="0"
+                          max="1"
+                          step="0.001"
+                          value={(activeText.v || 0.5).toFixed(3)}
+                          onChange={(e) => {
+                            const newV = parseFloat(e.target.value);
+                            if (!isNaN(newV)) {
+                              updateTextElement(activeTextId, { v: Math.max(0, Math.min(1, newV)) });
+                            }
+                          }}
+                          style={{
+                            width: '100%',
+                            padding: '4px',
+                            fontSize: '9px',
+                            background: '#1a1a1a',
+                            border: '1px solid #444',
+                            borderRadius: '3px',
+                            color: '#FFF'
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        updateTextElement(activeTextId, { u: 0.5, v: 0.5 });
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '4px',
+                        fontSize: '9px',
+                        background: '#2a2a2a',
+                        border: '1px solid #444',
+                        borderRadius: '3px',
+                        color: '#CCC',
+                  cursor: 'pointer'
+                }}
+                    >
+                      Center Text
+                    </button>
+                  </div>
+                  
+                  {/* Layer Ordering */}
+                  <div style={{ marginBottom: '6px' }}>
+                    <div style={{ fontSize: '8px', color: '#CCC', marginBottom: '4px' }}>Layer Order</div>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      <button
+                        onClick={() => {
+                          const maxZIndex = Math.max(...textElements.map(t => t.zIndex || 0), 0);
+                          updateTextElement(activeTextId, { zIndex: maxZIndex + 1 });
+                        }}
+                        style={{
+                          flex: '1',
+                          padding: '6px',
+                          fontSize: '9px',
+                          background: '#2a2a2a',
+                          border: '1px solid #444',
+                          borderRadius: '3px',
+                          color: '#CCC',
+                          cursor: 'pointer'
+                        }}
+                        title="Bring text to front"
+                      >
+                        📤 To Front
+                      </button>
+                      <button
+                        onClick={() => {
+                          const minZIndex = Math.min(...textElements.map(t => t.zIndex || 0), 0);
+                          updateTextElement(activeTextId, { zIndex: minZIndex - 1 });
+                        }}
+                        style={{
+                          flex: '1',
+                          padding: '6px',
+                          fontSize: '9px',
+                          background: '#2a2a2a',
+                          border: '1px solid #444',
+                          borderRadius: '3px',
+                          color: '#CCC',
+                          cursor: 'pointer'
+                        }}
+                        title="Send text to back"
+                      >
+                        📥 To Back
+                      </button>
+                    </div>
+                    <div style={{ fontSize: '8px', color: '#666', marginTop: '4px', fontStyle: 'italic' }}>
+                      Z-Index: {activeText.zIndex || 0}
+                    </div>
+                  </div>
+                  
+                  {/* Text Stroke/Outline */}
+                  <div style={{ marginBottom: '6px' }}>
+                    <div style={{ fontSize: '8px', color: '#CCC', marginBottom: '4px' }}>Stroke/Outline</div>
+                    
+                    {/* Enable Stroke Toggle */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                      <input
+                        type="checkbox"
+                        checked={!!(activeText.stroke && activeText.stroke.width > 0)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            updateTextElement(activeTextId, { 
+                              stroke: { width: 2, color: '#000000' } 
+                            });
+                          } else {
+                            updateTextElement(activeTextId, { 
+                              stroke: { width: 0, color: '#000000' } 
+                            });
+                          }
+                        }}
+                        style={{ cursor: 'pointer' }}
+                      />
+                      <span style={{ fontSize: '9px', color: '#CCC' }}>Enable Stroke</span>
+                    </div>
+                    
+                    {/* Stroke Controls (only show if enabled) */}
+                    {activeText.stroke && activeText.stroke.width > 0 && (
+                      <>
+                        {/* Stroke Width */}
+                        <div style={{ marginBottom: '6px' }}>
+                          <div style={{ fontSize: '8px', color: '#999', marginBottom: '2px' }}>
+                            Width: {activeText.stroke.width}px
+                </div>
+                          <input
+                            type="range"
+                            min="1"
+                            max="20"
+                            value={activeText.stroke.width}
+                            onChange={(e) => {
+                              updateTextElement(activeTextId, { 
+                                stroke: { 
+                                  ...activeText.stroke!, 
+                                  width: parseInt(e.target.value) 
+                                } 
+                              });
+                            }}
+                            style={{ width: '100%', accentColor: '#0066CC' }}
+                          />
+                        </div>
+                        
+                        {/* Stroke Color */}
+                        <div style={{ marginBottom: '6px' }}>
+                          <div style={{ fontSize: '8px', color: '#999', marginBottom: '2px' }}>Color</div>
+                          <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                            <input
+                              type="color"
+                              value={activeText.stroke.color}
+                              onChange={(e) => {
+                                updateTextElement(activeTextId, { 
+                                  stroke: { 
+                                    ...activeText.stroke!, 
+                                    color: e.target.value 
+                                  } 
+                                });
+                              }}
+                              style={{
+                                width: '40px',
+                                height: '24px',
+                                border: '1px solid #444',
+                                borderRadius: '3px',
+                                cursor: 'pointer',
+                                background: 'none'
+                              }}
+                            />
+                <input
+                  type="text"
+                              value={activeText.stroke.color}
+                  onChange={(e) => {
+                                updateTextElement(activeTextId, { 
+                                  stroke: { 
+                                    ...activeText.stroke!, 
+                                    color: e.target.value 
+                                  } 
+                                });
+                              }}
+                              style={{
+                                flex: '1',
+                                padding: '4px',
+                                fontSize: '9px',
+                                background: '#1a1a1a',
+                                border: '1px solid #444',
+                                borderRadius: '3px',
+                                color: '#fff'
+                              }}
+                            />
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
 
                   {/* Text Color/Gradient Mode */}
@@ -1718,14 +2174,14 @@ export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps)
                     <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
                       <button
                         onClick={() => setTextColorMode('solid')}
-                        style={{
-                          flex: 1,
+                  style={{
+                    flex: 1,
                           padding: '4px',
-                  fontSize: '8px',
+                    fontSize: '8px',
                           background: textColorMode === 'solid' ? '#0066CC' : 'rgba(255,255,255,0.1)',
                           color: textColorMode === 'solid' ? '#FFFFFF' : '#CCC',
                           border: '1px solid rgba(255,255,255,0.2)',
-                          borderRadius: '3px',
+                    borderRadius: '3px',
                           cursor: 'pointer',
                           fontWeight: '600'
                         }}
@@ -1973,7 +2429,7 @@ export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps)
                         }}
                       >
                         Underline
-                      </button>
+                </button>
               </div>
             </div>
 
@@ -2097,6 +2553,156 @@ export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps)
                       onChange={(e) => updateTextElement(activeTextId, { rotation: parseInt(e.target.value) * Math.PI / 180 })}
                       style={{ width: '100%', accentColor: '#0066CC' }}
                     />
+                    
+                    {/* Rotation Quick Actions */}
+                    {/* Rotation Angle Slider */}
+                    <div style={{ marginTop: '6px', marginBottom: '4px' }}>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '4px' }}>
+                        <span style={{ fontSize: '8px', color: '#999', minWidth: '35px' }}>Angle:</span>
+                        <input
+                          type="range"
+                          min="0"
+                          max="360"
+                          step="1"
+                          value={((activeText.rotation || 0) * 180 / Math.PI) % 360}
+                          onChange={(e) => {
+                            const degrees = parseFloat(e.target.value);
+                            const radians = (degrees * Math.PI) / 180;
+                            updateTextElement(activeTextId, { rotation: radians });
+                          }}
+                          style={{
+                            flex: '1',
+                            height: '20px',
+                            cursor: 'pointer',
+                            accentColor: '#007bff'
+                          }}
+                        />
+                        <input
+                          type="number"
+                          min="0"
+                          max="360"
+                          step="0.1"
+                          value={parseFloat((((activeText.rotation || 0) * 180 / Math.PI) % 360).toFixed(1))}
+                          onChange={(e) => {
+                            let degrees = parseFloat(e.target.value) || 0;
+                            // Normalize to 0-360 range
+                            degrees = ((degrees % 360) + 360) % 360;
+                            const radians = (degrees * Math.PI) / 180;
+                            updateTextElement(activeTextId, { rotation: radians });
+                          }}
+                          style={{
+                            width: '60px',
+                            padding: '4px',
+                            fontSize: '10px',
+                            background: '#1a1a1a',
+                            border: '1px solid #444',
+                            borderRadius: '3px',
+                            color: '#fff',
+                            textAlign: 'center'
+                          }}
+                        />
+                        <span style={{ fontSize: '9px', color: '#999' }}>°</span>
+                      </div>
+                      
+                      {/* Reset to 0° button */}
+                      <button
+                        onClick={() => {
+                          updateTextElement(activeTextId, { rotation: 0 });
+                        }}
+                        style={{
+                          width: '100%',
+                          padding: '4px',
+                fontSize: '9px',
+                          background: '#2a2a2a',
+                          border: '1px solid #444',
+                          borderRadius: '3px',
+                color: '#CCC',
+                          cursor: 'pointer',
+                          marginBottom: '6px'
+                        }}
+                        title="Reset rotation to 0°"
+                      >
+                        ↺ Reset (0°)
+                      </button>
+                    </div>
+                    
+                    {/* Quick Rotation Actions */}
+                    <div style={{ display: 'flex', gap: '4px', marginTop: '4px', flexWrap: 'wrap' }}>
+                      <button
+                        onClick={() => {
+                          const currentRotation = (activeText.rotation || 0) * 180 / Math.PI;
+                          updateTextElement(activeTextId, { rotation: (currentRotation + 90) * Math.PI / 180 });
+                        }}
+                        style={{
+                          flex: '1',
+                          padding: '4px 6px',
+                          fontSize: '9px',
+                          background: '#2a2a2a',
+                          border: '1px solid #444',
+                          borderRadius: '3px',
+                          color: '#CCC',
+                          cursor: 'pointer'
+                        }}
+                        title="Rotate 90° clockwise"
+                      >
+                        ↻ 90°
+                      </button>
+                      <button
+                        onClick={() => {
+                          const currentRotation = (activeText.rotation || 0) * 180 / Math.PI;
+                          updateTextElement(activeTextId, { rotation: (currentRotation + 180) * Math.PI / 180 });
+                        }}
+                        style={{
+                          flex: '1',
+                          padding: '4px 6px',
+                          fontSize: '9px',
+                          background: '#2a2a2a',
+                          border: '1px solid #444',
+                          borderRadius: '3px',
+                          color: '#CCC',
+                          cursor: 'pointer'
+                        }}
+                        title="Rotate 180°"
+                      >
+                        ↻ 180°
+                      </button>
+                      <button
+                        onClick={() => {
+                          updateTextElement(activeTextId, { scaleX: -(activeText.scaleX || 1) });
+                        }}
+                        style={{
+                          flex: '1',
+                          padding: '4px 6px',
+                          fontSize: '9px',
+                          background: '#2a2a2a',
+                          border: '1px solid #444',
+                          borderRadius: '3px',
+                          color: '#CCC',
+                          cursor: 'pointer'
+                        }}
+                        title="Flip horizontal"
+                      >
+                        ⇄ Flip H
+                      </button>
+                      <button
+                        onClick={() => {
+                          updateTextElement(activeTextId, { scaleY: -(activeText.scaleY || 1) });
+                        }}
+                        style={{
+                          flex: '1',
+                          padding: '4px 6px',
+                          fontSize: '9px',
+                          background: '#2a2a2a',
+                          border: '1px solid #444',
+                          borderRadius: '3px',
+                          color: '#CCC',
+                          cursor: 'pointer'
+                        }}
+                        title="Flip vertical"
+                      >
+                        ⇵ Flip V
+                      </button>
+                    </div>
                   </div>
 
                   {/* Opacity */}
@@ -2558,7 +3164,7 @@ export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps)
         )}
 
         {/* Image Settings */}
-        {activeTab === 'image' && (
+        {(activeTool === 'image' || activeTool === 'importImage') && (
           <div onClick={(e) => e.stopPropagation()}>
             <div style={{
               fontSize: '11px',
@@ -2688,7 +3294,7 @@ export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps)
                           border: selectedImageId === img.id
                             ? '1px solid rgba(0, 150, 255, 0.5)'
                             : '1px solid rgba(255, 255, 255, 0.1)',
-                          borderRadius: '4px',
+                  borderRadius: '4px',
                           cursor: 'pointer',
                           transition: 'all 0.2s ease',
                           display: 'flex',
@@ -2995,8 +3601,8 @@ export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps)
                           <option value="lighten">Lighten</option>
                           <option value="difference">Difference</option>
                           <option value="exclusion">Exclusion</option>
-                        </select>
-                      </div>
+              </select>
+            </div>
 
                       {/* Action Buttons */}
                       <div style={{ display: 'flex', gap: '4px', marginBottom: '12px' }}>
@@ -3148,7 +3754,7 @@ export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps)
         )}
 
         {/* Picker Settings */}
-        {activeTab === 'picker' && (
+        {activeTool === 'picker' && (
           <div onClick={(e) => e.stopPropagation()}>
             <div style={{
               fontSize: '10px',
@@ -3291,7 +3897,7 @@ export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps)
         )}
 
         {/* Symmetry Settings */}
-        {activeTab === 'symmetry' && (
+        {(activeTool === 'symmetry' || activeTool === 'symmetryX' || activeTool === 'symmetryY' || activeTool === 'symmetryZ') && (
           <div onClick={(e) => e.stopPropagation()}>
             <div style={{
               fontSize: '10px',
@@ -3366,7 +3972,7 @@ export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps)
           </div>
         )}
 
-        {/* Layer Settings */}
+        {/* Advanced Layer Settings */}
         {activeTab === 'layers' && (
           <div onClick={(e) => e.stopPropagation()}>
             <div style={{
@@ -3378,7 +3984,7 @@ export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps)
               letterSpacing: '1px',
               textShadow: '0 1px 2px rgba(0, 0, 0, 0.3)'
             }}>
-              🎨 Layer Settings
+              🎨 Advanced Layer System
             </div>
             
             {/* Active Layer Info */}
@@ -3399,10 +4005,176 @@ export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps)
                 color: '#a0aec0'
               }}>
                 {(() => {
-                  const { activeLayerId, layers } = useLayerManager.getState();
-                  const activeLayer = activeLayerId ? layers.get(activeLayerId) : null;
+                  const activeLayer = advancedActiveLayerId ? advancedLayers.find(l => l.id === advancedActiveLayerId) : null;
                   return activeLayer ? `${activeLayer.name} (${activeLayer.type})` : 'No active layer';
                 })()}
+              </div>
+            </div>
+
+            {/* Layer Controls */}
+            <div style={{ marginBottom: '12px' }}>
+              <div style={{
+                fontSize: '9px',
+                color: '#CCC',
+                marginBottom: '6px'
+              }}>
+                Quick Actions
+              </div>
+              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                <button
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: '#007acc',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '3px',
+                    cursor: 'pointer',
+                    fontSize: '9px'
+                  }}
+                  onClick={() => createAdvancedLayer('paint', 'New Layer')}
+                >
+                  ➕ New Layer
+                </button>
+                <button
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: '#28a745',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '3px',
+                    cursor: 'pointer',
+                    fontSize: '9px'
+                  }}
+                  onClick={() => createGroup('New Group')}
+                >
+                  📁 New Group
+                </button>
+                <button
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: '#ffc107',
+                    color: '#000000',
+                    border: 'none',
+                    borderRadius: '3px',
+                    cursor: 'pointer',
+                    fontSize: '9px'
+                  }}
+                  onClick={() => console.log('Auto organize not available in V2')}
+                >
+                  🤖 Auto Organize
+                </button>
+              </div>
+            </div>
+
+            {/* Layer List */}
+            <div style={{ marginBottom: '12px' }}>
+              <div style={{
+                fontSize: '9px',
+                color: '#CCC',
+                marginBottom: '6px'
+              }}>
+                Layers ({advancedLayerOrder.length})
+              </div>
+              <div style={{
+                maxHeight: '200px',
+                overflowY: 'auto',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: '4px',
+                padding: '4px'
+              }}>
+                {advancedLayerOrder.length === 0 ? (
+                  <div style={{
+                    padding: '8px',
+                    color: '#888888',
+                    fontSize: '9px',
+                    textAlign: 'center',
+                    fontStyle: 'italic'
+                  }}>
+                    No layers yet. Create one!
+                  </div>
+                ) : (
+                  advancedLayerOrder.map(layerId => {
+                    const layer = advancedLayers.find(l => l.id === layerId);
+                    if (!layer) return null;
+                    const isActive = layer.id === advancedActiveLayerId;
+
+                    return (
+                      <div
+                        key={layer.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          padding: '4px 6px',
+                          marginBottom: '2px',
+                          backgroundColor: isActive ? '#007acc' : 'rgba(255, 255, 255, 0.05)',
+                          borderRadius: '3px',
+                          cursor: 'pointer',
+                          fontSize: '9px',
+                          border: isActive ? '1px solid #005f99' : '1px solid transparent'
+                        }}
+                        onClick={() => setActiveLayer(layer.id)}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={layer.visible}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            setAdvancedLayerVisibility(layer.id, !layer.visible);
+                          }}
+                          style={{ marginRight: '6px', transform: 'scale(0.8)' }}
+                        />
+                        <span style={{ flexGrow: 1, color: isActive ? '#ffffff' : '#cccccc' }}>
+                          {layer.name}
+                        </span>
+                        <input
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.01"
+                          value={layer.opacity}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            setLayerOpacity(layer.id, parseFloat(e.target.value));
+                          }}
+                          style={{ width: '40px', marginRight: '4px', transform: 'scale(0.8)' }}
+                        />
+                        <button
+                          onClick={(e) => { 
+                            e.stopPropagation(); 
+                            duplicateLayer(layer.id); 
+                          }}
+                          style={{ 
+                            background: 'none', 
+                            border: 'none', 
+                            color: '#cccccc', 
+                            cursor: 'pointer', 
+                            marginRight: '2px',
+                            fontSize: '8px'
+                          }}
+                          title="Duplicate Layer"
+                        >
+                          📋
+                        </button>
+                        <button
+                          onClick={(e) => { 
+                            e.stopPropagation(); 
+                            deleteLayer(layer.id); 
+                          }}
+                          style={{ 
+                            background: 'none', 
+                            border: 'none', 
+                            color: '#dc3545', 
+                            cursor: 'pointer',
+                            fontSize: '8px'
+                          }}
+                          title="Delete Layer"
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
               </div>
             </div>
 
@@ -3510,7 +4282,7 @@ export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps)
               }}>
                 {(() => {
                   const { layers, layerOrder } = useLayerManager.getState();
-                  const totalLayers = layerOrder.length;
+                  const totalLayers = advancedLayerOrder.length;
                   const visibleLayers = layerOrder.filter(id => {
                     const layer = layers.get(id);
                     return layer && layer.visible;
@@ -3584,8 +4356,1122 @@ export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps)
           </div>
         )}
 
+        {/* Advanced Layers V2 System */}
+        {activeTab === 'advancedLayers' && (
+          <div onClick={(e) => e.stopPropagation()}>
+            <div style={{
+              fontSize: '11px',
+              color: '#a0aec0',
+              fontWeight: '700',
+              marginBottom: '10px',
+              textTransform: 'uppercase',
+              letterSpacing: '1px',
+              textShadow: '0 1px 2px rgba(0, 0, 0, 0.3)'
+            }}>
+              🚀 Advanced Layers V2
+            </div>
+            
+            {/* Auto-Creation Controls */}
+            <div style={{ marginBottom: '12px' }}>
+              <div style={{
+                fontSize: '9px',
+                color: '#CCC',
+                marginBottom: '6px'
+              }}>
+                Auto-Creation
+              </div>
+              <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                <button
+                  onClick={() => autoCreationEnabled ? disableAutoCreation() : enableAutoCreation()}
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: autoCreationEnabled ? '#28a745' : '#dc3545',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '3px',
+                    cursor: 'pointer',
+                    fontSize: '9px'
+                  }}
+                >
+                  {autoCreationEnabled ? '✅ Enabled' : '❌ Disabled'}
+                </button>
+                <span style={{ fontSize: '8px', color: '#888' }}>
+                  {autoCreationEnabled ? 'Layers created automatically' : 'Manual layer creation'}
+                </span>
+              </div>
+            </div>
+
+            {/* Selection Information */}
+            <div style={{ marginBottom: '12px' }}>
+              <div style={{
+                fontSize: '9px',
+                color: '#CCC',
+                marginBottom: '6px'
+              }}>
+                Selection
+              </div>
+              <div style={{ display: 'flex', gap: '4px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '8px', color: '#888' }}>
+                  {selectedElements.length > 0 
+                    ? `${selectedElements.length} element${selectedElements.length > 1 ? 's' : ''} selected`
+                    : 'No elements selected'
+                  }
+                </span>
+                {selectedElements.length > 0 && (
+                  <button
+                    onClick={clearSelection}
+                    style={{
+                      padding: '2px 6px',
+                      backgroundColor: '#dc3545',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '3px',
+                      cursor: 'pointer',
+                      fontSize: '8px'
+                    }}
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+              {activeElement && (
+                <div style={{ marginTop: '4px', fontSize: '8px', color: '#aaa' }}>
+                  Active: {activeElement.type} ({activeElement.id.slice(0, 8)}...)
+                </div>
+              )}
+            </div>
+
+            {/* Active Layer Info */}
+            <div style={{ marginBottom: '12px' }}>
+              <div style={{
+                fontSize: '9px',
+                color: '#CCC',
+                marginBottom: '4px'
+              }}>
+                Active Layer
+              </div>
+              <div style={{
+                padding: '6px 8px',
+                background: 'rgba(255, 255, 255, 0.05)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: '4px',
+                fontSize: '10px',
+                color: '#a0aec0'
+              }}>
+                {(() => {
+                  const activeLayer = advancedActiveLayerId 
+                    ? advancedLayers.find(layer => layer.id === advancedActiveLayerId)
+                    : null;
+                  return activeLayer ? `${activeLayer.name} (${activeLayer.type})` : 'No active layer';
+                })()}
+              </div>
+            </div>
+
+            {/* Layer Creation Controls */}
+            <div style={{ marginBottom: '12px' }}>
+              <div style={{
+                fontSize: '9px',
+                color: '#CCC',
+                marginBottom: '6px'
+              }}>
+                Create Layers
+              </div>
+              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                <button
+                  onClick={() => createAdvancedLayer('paint', generateAdvancedLayerName('paint'))}
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: '#007acc',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '3px',
+                    cursor: 'pointer',
+                    fontSize: '9px'
+                  }}
+                >
+                  🎨 Paint
+                </button>
+                <button
+                  onClick={() => createAdvancedLayer('text', generateAdvancedLayerName('text'))}
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: '#6f42c1',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '3px',
+                    cursor: 'pointer',
+                    fontSize: '9px'
+                  }}
+                >
+                  📝 Text
+                </button>
+                <button
+                  onClick={() => createAdvancedLayer('vector', generateAdvancedLayerName('vector'))}
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: '#20c997',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '3px',
+                    cursor: 'pointer',
+                    fontSize: '9px'
+                  }}
+                >
+                  🔷 Vector
+                </button>
+                <button
+                  onClick={() => createAdvancedLayer('puff', generateAdvancedLayerName('puff'))}
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: '#fd7e14',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '3px',
+                    cursor: 'pointer',
+                    fontSize: '9px'
+                  }}
+                >
+                  ☁️ Puff
+                </button>
+                <button
+                  onClick={() => createAdvancedLayer('embroidery', generateAdvancedLayerName('embroidery'))}
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: '#e83e8c',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '3px',
+                    cursor: 'pointer',
+                    fontSize: '9px'
+                  }}
+                >
+                  🧵 Embroidery
+                </button>
+                <button
+                  onClick={() => createAdvancedLayer('image', generateAdvancedLayerName('image'))}
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: '#17a2b8',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '3px',
+                    cursor: 'pointer',
+                    fontSize: '9px'
+                  }}
+                >
+                  📷 Image
+                </button>
+              </div>
+            </div>
+
+            {/* Layer List */}
+            <div style={{ marginBottom: '12px' }}>
+              <div style={{
+                fontSize: '9px',
+                color: '#CCC',
+                marginBottom: '6px'
+              }}>
+                Layers ({advancedLayers.length})
+              </div>
+              <div style={{
+                maxHeight: '200px',
+                overflowY: 'auto',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: '4px',
+                background: 'rgba(0, 0, 0, 0.2)'
+              }}>
+                {advancedLayers.length === 0 ? (
+                  <div style={{
+                    padding: '12px',
+                    textAlign: 'center',
+                    color: '#666',
+                    fontSize: '10px'
+                  }}>
+                    No layers created yet
+                  </div>
+                ) : (
+                  advancedLayerOrder.map(layerId => {
+                    const layer = advancedLayers.find(l => l.id === layerId);
+                    if (!layer) return null;
+                    
+                    return (
+                      <div
+                        key={layer.id}
+                        onClick={() => selectAdvancedLayer(layer.id)}
+                        style={{
+                          padding: '6px 8px',
+                          borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+                          cursor: 'pointer',
+                          background: layer.selected ? 'rgba(0, 123, 204, 0.2)' : 'transparent',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          fontSize: '10px'
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={layer.visible}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            setAdvancedLayerVisibility(layer.id, e.target.checked);
+                          }}
+                          style={{ margin: 0 }}
+                        />
+                        <span 
+                          style={{ 
+                            color: layer.visible ? '#fff' : '#666',
+                            flex: 1,
+                            textDecoration: layer.locked ? 'line-through' : 'none',
+                            cursor: 'pointer',
+                            padding: '2px 4px',
+                            borderRadius: '2px',
+                            transition: 'background-color 0.2s'
+                          }}
+                          onDoubleClick={(e) => {
+                            e.stopPropagation();
+                            const newName = prompt('Rename layer:', layer.name);
+                            if (newName && newName.trim() && newName !== layer.name) {
+                              renameAdvancedLayer(layer.id, newName.trim());
+                            }
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = 'transparent';
+                          }}
+                          title="Double-click to rename"
+                        >
+                          {layer.name}
+                        </span>
+                        <input
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.01"
+                          value={layer.opacity}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            setLayerOpacity(layer.id, parseFloat(e.target.value));
+                          }}
+                          style={{
+                            width: '40px',
+                            height: '2px',
+                            margin: '0 4px'
+                          }}
+                        />
+                        <span style={{ fontSize: '8px', color: '#888', minWidth: '30px' }}>
+                          {Math.round(layer.opacity * 100)}%
+                        </span>
+                        <button
+                          onClick={(e) => { 
+                            e.stopPropagation(); 
+                            duplicateLayer(layer.id); 
+                          }}
+                          style={{ 
+                            background: 'none', 
+                            border: 'none', 
+                            color: '#cccccc', 
+                            cursor: 'pointer', 
+                            marginRight: '2px',
+                            fontSize: '8px'
+                          }}
+                          title="Duplicate Layer"
+                        >
+                          📋
+                        </button>
+                        <button
+                          onClick={(e) => { 
+                            e.stopPropagation(); 
+                            deleteLayer(layer.id); 
+                          }}
+                          style={{ 
+                            background: 'none', 
+                            border: 'none', 
+                            color: '#dc3545', 
+                            cursor: 'pointer',
+                            fontSize: '8px'
+                          }}
+                          title="Delete Layer"
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            {/* Layer Order Controls */}
+            {advancedActiveLayerId && (
+              <div style={{ marginBottom: '12px' }}>
+                <div style={{
+                  fontSize: '9px',
+                  color: '#CCC',
+                  marginBottom: '6px'
+                }}>
+                  Layer Order
+                </div>
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  <button
+                    onClick={() => moveAdvancedLayerToTop(advancedActiveLayerId)}
+                    style={{
+                      padding: '4px 8px',
+                      backgroundColor: '#6c757d',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '3px',
+                      cursor: 'pointer',
+                      fontSize: '9px'
+                    }}
+                  >
+                    🔝 Top
+                  </button>
+                  <button
+                    onClick={() => moveLayerUp(advancedActiveLayerId)}
+                    style={{
+                      padding: '4px 8px',
+                      backgroundColor: '#6c757d',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '3px',
+                      cursor: 'pointer',
+                      fontSize: '9px'
+                    }}
+                  >
+                    ⬆️ Up
+                  </button>
+                  <button
+                    onClick={() => moveLayerDown(advancedActiveLayerId)}
+                    style={{
+                      padding: '4px 8px',
+                      backgroundColor: '#6c757d',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '3px',
+                      cursor: 'pointer',
+                      fontSize: '9px'
+                    }}
+                  >
+                    ⬇️ Down
+                  </button>
+                  <button
+                    onClick={() => moveAdvancedLayerToBottom(advancedActiveLayerId)}
+                    style={{
+                      padding: '4px 8px',
+                      backgroundColor: '#6c757d',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '3px',
+                      cursor: 'pointer',
+                      fontSize: '9px'
+                    }}
+                  >
+                    🔻 Bottom
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Layer Grouping Controls */}
+            {advancedActiveLayerId && (
+              <div style={{ marginBottom: '12px' }}>
+                <div style={{
+                  fontSize: '9px',
+                  color: '#CCC',
+                  marginBottom: '6px'
+                }}>
+                  Layer Grouping
+                </div>
+                <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                  <button
+                    onClick={() => {
+                      const groupName = prompt('Enter group name:', 'New Group');
+                      if (groupName && groupName.trim()) {
+                        const groupId = createGroup(groupName.trim());
+                        addToGroup(advancedActiveLayerId, groupId);
+                      }
+                    }}
+                    style={{
+                      padding: '4px 8px',
+                      backgroundColor: '#28a745',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '3px',
+                      cursor: 'pointer',
+                      fontSize: '9px'
+                    }}
+                  >
+                    📁 Create Group
+                  </button>
+                  <button
+                    onClick={() => removeFromGroup(advancedActiveLayerId)}
+                    style={{
+                      padding: '4px 8px',
+                      backgroundColor: '#dc3545',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '3px',
+                      cursor: 'pointer',
+                      fontSize: '9px'
+                    }}
+                  >
+                    ➖ Ungroup
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Layer Effects Panel */}
+            {advancedActiveLayerId && (
+              <div style={{ marginBottom: '12px' }}>
+                <div style={{
+                  fontSize: '9px',
+                  color: '#CCC',
+                  marginBottom: '6px'
+                }}>
+                  Layer Effects
+                </div>
+                <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                  <button
+                    onClick={() => {
+                      const effect: LayerEffect = {
+                        id: `effect_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                        type: 'blur',
+                        enabled: true,
+                        properties: { radius: 5 }
+                      };
+                      addEffect(advancedActiveLayerId, effect);
+                    }}
+                    style={{
+                      padding: '4px 8px',
+                      backgroundColor: '#6f42c1',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '3px',
+                      cursor: 'pointer',
+                      fontSize: '9px'
+                    }}
+                  >
+                    🌫️ Blur
+                  </button>
+                  <button
+                    onClick={() => {
+                      const effect: LayerEffect = {
+                        id: `effect_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                        type: 'brightness',
+                        enabled: true,
+                        properties: { value: 20 }
+                      };
+                      addEffect(advancedActiveLayerId, effect);
+                    }}
+                    style={{
+                      padding: '4px 8px',
+                      backgroundColor: '#fd7e14',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '3px',
+                      cursor: 'pointer',
+                      fontSize: '9px'
+                    }}
+                  >
+                    ☀️ Brightness
+                  </button>
+                  <button
+                    onClick={() => {
+                      const effect: LayerEffect = {
+                        id: `effect_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                        type: 'contrast',
+                        enabled: true,
+                        properties: { value: 30 }
+                      };
+                      addEffect(advancedActiveLayerId, effect);
+                    }}
+                    style={{
+                      padding: '4px 8px',
+                      backgroundColor: '#20c997',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '3px',
+                      cursor: 'pointer',
+                      fontSize: '9px'
+                    }}
+                  >
+                    🎨 Contrast
+                  </button>
+                  <button
+                    onClick={() => {
+                      const effect: LayerEffect = {
+                        id: `effect_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                        type: 'drop-shadow',
+                        enabled: true,
+                        properties: { x: 2, y: 2, blur: 4, color: '#000000', opacity: 0.5 }
+                      };
+                      addEffect(advancedActiveLayerId, effect);
+                    }}
+                    style={{
+                      padding: '4px 8px',
+                      backgroundColor: '#dc3545',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '3px',
+                      cursor: 'pointer',
+                      fontSize: '9px'
+                    }}
+                  >
+                    🌑 Drop Shadow
+                  </button>
+                </div>
+                
+                {/* Active Effects List */}
+                {(() => {
+                  const activeLayer = advancedLayers.find(l => l.id === advancedActiveLayerId);
+                  if (!activeLayer || activeLayer.effects.length === 0) return null;
+                  
+                  return (
+                    <div style={{
+                      border: '1px solid rgba(255, 255, 255, 0.1)',
+                      borderRadius: '4px',
+                      background: 'rgba(0, 0, 0, 0.2)',
+                      padding: '6px',
+                      fontSize: '8px'
+                    }}>
+                      <div style={{ color: '#CCC', marginBottom: '4px' }}>
+                        Active Effects ({activeLayer.effects.length})
+                      </div>
+                      {activeLayer.effects.map((effect, index) => (
+                        <div key={effect.id} style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '2px 4px',
+                          background: 'rgba(255, 255, 255, 0.05)',
+                          borderRadius: '2px',
+                          marginBottom: '2px'
+                        }}>
+                          <span style={{ color: '#fff' }}>
+                            {effect.type} {effect.enabled ? '✅' : '❌'}
+                          </span>
+                          <button
+                            onClick={() => removeEffect(advancedActiveLayerId, effect.id)}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: '#dc3545',
+                              cursor: 'pointer',
+                              fontSize: '8px',
+                              padding: '1px 4px'
+                            }}
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
+            {/* Blend Modes Panel */}
+            {advancedActiveLayerId && (
+              <div style={{ marginBottom: '12px' }}>
+                <div style={{
+                  fontSize: '9px',
+                  color: '#CCC',
+                  marginBottom: '6px'
+                }}>
+                  Blend Modes
+                </div>
+                <div style={{
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: '4px',
+                  background: 'rgba(0, 0, 0, 0.2)',
+                  padding: '6px'
+                }}>
+                  <select
+                    value={(() => {
+                      const activeLayer = advancedLayers.find(l => l.id === advancedActiveLayerId);
+                      return activeLayer?.blendMode || 'normal';
+                    })()}
+                    onChange={(e) => {
+                      const newBlendMode = e.target.value as BlendMode;
+                      setLayerBlendMode(advancedActiveLayerId, newBlendMode);
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '4px 6px',
+                      backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '3px',
+                      color: '#fff',
+                      fontSize: '9px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <option value="normal" style={{ backgroundColor: '#000', color: '#fff' }}>Normal</option>
+                    <option value="multiply" style={{ backgroundColor: '#000', color: '#fff' }}>Multiply</option>
+                    <option value="screen" style={{ backgroundColor: '#000', color: '#fff' }}>Screen</option>
+                    <option value="overlay" style={{ backgroundColor: '#000', color: '#fff' }}>Overlay</option>
+                    <option value="soft-light" style={{ backgroundColor: '#000', color: '#fff' }}>Soft Light</option>
+                    <option value="hard-light" style={{ backgroundColor: '#000', color: '#fff' }}>Hard Light</option>
+                    <option value="color-dodge" style={{ backgroundColor: '#000', color: '#fff' }}>Color Dodge</option>
+                    <option value="color-burn" style={{ backgroundColor: '#000', color: '#fff' }}>Color Burn</option>
+                    <option value="darken" style={{ backgroundColor: '#000', color: '#fff' }}>Darken</option>
+                    <option value="lighten" style={{ backgroundColor: '#000', color: '#fff' }}>Lighten</option>
+                    <option value="difference" style={{ backgroundColor: '#000', color: '#fff' }}>Difference</option>
+                    <option value="exclusion" style={{ backgroundColor: '#000', color: '#fff' }}>Exclusion</option>
+                    <option value="hue" style={{ backgroundColor: '#000', color: '#fff' }}>Hue</option>
+                    <option value="saturation" style={{ backgroundColor: '#000', color: '#fff' }}>Saturation</option>
+                    <option value="color" style={{ backgroundColor: '#000', color: '#fff' }}>Color</option>
+                    <option value="luminosity" style={{ backgroundColor: '#000', color: '#fff' }}>Luminosity</option>
+                  </select>
+                  <div style={{
+                    marginTop: '4px',
+                    fontSize: '8px',
+                    color: '#888',
+                    textAlign: 'center'
+                  }}>
+                    Current: {(() => {
+                      const activeLayer = advancedLayers.find(l => l.id === advancedActiveLayerId);
+                      return activeLayer?.blendMode || 'normal';
+                    })()}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Layer Masks Panel */}
+            {advancedActiveLayerId && (
+              <div style={{ marginBottom: '12px' }}>
+                <div style={{
+                  fontSize: '9px',
+                  color: '#CCC',
+                  marginBottom: '6px'
+                }}>
+                  Layer Masks
+                </div>
+                <div style={{
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: '4px',
+                  background: 'rgba(0, 0, 0, 0.2)',
+                  padding: '6px'
+                }}>
+                  {(() => {
+                    const activeLayer = advancedLayers.find(l => l.id === advancedActiveLayerId);
+                    const hasMask = activeLayer?.mask;
+                    
+                    if (!hasMask) {
+                      return (
+                        <div style={{ textAlign: 'center' }}>
+                          <button
+                            onClick={() => {
+                              // Create a new mask with a blank canvas
+                              const maskCanvas = document.createElement('canvas');
+                              maskCanvas.width = 1024;
+                              maskCanvas.height = 1024;
+                              
+                              const mask: LayerMask = {
+                                id: `mask_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                                canvas: maskCanvas,
+                                enabled: true,
+                                inverted: false
+                              };
+                              
+                              addMask(advancedActiveLayerId, mask);
+                            }}
+                            style={{
+                              padding: '6px 12px',
+                              backgroundColor: '#007bff',
+                              color: '#ffffff',
+                              border: 'none',
+                              borderRadius: '3px',
+                              cursor: 'pointer',
+                              fontSize: '9px',
+                              marginBottom: '4px'
+                            }}
+                          >
+                            🎭 Create Mask
+                          </button>
+                          <div style={{ fontSize: '8px', color: '#888' }}>
+                            No mask applied
+                          </div>
+                        </div>
+                      );
+                    }
+                    
+                    return (
+                      <div>
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          marginBottom: '6px'
+                        }}>
+                          <span style={{ fontSize: '8px', color: '#fff' }}>
+                            Mask {hasMask.enabled ? '✅' : '❌'}
+                          </span>
+                          <div style={{ display: 'flex', gap: '4px' }}>
+                            <button
+                              onClick={() => toggleMaskEnabled(advancedActiveLayerId)}
+                              style={{
+                                padding: '2px 6px',
+                                backgroundColor: hasMask.enabled ? '#28a745' : '#6c757d',
+                                color: '#ffffff',
+                                border: 'none',
+                                borderRadius: '2px',
+                                cursor: 'pointer',
+                                fontSize: '8px'
+                              }}
+                            >
+                              {hasMask.enabled ? 'ON' : 'OFF'}
+                            </button>
+                            <button
+                              onClick={() => toggleMaskInverted(advancedActiveLayerId)}
+                              style={{
+                                padding: '2px 6px',
+                                backgroundColor: hasMask.inverted ? '#ffc107' : '#6c757d',
+                                color: '#000000',
+                                border: 'none',
+                                borderRadius: '2px',
+                                cursor: 'pointer',
+                                fontSize: '8px'
+                              }}
+                            >
+                              {hasMask.inverted ? 'INV' : 'NORM'}
+                            </button>
+                            <button
+                              onClick={() => removeMask(advancedActiveLayerId)}
+                              style={{
+                                padding: '2px 6px',
+                                backgroundColor: '#dc3545',
+                                color: '#ffffff',
+                                border: 'none',
+                                borderRadius: '2px',
+                                cursor: 'pointer',
+                                fontSize: '8px'
+                              }}
+                            >
+                              🗑️
+                            </button>
+                          </div>
+                        </div>
+                        <div style={{
+                          fontSize: '8px',
+                          color: '#888',
+                          textAlign: 'center',
+                          padding: '4px',
+                          background: 'rgba(255, 255, 255, 0.05)',
+                          borderRadius: '2px'
+                        }}>
+                          {hasMask.enabled 
+                            ? (hasMask.inverted ? 'Inverted mask active' : 'Mask active')
+                            : 'Mask disabled'
+                          }
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+            )}
+
+            {/* Event History */}
+            <div style={{ marginBottom: '12px' }}>
+              <div style={{
+                fontSize: '9px',
+                color: '#CCC',
+                marginBottom: '6px'
+              }}>
+                Event History ({eventHistory.length})
+              </div>
+              <div style={{
+                maxHeight: '100px',
+                overflowY: 'auto',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: '4px',
+                background: 'rgba(0, 0, 0, 0.2)',
+                padding: '6px',
+                fontSize: '8px',
+                color: '#888'
+              }}>
+                {eventHistory.slice(-10).map((event, index) => (
+                  <div key={index} style={{ marginBottom: '2px' }}>
+                    {event.type} - {new Date(event.timestamp).toLocaleTimeString()}
+                  </div>
+                ))}
+                {eventHistory.length === 0 && (
+                  <div style={{ textAlign: 'center', color: '#666' }}>
+                    No events yet
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Universal Select Settings */}
+        {activeTab === 'universalSelect' && (
+          <div onClick={(e) => e.stopPropagation()}>
+            <div style={{
+              fontSize: '11px',
+              color: '#a0aec0',
+              fontWeight: '700',
+              marginBottom: '10px',
+              textTransform: 'uppercase',
+              letterSpacing: '1px',
+              textShadow: '0 1px 2px rgba(0, 0, 0, 0.3)'
+            }}>
+              🎯 Universal Select Tool
+            </div>
+            
+            {/* Selection Info */}
+            <div style={{ marginBottom: '12px' }}>
+              <div style={{
+                fontSize: '9px',
+                color: '#CCC',
+                marginBottom: '4px'
+              }}>
+                Selection Status
+              </div>
+              <div style={{
+                padding: '6px 8px',
+                background: 'rgba(255, 255, 255, 0.05)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: '4px',
+                fontSize: '10px',
+                color: '#a0aec0'
+              }}>
+                No elements selected
+              </div>
+            </div>
+
+            {/* AI Selection Tools */}
+            <div style={{ marginBottom: '12px' }}>
+              <div style={{
+                fontSize: '9px',
+                color: '#CCC',
+                marginBottom: '6px'
+              }}>
+                AI Selection Tools
+              </div>
+              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                <button
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: '#6f42c1',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '3px',
+                    cursor: 'pointer',
+                    fontSize: '9px'
+                  }}
+                  onClick={() => console.log('AI Object Selection')}
+                >
+                  🎯 Object
+                </button>
+                <button
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: '#e83e8c',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '3px',
+                    cursor: 'pointer',
+                    fontSize: '9px'
+                  }}
+                  onClick={() => console.log('AI Color Selection')}
+                >
+                  🎨 Color
+                </button>
+                <button
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: '#20c997',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '3px',
+                    cursor: 'pointer',
+                    fontSize: '9px'
+                  }}
+                  onClick={() => console.log('AI Similar Selection')}
+                >
+                  🔍 Similar
+                </button>
+              </div>
+            </div>
+
+            {/* Selection Actions */}
+            <div style={{ marginBottom: '12px' }}>
+              <div style={{
+                fontSize: '9px',
+                color: '#CCC',
+                marginBottom: '6px'
+              }}>
+                Selection Actions
+              </div>
+              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                <button
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: '#007acc',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '3px',
+                    cursor: 'pointer',
+                    fontSize: '9px'
+                  }}
+                  onClick={() => console.log('Group Elements')}
+                >
+                  📦 Group
+                </button>
+                <button
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: '#28a745',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '3px',
+                    cursor: 'pointer',
+                    fontSize: '9px'
+                  }}
+                  onClick={() => console.log('Duplicate Elements')}
+                >
+                  📋 Duplicate
+                </button>
+                <button
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: '#ffc107',
+                    color: '#000000',
+                    border: 'none',
+                    borderRadius: '3px',
+                    cursor: 'pointer',
+                    fontSize: '9px'
+                  }}
+                  onClick={() => console.log('Align Elements')}
+                >
+                  ⚖️ Align
+                </button>
+                <button
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: '#dc3545',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '3px',
+                    cursor: 'pointer',
+                    fontSize: '9px'
+                  }}
+                  onClick={() => console.log('Clear Selection')}
+                >
+                  🗑️ Clear
+                </button>
+              </div>
+            </div>
+
+            {/* Transform Controls */}
+            <div style={{ marginBottom: '12px' }}>
+              <div style={{
+                fontSize: '9px',
+                color: '#CCC',
+                marginBottom: '6px'
+              }}>
+                Transform Controls
+              </div>
+              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                <button
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: '#495057',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '3px',
+                    cursor: 'pointer',
+                    fontSize: '9px'
+                  }}
+                  onClick={() => console.log('Move Left')}
+                >
+                  ←
+                </button>
+                <button
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: '#495057',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '3px',
+                    cursor: 'pointer',
+                    fontSize: '9px'
+                  }}
+                  onClick={() => console.log('Move Up')}
+                >
+                  ↑
+                </button>
+                <button
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: '#495057',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '3px',
+                    cursor: 'pointer',
+                    fontSize: '9px'
+                  }}
+                  onClick={() => console.log('Move Down')}
+                >
+                  ↓
+                </button>
+                <button
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: '#495057',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '3px',
+                    cursor: 'pointer',
+                    fontSize: '9px'
+                  }}
+                  onClick={() => console.log('Move Right')}
+                >
+                  →
+                </button>
+              </div>
+            </div>
+
+            {/* Keyboard Shortcuts */}
+            <div style={{ marginBottom: '12px' }}>
+              <div style={{
+                fontSize: '9px',
+                color: '#CCC',
+                marginBottom: '6px'
+              }}>
+                Keyboard Shortcuts
+              </div>
+              <div style={{
+                fontSize: '8px',
+                color: '#666666',
+                lineHeight: '1.4',
+                padding: '6px',
+                background: 'rgba(255, 255, 255, 0.03)',
+                borderRadius: '3px'
+              }}>
+                <div>• Ctrl/Cmd + A: Select all</div>
+                <div>• Ctrl/Cmd + Click: Add to selection</div>
+                <div>• Shift + Click: Subtract from selection</div>
+                <div>• Delete/Backspace: Delete selected</div>
+                <div>• Escape: Clear selection</div>
+                <div>• Arrow keys: Nudge selected</div>
+                <div>• Shift + Arrow: Nudge by 10px</div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Shapes Settings */}
-        {activeTab === 'shapes' && (
+        {activeTool === 'shapes' && (
           <div onClick={(e) => e.stopPropagation()}>
             <div style={{
               fontSize: '10px',
@@ -4521,6 +6407,321 @@ export function RightPanelCompact({ activeToolSidebar }: RightPanelCompactProps)
             </div>
           </div>
         )}
+        </div>
+      </div>
+
+      {/* Resize Handle */}
+      <div
+        onMouseDown={handleMouseDown}
+        style={{
+          height: '4px',
+          background: isResizing ? '#0066CC' : 'rgba(255, 255, 255, 0.1)',
+          cursor: 'ns-resize',
+          borderTop: '1px solid rgba(255, 255, 255, 0.2)',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.2)',
+          transition: 'background 0.2s ease'
+        }}
+      />
+
+      {/* Layers Panel (Bottom) - Always Visible */}
+      <div style={{
+        flex: 1,
+        background: 'rgba(255, 255, 255, 0.02)',
+        backdropFilter: 'blur(10px)',
+        display: 'flex',
+        flexDirection: 'column',
+        minHeight: '200px'
+      }}>
+        {/* Selection Status Indicator */}
+        {activeTool === 'universalSelect' && (
+          <div style={{
+            padding: '4px 12px',
+            background: 'rgba(102, 126, 234, 0.1)',
+            borderBottom: '1px solid rgba(102, 126, 234, 0.2)',
+            fontSize: '9px',
+            color: '#667eea',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}>
+            <span>🎯 Universal Select Active</span>
+            <span style={{ fontSize: '8px', color: '#999' }}>
+              Ctrl+Click: Add to selection | Shift+Click: Remove from selection
+            </span>
+          </div>
+        )}
+
+        {/* Layers Panel Header */}
+        <div style={{
+          padding: '8px 12px',
+          background: 'rgba(255, 255, 255, 0.05)',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+          fontSize: '10px',
+          color: '#a0aec0',
+          fontWeight: '700',
+          textTransform: 'uppercase',
+          letterSpacing: '1px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
+          <span>🎨 Layers</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {selectedElements.length > 0 && (
+              <span style={{ fontSize: '8px', color: '#667eea' }}>
+                {selectedElements.length} selected
+              </span>
+            )}
+            <span style={{ fontSize: '8px', color: '#666' }}>
+              {advancedLayers.length} layer{advancedLayers.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+        </div>
+
+        {/* Layers Content */}
+        <div style={{
+          flex: 1,
+          padding: '8px',
+          overflowY: 'auto'
+        }}>
+          {/* Layer List */}
+          <div style={{ marginBottom: '8px' }}>
+            {advancedLayers.length === 0 ? (
+              <div style={{
+                padding: '12px',
+                textAlign: 'center',
+                color: '#666',
+                fontSize: '9px',
+                background: 'rgba(255, 255, 255, 0.05)',
+                borderRadius: '4px',
+                border: '1px dashed rgba(255, 255, 255, 0.2)'
+              }}>
+                No layers yet. Start drawing to create layers!
+              </div>
+            ) : (
+              advancedLayers
+                .sort((a, b) => b.order - a.order) // Show newest first
+                .map((layer) => (
+                  <div
+                    key={layer.id}
+                    style={{
+                      padding: '6px 8px',
+                      marginBottom: '2px',
+                      background: layer.id === advancedActiveLayerId 
+                        ? 'rgba(0, 102, 204, 0.2)' 
+                        : 'rgba(255, 255, 255, 0.05)',
+                      border: layer.id === advancedActiveLayerId 
+                        ? '1px solid rgba(0, 102, 204, 0.5)' 
+                        : '1px solid rgba(255, 255, 255, 0.1)',
+                      borderRadius: '3px',
+                      cursor: 'pointer',
+                      fontSize: '9px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between'
+                    }}
+                    onClick={() => {
+                      setActiveLayer(layer.id);
+                      console.log('🎨 Selected layer:', layer.name);
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ opacity: layer.visible ? 1 : 0.3 }}>
+                        {layer.visible ? '👁️' : '🙈'}
+                      </span>
+                      <span style={{ 
+                        color: layer.visible ? '#fff' : '#666',
+                        fontWeight: layer.id === advancedActiveLayerId ? '600' : '400'
+                      }}>
+                        {layer.name}
+                      </span>
+                      <span style={{ 
+                        fontSize: '7px', 
+                        color: '#999',
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        padding: '1px 4px',
+                        borderRadius: '2px'
+                      }}>
+                        {layer.type}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <span style={{ fontSize: '7px', color: '#999' }}>
+                        {Math.round(layer.opacity * 100)}%
+                      </span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setAdvancedLayerVisibility(layer.id, !layer.visible);
+                        }}
+                        style={{
+                          padding: '2px 4px',
+                          fontSize: '7px',
+                          background: 'transparent',
+                          border: 'none',
+                          color: layer.visible ? '#fff' : '#666',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {layer.visible ? '👁️' : '🙈'}
+                      </button>
+                    </div>
+                  </div>
+                ))
+            )}
+          </div>
+
+          {/* Layer Actions */}
+          <div style={{ display: 'flex', gap: '4px', marginTop: '8px' }}>
+            <button
+              onClick={() => {
+                const layerId = createAdvancedLayer('paint', `Layer ${advancedLayers.length + 1}`);
+                setActiveLayer(layerId);
+                console.log('🎨 Created new layer:', layerId);
+              }}
+              style={{
+                flex: 1,
+                padding: '6px 8px',
+                fontSize: '8px',
+                background: 'rgba(0, 255, 0, 0.2)',
+                color: '#00FF00',
+                border: '1px solid rgba(0, 255, 0, 0.3)',
+                borderRadius: '3px',
+                cursor: 'pointer'
+              }}
+            >
+              + New Layer
+            </button>
+            <button
+              onClick={() => {
+                if (advancedActiveLayerId) {
+                  deleteLayer(advancedActiveLayerId);
+                  console.log('🎨 Deleted layer:', advancedActiveLayerId);
+                }
+              }}
+              disabled={!advancedActiveLayerId}
+              style={{
+                flex: 1,
+                padding: '6px 8px',
+                fontSize: '8px',
+                background: advancedActiveLayerId 
+                  ? 'rgba(255, 0, 0, 0.2)' 
+                  : 'rgba(255, 255, 255, 0.1)',
+                color: advancedActiveLayerId ? '#FF6666' : '#666',
+                border: `1px solid ${advancedActiveLayerId 
+                  ? 'rgba(255, 0, 0, 0.3)' 
+                  : 'rgba(255, 255, 255, 0.1)'}`,
+                borderRadius: '3px',
+                cursor: advancedActiveLayerId ? 'pointer' : 'not-allowed'
+              }}
+            >
+              🗑️ Delete
+            </button>
+          </div>
+
+          {/* Layer Properties */}
+          {advancedActiveLayerId && (() => {
+            const activeLayer = advancedLayers.find(l => l.id === advancedActiveLayerId);
+            if (!activeLayer) return null;
+            
+            return (
+              <div style={{
+                marginTop: '8px',
+                padding: '8px',
+                background: 'rgba(255, 255, 255, 0.05)',
+                borderRadius: '4px',
+                border: '1px solid rgba(255, 255, 255, 0.1)'
+              }}>
+                <div style={{ fontSize: '8px', color: '#CCC', marginBottom: '6px' }}>
+                  Layer Properties
+                </div>
+                
+                {/* Opacity */}
+                <div style={{ marginBottom: '6px' }}>
+                  <div style={{ fontSize: '7px', color: '#999', marginBottom: '2px' }}>
+                    Opacity: {Math.round(activeLayer.opacity * 100)}%
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    value={activeLayer.opacity}
+                    onChange={(e) => setLayerOpacity(activeLayer.id, parseFloat(e.target.value))}
+                    style={{ width: '100%', accentColor: '#0066CC' }}
+                  />
+                </div>
+
+                {/* Blend Mode */}
+                <div style={{ marginBottom: '6px' }}>
+                  <div style={{ fontSize: '7px', color: '#999', marginBottom: '2px' }}>
+                    Blend Mode
+                  </div>
+                  <select
+                    value={activeLayer.blendMode}
+                    onChange={(e) => setLayerBlendMode(activeLayer.id, e.target.value as BlendMode)}
+                    style={{
+                      width: '100%',
+                      padding: '3px',
+                      background: '#000000',
+                      color: '#FFFFFF',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '2px',
+                      fontSize: '7px'
+                    }}
+                  >
+                    <option value="normal">Normal</option>
+                    <option value="multiply">Multiply</option>
+                    <option value="screen">Screen</option>
+                    <option value="overlay">Overlay</option>
+                    <option value="soft-light">Soft Light</option>
+                    <option value="hard-light">Hard Light</option>
+                    <option value="color-dodge">Color Dodge</option>
+                    <option value="color-burn">Color Burn</option>
+                    <option value="darken">Darken</option>
+                    <option value="lighten">Lighten</option>
+                    <option value="difference">Difference</option>
+                    <option value="exclusion">Exclusion</option>
+                  </select>
+                </div>
+
+                {/* Layer Order */}
+                <div style={{ display: 'flex', gap: '2px' }}>
+                  <button
+                    onClick={() => moveLayerUp(activeLayer.id)}
+                    style={{
+                      flex: 1,
+                      padding: '3px',
+                      fontSize: '7px',
+                      background: 'rgba(255, 255, 255, 0.1)',
+                      color: '#CCC',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '2px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    ↑ Up
+                  </button>
+                  <button
+                    onClick={() => moveLayerDown(activeLayer.id)}
+                    style={{
+                      flex: 1,
+                      padding: '3px',
+                      fontSize: '7px',
+                      background: 'rgba(255, 255, 255, 0.1)',
+                      color: '#CCC',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '2px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    ↓ Down
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
       </div>
     </div>
   );

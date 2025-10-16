@@ -17,6 +17,7 @@ import { ProceduralGenerator } from './ProceduralGenerator';
 import { SmartFillTool } from './SmartFillTool';
 // Embroidery settings now in RightPanelNew.tsx - no separate component needed
 import { ProfessionalVectorTool } from './ProfessionalVectorTool';
+import UniversalSelectTool from './UniversalSelectTool';
 
 interface ToolRouterProps {
   active: boolean;
@@ -46,6 +47,7 @@ export function ToolRouter({ active }: ToolRouterProps) {
     'moveText': null, // Handled by main canvas
 
     // Selection & Transform
+    'universalSelect': UniversalSelectTool,
     'advancedSelection': AdvancedSelection,
     'transform': null, // Handled by main canvas
     'move': null, // Handled by main canvas

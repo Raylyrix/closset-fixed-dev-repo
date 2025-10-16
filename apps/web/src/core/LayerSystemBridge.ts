@@ -4,7 +4,7 @@
  */
 
 import { useApp } from '../App';
-import { useAdvancedLayerStore, type AdvancedLayer } from '../core/AdvancedLayerSystem';
+import { useAdvancedLayerStoreV2, type AdvancedLayer } from '../core/AdvancedLayerSystemV2';
 
 export class LayerSystemBridge {
   private static instance: LayerSystemBridge;
@@ -29,7 +29,7 @@ export class LayerSystemBridge {
       this.appStore = useApp.getState();
     }
     if (!this.advancedStore) {
-      this.advancedStore = useAdvancedLayerStore.getState();
+      this.advancedStore = useAdvancedLayerStoreV2.getState();
     }
   }
 
@@ -43,31 +43,17 @@ export class LayerSystemBridge {
 
     // Convert existing layers to advanced layers
     layers.forEach((layer: any) => {
-      if (!advancedLayers.has(layer.id)) {
-        const layerId = createLayer('pixel', layer.name, {
-          id: layer.id,
-          visible: layer.visible,
-          opacity: (layer as any).opacity || 1.0,
-          blendMode: (layer as any).blendMode || 'normal',
-          order: layer.order || 0,
-          toolType: (layer as any).toolType || 'general',
-          canvas: layer.canvas,
-          displacementCanvas: layer.displacementCanvas
-        });
+      // Check if layer already exists in advanced layers (array, not Map)
+      const existingLayer = advancedLayers.find((l: any) => l.id === layer.id);
+      if (!existingLayer) {
+        const layerId = createLayer('paint', layer.name);
 
         // Copy canvas content
-        const advancedLayer = advancedLayers.get(layerId);
+        const advancedLayer = advancedLayers.find((l: any) => l.id === layerId);
         if (advancedLayer && layer.canvas) {
-          const ctx = advancedLayer.canvas.getContext('2d');
+          const ctx = advancedLayer.content.canvas?.getContext('2d');
           if (ctx) {
             ctx.drawImage(layer.canvas, 0, 0);
-          }
-        }
-
-        if (advancedLayer && layer.displacementCanvas) {
-          const dispCtx = advancedLayer.displacementCanvas?.getContext('2d');
-          if (dispCtx) {
-            dispCtx.drawImage(layer.displacementCanvas, 0, 0);
           }
         }
       }
@@ -83,22 +69,22 @@ export class LayerSystemBridge {
     const { set } = this.appStore;
 
     // Convert advanced layers back to legacy format
-    const legacyLayers = Array.from(advancedLayers.values()).map((layer: any) => ({
+    const legacyLayers = advancedLayers.map((layer: any) => ({
       id: layer.id,
       name: layer.name,
       visible: layer.visible,
-      canvas: layer.canvas,
-      displacementCanvas: layer.displacementCanvas,
-      history: layer.history,
-      future: layer.future,
+      canvas: layer.content.canvas,
+      displacementCanvas: null,
+      history: [],
+      future: [],
       order: layer.order,
-      toolType: layer.toolType,
+      toolType: layer.type,
       opacity: layer.opacity,
       blendMode: layer.blendMode
     }));
 
     // Update App store
-    set({
+    useApp.setState({
       layers: legacyLayers,
       activeLayerId: this.advancedStore.activeLayerId,
       composedCanvas: composedCanvas
@@ -108,20 +94,55 @@ export class LayerSystemBridge {
   /**
    * Get or create active layer for drawing
    */
-  getOrCreateActiveLayer(toolType: string): AdvancedLayer | null {
+  getOrCreateActiveLayer(toolType: string): any {
     this.initializeStores();
-    const { getActiveLayer, createLayer } = this.advancedStore;
+    const { layers, activeLayerId, createLayer } = this.advancedStore;
     
-    let activeLayer = getActiveLayer();
-    
-    if (!activeLayer || !activeLayer.visible) {
-      const layerId = createLayer('pixel', `${toolType.charAt(0).toUpperCase() + toolType.slice(1)} Layer`, {
-        toolType
-      });
-      activeLayer = this.advancedStore.getLayer(layerId);
+    // Check if we have an active layer
+    if (activeLayerId) {
+      const activeLayer = layers.find((l: AdvancedLayer) => l.id === activeLayerId);
+      if (activeLayer && activeLayer.visible) {
+        // Convert advanced layer to legacy format for compatibility
+        return {
+          id: activeLayer.id,
+          name: activeLayer.name,
+          type: activeLayer.type,
+          visible: activeLayer.visible,
+          opacity: activeLayer.opacity,
+          blendMode: activeLayer.blendMode,
+          order: activeLayer.order,
+          toolType: activeLayer.type,
+          canvas: activeLayer.content.canvas || document.createElement('canvas'),
+          displacementCanvas: null
+        };
+      }
     }
-
-    return activeLayer;
+    
+    // Create a new layer if none exists or current one is hidden
+    const layerName = `${toolType.charAt(0).toUpperCase() + toolType.slice(1)} Layer`;
+    const layerId = createLayer(toolType as any, layerName);
+    
+    // Set the new layer as active
+    useAdvancedLayerStoreV2.setState({ activeLayerId: layerId });
+    
+    // Return the newly created layer in legacy format
+    const newLayer = layers.find((l: AdvancedLayer) => l.id === layerId);
+    if (newLayer) {
+      return {
+        id: newLayer.id,
+        name: newLayer.name,
+        type: newLayer.type,
+        visible: newLayer.visible,
+        opacity: newLayer.opacity,
+        blendMode: newLayer.blendMode,
+        order: newLayer.order,
+        toolType: newLayer.type,
+        canvas: newLayer.content.canvas || document.createElement('canvas'),
+        displacementCanvas: null
+      };
+    }
+    
+    return null;
   }
 
   /**

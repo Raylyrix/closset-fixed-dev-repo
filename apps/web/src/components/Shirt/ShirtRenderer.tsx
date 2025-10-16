@@ -236,12 +236,14 @@ export const ShirtRenderer: React.FC<ShirtRendererProps> = ({
         position={modelPosition}
         rotation={modelRotation}
         scale={modelScale}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerLeave={onPointerLeave}
       >
-        <primitive object={modelScene} />
+        <primitive 
+          object={modelScene} 
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerLeave={onPointerLeave}
+        />
         {wireframe && (
           <primitive 
             object={modelScene.clone()} 

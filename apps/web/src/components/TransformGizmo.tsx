@@ -1,76 +1,136 @@
-import React, { useRef, useEffect, useState } from 'react';
-import { useApp } from '../App';
+/**
+ * 🔧 Transform Gizmo Component
+ * 
+ * Provides visual handles for transforming selected elements
+ * Supports move, scale, rotate, and skew operations
+ */
+
+import React, { useRef, useState, useCallback, useEffect } from 'react';
 
 interface TransformGizmoProps {
-  layerId: string;
-  onTransformChange: (transform: { x?: number; y?: number; scaleX?: number; scaleY?: number; rotation?: number }) => void;
+  selectedElements: any[];
+  onTransform: (transform: { x?: number; y?: number; scaleX?: number; scaleY?: number; rotation?: number; skewX?: number; skewY?: number }) => void;
+  visible: boolean;
 }
 
-export function TransformGizmo({ layerId, onTransformChange }: TransformGizmoProps) {
-  const project = useApp(s => s.project);
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragType, setDragType] = useState<'move' | 'scale' | 'rotate' | null>(null);
-  const [startPos, setStartPos] = useState({ x: 0, y: 0 });
-  const [startTransform, setStartTransform] = useState({ x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 });
+interface TransformState {
+  isDragging: boolean;
+  dragType: 'move' | 'scale' | 'rotate' | 'skew' | null;
+  startX: number;
+  startY: number;
+  startTransform: any;
+  centerX: number;
+  centerY: number;
+}
 
-  if (!project || !project.layers[layerId]) return null;
+export function TransformGizmo({ selectedElements, onTransform, visible }: TransformGizmoProps) {
+  const gizmoRef = useRef<HTMLDivElement>(null);
+  const [transformState, setTransformState] = useState<TransformState>({
+    isDragging: false,
+    dragType: null,
+    startX: 0,
+    startY: 0,
+    startTransform: null,
+    centerX: 0,
+    centerY: 0
+  });
 
-  const layer = project.layers[layerId] as any;
-  const transform = layer.transform || { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 };
+  // Calculate bounding box for selected elements
+  const getBoundingBox = useCallback(() => {
+    if (selectedElements.length === 0) return null;
 
-  const handleMouseDown = (e: React.MouseEvent, type: 'move' | 'scale' | 'rotate') => {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    selectedElements.forEach(element => {
+      const bounds = element.bounds;
+      minX = Math.min(minX, bounds.x);
+      minY = Math.min(minY, bounds.y);
+      maxX = Math.max(maxX, bounds.x + bounds.width);
+      maxY = Math.max(maxY, bounds.y + bounds.height);
+    });
+
+    return {
+      x: minX,
+      y: minY,
+      width: maxX - minX,
+      height: maxY - minY,
+      centerX: minX + (maxX - minX) / 2,
+      centerY: minY + (maxY - minY) / 2
+    };
+  }, [selectedElements]);
+
+  const boundingBox = getBoundingBox();
+
+  // Handle mouse down on gizmo handles
+  const handleMouseDown = useCallback((e: React.MouseEvent, dragType: TransformState['dragType']) => {
     e.preventDefault();
     e.stopPropagation();
-    setIsDragging(true);
-    setDragType(type);
-    setStartPos({ x: e.clientX, y: e.clientY });
-    setStartTransform({ ...transform });
-  };
 
-  const handleMouseMove = (e: MouseEvent) => {
-    if (!isDragging || !dragType) return;
+    if (!boundingBox) return;
 
-    const deltaX = e.clientX - startPos.x;
-    const deltaY = e.clientY - startPos.y;
+    setTransformState({
+      isDragging: true,
+      dragType,
+      startX: e.clientX,
+      startY: e.clientY,
+      startTransform: { ...boundingBox },
+      centerX: boundingBox.centerX,
+      centerY: boundingBox.centerY
+    });
+  }, [boundingBox]);
 
-    switch (dragType) {
+  // Handle mouse move during drag
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (!transformState.isDragging || !transformState.dragType || !boundingBox) return;
+
+    const deltaX = e.clientX - transformState.startX;
+    const deltaY = e.clientY - transformState.startY;
+
+    switch (transformState.dragType) {
       case 'move':
-        onTransformChange({
-          x: startTransform.x + deltaX,
-          y: startTransform.y + deltaY
-        });
+        onTransform({ x: deltaX, y: deltaY });
         break;
+      
       case 'scale':
-        const scaleFactor = 1 + deltaX * 0.01;
-        const constrainProportions = e.shiftKey;
-        if (constrainProportions) {
-          onTransformChange({
-            scaleX: Math.max(0.1, startTransform.scaleX * scaleFactor),
-            scaleY: Math.max(0.1, startTransform.scaleY * scaleFactor)
-          });
-        } else {
-          onTransformChange({
-            scaleX: Math.max(0.1, startTransform.scaleX * scaleFactor),
-            scaleY: Math.max(0.1, startTransform.scaleY * (1 + deltaY * 0.01))
-          });
-        }
+        const scaleX = 1 + (deltaX / transformState.startTransform.width);
+        const scaleY = 1 + (deltaY / transformState.startTransform.height);
+        onTransform({ scaleX: Math.max(0.1, scaleX), scaleY: Math.max(0.1, scaleY) });
         break;
+      
       case 'rotate':
-        const rotationDelta = deltaX * 0.02;
-        onTransformChange({
-          rotation: startTransform.rotation + rotationDelta
-        });
+        const angle = Math.atan2(
+          e.clientY - transformState.centerY,
+          e.clientX - transformState.centerX
+        ) - Math.atan2(
+          transformState.startY - transformState.centerY,
+          transformState.startX - transformState.centerX
+        );
+        onTransform({ rotation: angle });
+        break;
+      
+      case 'skew':
+        const skewX = deltaX / transformState.startTransform.height;
+        const skewY = deltaY / transformState.startTransform.width;
+        onTransform({ skewX, skewY });
         break;
     }
-  };
+  }, [transformState, boundingBox, onTransform]);
 
-  const handleMouseUp = () => {
-    setIsDragging(false);
-    setDragType(null);
-  };
+  // Handle mouse up
+  const handleMouseUp = useCallback(() => {
+    setTransformState(prev => ({
+      ...prev,
+      isDragging: false,
+      dragType: null
+    }));
+  }, []);
 
+  // Add global mouse event listeners
   useEffect(() => {
-    if (isDragging) {
+    if (transformState.isDragging) {
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
       return () => {
@@ -78,85 +138,233 @@ export function TransformGizmo({ layerId, onTransformChange }: TransformGizmoPro
         document.removeEventListener('mouseup', handleMouseUp);
       };
     }
-  }, [isDragging, dragType, startPos, startTransform]);
+  }, [transformState.isDragging, handleMouseMove, handleMouseUp]);
 
-  const gizmoStyle: React.CSSProperties = {
-    position: 'absolute',
-    left: transform.x + 200,
-    top: transform.y + 200,
-    width: 100,
-    height: 100,
-    border: '2px dashed #00ff00',
-    borderRadius: '4px',
-    pointerEvents: 'auto',
-    zIndex: 1000,
-    background: 'rgba(0, 255, 0, 0.1)'
-  };
+  if (!visible || !boundingBox || selectedElements.length === 0) {
+    return null;
+  }
+
+  const handleSize = 8;
+  const handleOffset = 4;
 
   return (
-    <div style={gizmoStyle}>
-      {/* Move handle (center) */}
-      <div
-        onMouseDown={(e) => handleMouseDown(e, 'move')}
-        style={{
-          position: 'absolute',
-          left: '50%',
-          top: '50%',
-          width: 12,
-          height: 12,
-          background: '#00ff00',
-          borderRadius: '50%',
-          transform: 'translate(-50%, -50%)',
-          cursor: 'move'
-        }}
-      />
-      
-      {/* Scale handle (bottom-right) */}
-      <div
-        onMouseDown={(e) => handleMouseDown(e, 'scale')}
-        style={{
-          position: 'absolute',
-          right: -6,
-          bottom: -6,
-          width: 12,
-          height: 12,
-          background: '#0088ff',
-          borderRadius: '2px',
-          cursor: 'nw-resize'
-        }}
-      />
-      
-      {/* Rotate handle (top-right) */}
-      <div
-        onMouseDown={(e) => handleMouseDown(e, 'rotate')}
-        style={{
-          position: 'absolute',
-          right: -6,
-          top: -6,
-          width: 12,
-          height: 12,
-          background: '#ff8800',
-          borderRadius: '50%',
-          cursor: 'grab'
-        }}
-      />
-      
-      {/* Transform info */}
-      <div style={{
+    <div
+      ref={gizmoRef}
+      style={{
         position: 'absolute',
-        top: -30,
-        left: 0,
-        fontSize: '10px',
-        background: 'rgba(0, 0, 0, 0.8)',
-        color: 'white',
-        padding: '2px 6px',
-        borderRadius: '3px',
-        whiteSpace: 'nowrap'
-      }}>
-        {layer.name} | x:{Math.round(transform.x)} y:{Math.round(transform.y)} | 
-        s:{transform.scaleX?.toFixed(2)}x{transform.scaleY?.toFixed(2)} | 
-        r:{(transform.rotation * 180 / Math.PI).toFixed(1)}°
+        left: boundingBox.x - handleOffset,
+        top: boundingBox.y - handleOffset,
+        width: boundingBox.width + (handleOffset * 2),
+        height: boundingBox.height + (handleOffset * 2),
+        pointerEvents: 'none',
+        zIndex: 1003
+      }}
+    >
+      {/* Selection outline */}
+      <div
+        style={{
+          position: 'absolute',
+          left: handleOffset,
+          top: handleOffset,
+          width: boundingBox.width,
+          height: boundingBox.height,
+          border: '2px solid #007acc',
+          backgroundColor: 'rgba(0, 122, 204, 0.1)',
+          borderRadius: '2px'
+        }}
+      />
+
+      {/* Corner handles for scaling */}
+      <div
+        style={{
+          position: 'absolute',
+          left: -handleSize / 2,
+          top: -handleSize / 2,
+          width: handleSize,
+          height: handleSize,
+          backgroundColor: '#007acc',
+          border: '2px solid #ffffff',
+          borderRadius: '50%',
+          cursor: 'nw-resize',
+          pointerEvents: 'auto'
+        }}
+        onMouseDown={(e) => handleMouseDown(e, 'scale')}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          right: -handleSize / 2,
+          top: -handleSize / 2,
+          width: handleSize,
+          height: handleSize,
+          backgroundColor: '#007acc',
+          border: '2px solid #ffffff',
+          borderRadius: '50%',
+          cursor: 'ne-resize',
+          pointerEvents: 'auto'
+        }}
+        onMouseDown={(e) => handleMouseDown(e, 'scale')}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          left: -handleSize / 2,
+          bottom: -handleSize / 2,
+          width: handleSize,
+          height: handleSize,
+          backgroundColor: '#007acc',
+          border: '2px solid #ffffff',
+          borderRadius: '50%',
+          cursor: 'sw-resize',
+          pointerEvents: 'auto'
+        }}
+        onMouseDown={(e) => handleMouseDown(e, 'scale')}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          right: -handleSize / 2,
+          bottom: -handleSize / 2,
+          width: handleSize,
+          height: handleSize,
+          backgroundColor: '#007acc',
+          border: '2px solid #ffffff',
+          borderRadius: '50%',
+          cursor: 'se-resize',
+          pointerEvents: 'auto'
+        }}
+        onMouseDown={(e) => handleMouseDown(e, 'scale')}
+      />
+
+      {/* Edge handles for scaling */}
+      <div
+        style={{
+          position: 'absolute',
+          left: boundingBox.width / 2 - handleSize / 2,
+          top: -handleSize / 2,
+          width: handleSize,
+          height: handleSize,
+          backgroundColor: '#007acc',
+          border: '2px solid #ffffff',
+          borderRadius: '50%',
+          cursor: 'n-resize',
+          pointerEvents: 'auto'
+        }}
+        onMouseDown={(e) => handleMouseDown(e, 'scale')}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          left: boundingBox.width / 2 - handleSize / 2,
+          bottom: -handleSize / 2,
+          width: handleSize,
+          height: handleSize,
+          backgroundColor: '#007acc',
+          border: '2px solid #ffffff',
+          borderRadius: '50%',
+          cursor: 's-resize',
+          pointerEvents: 'auto'
+        }}
+        onMouseDown={(e) => handleMouseDown(e, 'scale')}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          left: -handleSize / 2,
+          top: boundingBox.height / 2 - handleSize / 2,
+          width: handleSize,
+          height: handleSize,
+          backgroundColor: '#007acc',
+          border: '2px solid #ffffff',
+          borderRadius: '50%',
+          cursor: 'w-resize',
+          pointerEvents: 'auto'
+        }}
+        onMouseDown={(e) => handleMouseDown(e, 'scale')}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          right: -handleSize / 2,
+          top: boundingBox.height / 2 - handleSize / 2,
+          width: handleSize,
+          height: handleSize,
+          backgroundColor: '#007acc',
+          border: '2px solid #ffffff',
+          borderRadius: '50%',
+          cursor: 'e-resize',
+          pointerEvents: 'auto'
+        }}
+        onMouseDown={(e) => handleMouseDown(e, 'scale')}
+      />
+
+      {/* Center handle for moving */}
+      <div
+        style={{
+          position: 'absolute',
+          left: boundingBox.width / 2 - handleSize / 2,
+          top: boundingBox.height / 2 - handleSize / 2,
+          width: handleSize,
+          height: handleSize,
+          backgroundColor: '#ffffff',
+          border: '2px solid #007acc',
+          borderRadius: '50%',
+          cursor: 'move',
+          pointerEvents: 'auto'
+        }}
+        onMouseDown={(e) => handleMouseDown(e, 'move')}
+      />
+
+      {/* Rotation handle */}
+      <div
+        style={{
+          position: 'absolute',
+          left: boundingBox.width / 2 - 2,
+          top: -20,
+          width: 4,
+          height: 16,
+          backgroundColor: '#007acc',
+          border: '1px solid #ffffff',
+          borderRadius: '2px',
+          cursor: 'grab',
+          pointerEvents: 'auto'
+        }}
+        onMouseDown={(e) => handleMouseDown(e, 'rotate')}
+      />
+
+      {/* Rotation indicator line */}
+      <div
+        style={{
+          position: 'absolute',
+          left: boundingBox.width / 2,
+          top: 0,
+          width: 2,
+          height: 20,
+          backgroundColor: '#007acc',
+          pointerEvents: 'none'
+        }}
+      />
+
+      {/* Transform info */}
+      <div
+        style={{
+          position: 'absolute',
+          top: -30,
+          left: 0,
+          right: 0,
+          textAlign: 'center',
+          fontSize: '10px',
+          color: '#ffffff',
+          backgroundColor: 'rgba(0, 0, 0, 0.7)',
+          padding: '2px 4px',
+          borderRadius: '2px',
+          pointerEvents: 'none'
+        }}
+      >
+        {selectedElements.length} element{selectedElements.length !== 1 ? 's' : ''} selected
       </div>
     </div>
   );
 }
+
+export default TransformGizmo;

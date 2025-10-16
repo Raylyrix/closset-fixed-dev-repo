@@ -8,7 +8,7 @@ import { useUndoRedo } from '../hooks/useUndoRedo';
 import { canvasPool } from '../utils/CanvasPool';
 import { geometryManager } from '../utils/GeometryManager';
 import { performanceOptimizer } from '../utils/PerformanceOptimizer';
-import { adaptivePerformanceManager } from '../utils/AdaptivePerformanceManager';
+import { unifiedPerformanceManager } from '../utils/UnifiedPerformanceManager';
 
 // Import new modular components
 import { ShirtRenderer } from './Shirt/ShirtRenderer';
@@ -18,7 +18,12 @@ import { useAdvancedLayerStore } from '../core/AdvancedLayerSystem';
 import { layerBridge } from '../core/LayerSystemBridge';
 import { LAYER_SYSTEM_CONFIG } from '../config/LayerConfig';
 import { layerPersistenceManager } from '../core/LayerPersistenceManager';
+import { useAutomaticLayerManager } from '../core/AutomaticLayerManager';
 // import { Brush3DIntegration } from './Brush3DIntegrationNew'; // Using existing useApp painting system instead
+
+// Import selection system
+import { useLayerSelectionSystem, elementDetection } from '../core/LayerSelectionSystem';
+import SelectionVisualization from './SelectionVisualization';
 
 // Import domain stores
 import { useModelStore } from '../stores/domainStores';
@@ -44,6 +49,14 @@ interface ShirtRefactoredProps {
   enableBrushPainting?: boolean;
 }
 
+// Context Menu State
+interface ContextMenuState {
+  visible: boolean;
+  x: number;
+  y: number;
+  textId: string | null;
+}
+
 /**
  * ShirtRefactored - 3D scene content only
  * This component provides the 3D scene elements that go inside a Canvas
@@ -59,6 +72,27 @@ export function ShirtRefactored({
   // Initialize brush engine for realistic brush effects
   const brushEngine = useBrushEngine();
   
+  // Initialize automatic layer manager
+  const { triggerBrushStart, triggerBrushEnd } = useAutomaticLayerManager();
+  
+  // Initialize selection system
+  const {
+    selectedElements,
+    activeElement,
+    selectElement,
+    clearSelection,
+    setSelectionMode,
+    addToSelection,
+    removeFromSelection,
+  } = useLayerSelectionSystem();
+  
+  // Track modifier keys for selection behavior
+  const [modifierKeys, setModifierKeys] = useState({
+    ctrl: false,
+    shift: false,
+    alt: false
+  });
+  
   // Reduced logging frequency to prevent console spam
   if (Math.random() < 0.01) { // Only log 1% of the time
     console.log('🎯 ShirtRefactored component mounting with props:', { showDebugInfo, enableBrushPainting });
@@ -67,23 +101,26 @@ export function ShirtRefactored({
   const [modelData, setModelData] = useState<ModelData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // Context Menu State
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>({
+    visible: false,
+    x: 0,
+    y: 0,
+    textId: null
+  });
 
   // PERFORMANCE: Enhanced FPS tracking and adaptive optimization
   useFrame(() => {
-    // Update performance metrics for adaptive manager
-    const config = performanceOptimizer.getConfig(); // Get current config dynamically
-    const fps = config.targetFPS; // Use target FPS as approximation
-    adaptivePerformanceManager.updatePerformanceMetrics(fps);
-    
     // PERFORMANCE: Adaptive optimization based on actual performance
     if (performanceOptimizer.shouldUseAggressiveOptimizations()) {
       performanceOptimizer.forceGarbageCollection();
       
-      // PERFORMANCE: Use adaptive settings for quality adjustments
-      const settings = adaptivePerformanceManager.getEffectiveSettings();
-      if (settings.textureQuality === 'low') {
-        // Reduce texture resolution dynamically
-        const optimalSize = adaptivePerformanceManager.getOptimalCanvasSize();
+      // PERFORMANCE: Use unified performance manager for quality adjustments
+      const capabilities = unifiedPerformanceManager.getDeviceCapabilities();
+      if (capabilities.isLowEnd) {
+        // Reduce texture resolution dynamically for low-end devices
+        const optimalSize = unifiedPerformanceManager.getOptimalCanvasSize();
         // This could be used to dynamically resize canvases if needed
       }
     }
@@ -97,6 +134,37 @@ export function ShirtRefactored({
       // Note: We don't dispose all textures here as other components might be using them
       // Only dispose the specific texture we created
       textureManager.disposeTexture('model-texture');
+    };
+  }, []);
+
+  // Track modifier keys for selection behavior
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      setModifierKeys(prev => ({
+        ...prev,
+        ctrl: e.ctrlKey || e.metaKey, // Support both Ctrl and Cmd
+        shift: e.shiftKey,
+        alt: e.altKey
+      }));
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      setModifierKeys(prev => ({
+        ...prev,
+        ctrl: e.ctrlKey || e.metaKey,
+        shift: e.shiftKey,
+        alt: e.altKey
+      }));
+    };
+
+    // Add event listeners
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+
+    // Cleanup
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
     };
   }, []);
 
@@ -394,11 +462,11 @@ export function ShirtRefactored({
     // Get puff print data from a separate puff canvas
     const puffCanvas = useApp.getState().puffCanvas;
     if (puffCanvas) {
-      // Get puff settings for displacement calculation
-      const puffSettings = useApp.getState();
-      const puffHeight = puffSettings.puffHeight || 1.0;
-      const puffCurvature = puffSettings.puffCurvature || 0.5;
-      
+        // Get puff settings for displacement calculation
+        const puffSettings = useApp.getState();
+        const puffHeight = puffSettings.puffHeight || 1.0;
+        const puffCurvature = puffSettings.puffCurvature || 0.5;
+
       // Convert puff canvas to proper displacement map by drawing only where there's puff
       const puffImageData = puffCanvas.getContext('2d')?.getImageData(0, 0, puffCanvas.width, puffCanvas.height);
       if (puffImageData) {
@@ -409,12 +477,12 @@ export function ShirtRefactored({
         for (let y = 0; y < puffCanvas.height; y++) {
           for (let x = 0; x < puffCanvas.width; x++) {
             const i = (y * puffCanvas.width + x) * 4;
-            const alpha = data[i + 3];
+          const alpha = data[i + 3];
             
             if (alpha > 10) { // Threshold to avoid noise
-              // Create height based on alpha and puff settings
-              const baseHeight = (alpha / 255) * puffHeight;
-              const curvatureFactor = THREE.MathUtils.lerp(0.3, 1.0, puffCurvature);
+            // Create height based on alpha and puff settings
+            const baseHeight = (alpha / 255) * puffHeight;
+            const curvatureFactor = THREE.MathUtils.lerp(0.3, 1.0, puffCurvature);
               const height = baseHeight * curvatureFactor;
               
               // Calculate displacement value (0-255, where 0 = no displacement, 255 = max)
@@ -621,9 +689,34 @@ export function ShirtRefactored({
                 mat.displacementMap.needsUpdate = true;
                 mat.normalMap.needsUpdate = true;
                 
-                console.log('🎨 Applied puff displacement maps to material - scale:', mat.displacementScale);
-              } else {
-                // Remove displacement and normal maps if no content
+                // REALISTIC PBR MATERIAL PROPERTIES FOR PUFF PRINT
+                // Real puff prints have a matte, velvety finish (low metalness, medium-high roughness)
+                mat.metalness = 0.0; // No metallic shine, foam is matte
+                mat.roughness = 0.75; // Slightly rough surface, not perfectly matte
+                
+                // Subtle ambient occlusion effect for depth perception
+                mat.aoMapIntensity = 0.3;
+              }
+              
+              // Check for embroidery content and apply silk-like material properties
+              const embroideryCanvas = useApp.getState().embroideryCanvas;
+              const hasEmbroideryContent = embroideryCanvas ? checkIfCanvasHasContent(embroideryCanvas) : false;
+              
+              if (hasEmbroideryContent) {
+                // REALISTIC PBR MATERIAL PROPERTIES FOR EMBROIDERY
+                // Real embroidery threads (silk/polyester) have a silky sheen with directional reflection
+                mat.metalness = 0.15; // Slight metallic quality for silk threads
+                mat.roughness = 0.35; // Smoother than puff, reflects more light
+                
+                // Enhance the sheen effect
+                mat.envMapIntensity = 1.2; // Increase environment reflection
+                mat.aoMapIntensity = 0.5; // More pronounced depth
+                
+                console.log('🎨 Applied embroidery PBR properties for silk-like finish');
+              }
+              
+              if (!hasPuffContent) {
+                // Remove displacement and normal maps if no puff content
                 mat.displacementMap = null;
                 mat.displacementScale = 0;
                 mat.displacementBias = 0;
@@ -679,102 +772,58 @@ export function ShirtRefactored({
   const updateModelTexture = useCallback((forceUpdate = false, updateDisplacement = false) => {
     console.log('🎨 updateModelTexture called with:', { forceUpdate, updateDisplacement });
     
+    // PERFORMANCE: Throttle texture updates to prevent excessive calls
+    const now = Date.now();
+    const textureUpdateThrottle = performanceOptimizer.getConfig().deviceTier === 'low' ? 200 : 100; // ms between texture updates
+    if (!forceUpdate && (window as any).lastTextureUpdateTime && (now - (window as any).lastTextureUpdateTime) < textureUpdateThrottle) {
+      console.log('🎨 Texture update throttled');
+      return;
+    }
+    (window as any).lastTextureUpdateTime = now;
+    
+    // CRITICAL FIX: Access modelScene from store to ensure it's always current
+    const currentModelScene = useApp.getState().modelScene;
+    
     // PERFORMANCE: Early exit checks without logging
-    if (!modelScene) {
+    if (!currentModelScene) {
       console.log('🎨 Early exit: no modelScene');
       return;
     }
     
-    // CRITICAL FIX: Create a proper layered texture instead of using composedCanvas
-    // This preserves the original model texture while adding tool effects
-    const { baseTexture, layers, composedCanvas } = useApp.getState();
+    // CRITICAL FIX: Ensure composedCanvas exists by triggering layer composition if needed
+    let { composedCanvas } = useApp.getState();
     
-    // Create a temporary canvas for proper layering
-    const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = composedCanvas?.width || 2048;
-    tempCanvas.height = composedCanvas?.height || 2048;
-    const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
-    
-    if (!tempCtx) {
-      console.log('🎨 Failed to create temporary canvas context');
-      return;
-    }
-    
-    // CRITICAL FIX: Prioritize composedCanvas (which includes images) over baseTexture
-    if (composedCanvas) {
-      console.log('🎨 Using composedCanvas as base layer (includes images):', {
-        width: composedCanvas.width,
-        height: composedCanvas.height
-      });
-      tempCtx.globalAlpha = 1;
-      tempCtx.globalCompositeOperation = 'source-over';
-      tempCtx.drawImage(composedCanvas, 0, 0);
-      console.log('🎨 Composed canvas (with images) drawn to temp canvas');
-    } else if (baseTexture) {
-      console.log('🎨 No composedCanvas, falling back to base texture:', {
-        width: baseTexture.width,
-        height: baseTexture.height,
-        type: baseTexture.constructor.name
-      });
-      const centerX = (tempCanvas.width - baseTexture.width) / 2;
-      const centerY = (tempCanvas.height - baseTexture.height) / 2;
-      tempCtx.globalAlpha = 1;
-      tempCtx.globalCompositeOperation = 'source-over';
-      tempCtx.drawImage(baseTexture, centerX, centerY, baseTexture.width, baseTexture.height);
-      console.log('🎨 Base texture drawn to temp canvas');
-    } else {
-      console.log('🎨 No base texture available, using white background');
-      tempCtx.fillStyle = '#ffffff';
-      tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-    }
-    
-    // CRITICAL FIX: Layer tool effects on top using proper blend modes
-    const activeLayer = layers.find(layer => layer.id === useApp.getState().activeLayerId);
-    if (activeLayer && activeLayer.canvas) {
-      console.log('🎨 Adding tool layer on top of base texture');
+    if (!composedCanvas) {
+      console.log('🎨 No composedCanvas available - triggering layer composition...');
+      useApp.getState().composeLayers();
+      composedCanvas = useApp.getState().composedCanvas;
       
-      // DEBUG: Check what's actually in the layer canvas
-      const layerImageData = activeLayer.canvas.getContext('2d')?.getImageData(0, 0, activeLayer.canvas.width, activeLayer.canvas.height);
-      if (layerImageData) {
-        const samplePixel = layerImageData.data.slice(0, 4); // First pixel RGBA
-        console.log('🎨 Layer canvas content sample:', `rgba(${samplePixel[0]}, ${samplePixel[1]}, ${samplePixel[2]}, ${samplePixel[3]})`);
-        
-        // Check if canvas has any non-transparent content
-        let hasContent = false;
-        for (let i = 3; i < layerImageData.data.length; i += 4) {
-          if (layerImageData.data[i] > 0) { // Alpha > 0
-            hasContent = true;
-            break;
-          }
-        }
-        console.log('🎨 Layer canvas has content:', hasContent);
+      if (!composedCanvas) {
+        console.log('🎨 Still no composedCanvas after composition - skipping texture update');
+        return;
       }
-      
-      // FIXED: Use source-over blend mode with full opacity for proper rendering
-      // This ensures brush strokes appear correctly without transparency issues
-      tempCtx.globalCompositeOperation = 'source-over';
-      tempCtx.globalAlpha = 1.0; // Full opacity for proper tool rendering
-      tempCtx.drawImage(activeLayer.canvas, 0, 0);
-      
-      console.log('🎨 Tool layer composited with source-over blend mode');
     }
     
-    // NOTE: Images are now rendered in composeLayers() in App.tsx (same as text)
-    // This ensures live updates without creating new texture maps
-    // Keeping this comment for reference - images should NOT be drawn here
+    console.log('🎨 Using composedCanvas directly for perfect UV alignment:', {
+      width: composedCanvas.width,
+      height: composedCanvas.height
+    });
     
-    // Create fresh texture from the properly layered canvas
-    const texture = new THREE.CanvasTexture(tempCanvas);
+    // Create fresh texture from the composedCanvas with perfect UV alignment
+    const texture = new THREE.CanvasTexture(composedCanvas);
     texture.flipY = false;
     texture.needsUpdate = true;
     texture.colorSpace = THREE.SRGBColorSpace;
-    texture.name = `layered-texture-${Date.now()}`;
+    texture.name = `composed-texture-${Date.now()}`;
     
     // CRITICAL FIX: Set proper texture wrap settings to prevent stretching/distortion
     // This ensures texture maps correctly regardless of model scale
     texture.wrapS = THREE.ClampToEdgeWrapping;
     texture.wrapT = THREE.ClampToEdgeWrapping;
     texture.repeat.set(1, 1); // Ensure 1:1 mapping without tiling
+    texture.offset.set(0, 0); // Ensure no offset
+    
+    console.log('🎨 Created texture from composedCanvas with perfect UV alignment');
     
     console.log('🎨 Created layered texture with proper wrap settings:', texture.name);
     
@@ -782,26 +831,27 @@ export function ShirtRefactored({
     const materialUpdates: { mesh: any; material: any }[] = [];
     
     // Collect all mesh updates first
-    modelScene.traverse((child: any) => {
+    currentModelScene.traverse((child: any) => {
       if (child.isMesh && child.material) {
         const materials = Array.isArray(child.material) ? child.material : [child.material];
         materials.forEach((mat: any) => {
           if (mat.isMeshStandardMaterial && texture) {
-            // Apply adaptive texture quality settings
-            const settings = adaptivePerformanceManager.getEffectiveSettings();
+            // Apply unified performance manager texture quality settings
+            const capabilities = unifiedPerformanceManager.getDeviceCapabilities();
+            const preset = unifiedPerformanceManager.getCurrentPreset();
             
-            // Set texture properties based on quality settings
-            if (settings.textureQuality === 'low') {
+            // Set texture properties based on device capabilities and preset
+            if (capabilities.isLowEnd || preset.textureQuality === 'low') {
               texture.generateMipmaps = false;
               texture.anisotropy = 1;
               texture.minFilter = THREE.LinearFilter;
               texture.magFilter = THREE.LinearFilter;
-            } else if (settings.textureQuality === 'medium') {
+            } else if (capabilities.isMidRange || preset.textureQuality === 'medium') {
               texture.generateMipmaps = true;
               texture.anisotropy = 4;
               texture.minFilter = THREE.LinearMipmapLinearFilter;
               texture.magFilter = THREE.LinearFilter;
-            } else if (settings.textureQuality === 'high') {
+            } else if (preset.textureQuality === 'high') {
               texture.generateMipmaps = true;
               texture.anisotropy = 8;
               texture.minFilter = THREE.LinearMipmapLinearFilter;
@@ -814,43 +864,43 @@ export function ShirtRefactored({
             }
             
             // Always update texture to ensure changes are applied
-            mat.map = texture;
+              mat.map = texture;
             mat.needsUpdate = true;
             mat.map.needsUpdate = true;
             
-            // Apply adaptive material properties
+            // Apply adaptive material properties based on preset
             mat.transparent = false;
-            mat.opacity = 1.0;
-            mat.alphaTest = 0.0;
-            mat.roughness = settings.enableHighQualityRendering ? 0.3 : 0.5;
-            mat.sheen = settings.enableHighQualityRendering ? 0.1 : 0.05;
-            
-            // CRITICAL: Reset emissive to prevent washing out
-            mat.emissive.setHex(0x000000);
-            mat.emissiveIntensity = 0;
-            mat.emissiveMap = null;
-            
-            // ULTRA-REALISTIC: Material properties for natural cotton fabric appearance
+              mat.opacity = 1.0;
+              mat.alphaTest = 0.0;
+            mat.roughness = preset.textureQuality === 'ultra' || preset.textureQuality === 'high' ? 0.3 : 0.5;
+            mat.sheen = preset.textureQuality === 'ultra' || preset.textureQuality === 'high' ? 0.1 : 0.05;
+              
+              // CRITICAL: Reset emissive to prevent washing out
+              mat.emissive.setHex(0x000000);
+              mat.emissiveIntensity = 0;
+              mat.emissiveMap = null;
+              
+              // ULTRA-REALISTIC: Material properties for natural cotton fabric appearance
             mat.roughness = 0.5;
-            mat.metalness = 0.0;
-            mat.normalScale = new THREE.Vector2(1, 1);
-            
-            // Subtle fabric sheen (much less than before for realism)
+              mat.metalness = 0.0;
+              mat.normalScale = new THREE.Vector2(1, 1);
+              
+              // Subtle fabric sheen (much less than before for realism)
             mat.sheen = 0.05;
-            mat.sheenRoughness = 0.9;
-            mat.sheenColor = new THREE.Color(0xffffff);
-            
-            // Optimized color space for accurate fabric colors
-            mat.toneMapped = true;
-            mat.colorSpace = THREE.SRGBColorSpace;
-            mat.outputColorSpace = THREE.SRGBColorSpace;
-            
-            // Natural fabric lighting properties
-            mat.envMapIntensity = 0.4;
-            mat.reflectivity = 0.05;
-            
-            mat.needsUpdate = true;
-            materialUpdates.push({ mesh: child, material: mat });
+              mat.sheenRoughness = 0.9;
+              mat.sheenColor = new THREE.Color(0xffffff);
+              
+              // Optimized color space for accurate fabric colors
+              mat.toneMapped = true;
+              mat.colorSpace = THREE.SRGBColorSpace;
+              mat.outputColorSpace = THREE.SRGBColorSpace;
+              
+              // Natural fabric lighting properties
+              mat.envMapIntensity = 0.4;
+              mat.reflectivity = 0.05;
+              
+              mat.needsUpdate = true;
+              materialUpdates.push({ mesh: child, material: mat });
           }
         });
       }
@@ -858,7 +908,7 @@ export function ShirtRefactored({
     
     // PERFORMANCE: Apply updates in batches to reduce GPU pressure
     if (materialUpdates.length > 0) {
-      console.log(`🎨 Applying ${materialUpdates.length} batched material updates`);
+        console.log(`🎨 Applying ${materialUpdates.length} batched material updates`);
       requestAnimationFrame(() => {
         materialUpdates.forEach(({ material }) => {
           if (material && material.needsUpdate !== undefined) {
@@ -874,7 +924,7 @@ export function ShirtRefactored({
     // Only update displacement maps if specifically requested
     if (updateDisplacement || forceUpdate) {
       const puffCanvas = useApp.getState().puffCanvas;
-      if (puffCanvas && modelScene) {
+      if (puffCanvas && currentModelScene) {
         console.log('🎨 Updating displacement maps (requested)');
         const puffDisplacementCanvas = createPuffDisplacementMap();
         const puffNormalCanvas = createPuffNormalMap();
@@ -1188,6 +1238,158 @@ export function ShirtRefactored({
      (window as any).clearPuffDisplacement = clearPuffDisplacement;
    }, [clearPuffDisplacement]);
 
+   // Close context menu on click outside
+   useEffect(() => {
+     const handleClickOutside = () => {
+       if (contextMenu.visible) {
+         setContextMenu({ visible: false, x: 0, y: 0, textId: null });
+       }
+     };
+     
+     window.addEventListener('click', handleClickOutside);
+     return () => window.removeEventListener('click', handleClickOutside);
+   }, [contextMenu.visible]);
+
+   // KEYBOARD SHORTCUTS for text tool
+   useEffect(() => {
+     const handleKeyDown = (e: KeyboardEvent) => {
+       const { activeTool, activeTextId, textElements, updateTextElement, setActiveTextId } = useApp.getState();
+       
+       // Only handle shortcuts when text tool is active or text is selected
+       if (activeTool !== 'text' && !activeTextId) return;
+       
+       const selectedText = textElements.find(t => t.id === activeTextId);
+       if (!selectedText && activeTool !== 'text') return;
+       
+       // Prevent shortcuts if user is typing in an input field
+       const target = e.target as HTMLElement;
+       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+         return;
+       }
+       
+       // ARROW KEYS: Nudge text position
+       if (e.key.startsWith('Arrow') && selectedText) {
+         e.preventDefault();
+         const nudgeAmount = e.shiftKey ? 0.01 : 0.001; // 10px or 1px in UV space (approx)
+         const currentU = selectedText.u || 0.5;
+         const currentV = selectedText.v || 0.5;
+         
+         let newU = currentU;
+         let newV = currentV;
+         
+         switch (e.key) {
+           case 'ArrowLeft':
+             newU = Math.max(0, currentU - nudgeAmount);
+             break;
+           case 'ArrowRight':
+             newU = Math.min(1, currentU + nudgeAmount);
+             break;
+           case 'ArrowUp':
+             newV = Math.min(1, currentV + nudgeAmount);
+             break;
+           case 'ArrowDown':
+             newV = Math.max(0, currentV - nudgeAmount);
+             break;
+         }
+         
+         updateTextElement(selectedText.id, { u: newU, v: newV });
+         console.log(`⌨️ Arrow key: Moved text ${e.shiftKey ? '10px' : '1px'}`);
+       }
+       
+       // +/- KEYS: Adjust font size
+       if ((e.key === '=' || e.key === '+' || e.key === '-') && selectedText) {
+         e.preventDefault();
+         const currentSize = selectedText.fontSize;
+         const delta = (e.key === '-') ? -1 : 1;
+         const newSize = Math.max(8, Math.min(200, currentSize + delta));
+         updateTextElement(selectedText.id, { fontSize: newSize });
+         console.log(`⌨️ Font size: ${newSize}px`);
+       }
+       
+       // DELETE: Remove selected text
+       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedText) {
+         e.preventDefault();
+         const newTextElements = textElements.filter(t => t.id !== selectedText.id);
+         useApp.setState({ textElements: newTextElements });
+         setActiveTextId(null);
+         console.log(`⌨️ Deleted text: "${selectedText.text}"`);
+         
+         // Trigger texture update
+         setTimeout(() => {
+           const { composeLayers } = useApp.getState();
+           composeLayers(true);
+           if ((window as any).updateModelTexture) {
+             (window as any).updateModelTexture(true, false);
+           }
+         }, 10);
+       }
+       
+       // ESCAPE: Deselect text
+       if (e.key === 'Escape' && activeTextId) {
+         e.preventDefault();
+         setActiveTextId(null);
+         console.log(`⌨️ Deselected text`);
+       }
+       
+       // CTRL+D: Duplicate text
+       if (e.ctrlKey && e.key === 'd' && selectedText) {
+         e.preventDefault();
+         const newText = {
+           ...selectedText,
+           id: `text-${Date.now()}`,
+           u: (selectedText.u || 0.5) + 0.02, // Offset by ~82px
+           v: (selectedText.v || 0.5) + 0.02
+         };
+         useApp.setState({ textElements: [...textElements, newText] });
+         setActiveTextId(newText.id);
+         console.log(`⌨️ Duplicated text: "${selectedText.text}"`);
+         
+         // Trigger texture update
+         setTimeout(() => {
+           const { composeLayers } = useApp.getState();
+           composeLayers(true);
+           if ((window as any).updateModelTexture) {
+             (window as any).updateModelTexture(true, false);
+           }
+         }, 10);
+       }
+       
+       // CTRL+C: Copy text
+       if (e.ctrlKey && e.key === 'c' && selectedText) {
+         e.preventDefault();
+         (window as any).__copiedText = { ...selectedText };
+         console.log(`⌨️ Copied text: "${selectedText.text}"`);
+       }
+       
+       // CTRL+V: Paste text
+       if (e.ctrlKey && e.key === 'v' && (window as any).__copiedText) {
+         e.preventDefault();
+         const copiedText = (window as any).__copiedText;
+         const newText = {
+           ...copiedText,
+           id: `text-${Date.now()}`,
+           u: (copiedText.u || 0.5) + 0.02,
+           v: (copiedText.v || 0.5) + 0.02
+         };
+         useApp.setState({ textElements: [...textElements, newText] });
+         setActiveTextId(newText.id);
+         console.log(`⌨️ Pasted text: "${copiedText.text}"`);
+         
+         // Trigger texture update
+         setTimeout(() => {
+           const { composeLayers } = useApp.getState();
+           composeLayers(true);
+           if ((window as any).updateModelTexture) {
+             (window as any).updateModelTexture(true, false);
+           }
+         }, 10);
+       }
+     };
+     
+     window.addEventListener('keydown', handleKeyDown);
+     return () => window.removeEventListener('keydown', handleKeyDown);
+   }, []);
+
    // Apply Tool Integration - Handle all texture system events
   useEffect(() => {
      console.log('🎨 Setting up Apply Tool event listeners for all texture systems');
@@ -1338,14 +1540,29 @@ export function ShirtRefactored({
   const paintAtEvent = useCallback((e: any) => {
     // PERFORMANCE: Disable all console logging in hot path for maximum performance
     // Only log critical errors
-    if (process.env.NODE_ENV === 'development' && Math.random() < 0.01) {
-      console.log('🎨 paintAtEvent:', activeTool);
+    
+    // CRITICAL FIX: Extract and validate UV coordinates first
+    const uv = e.uv as THREE.Vector2 | undefined;
+    if (!uv) {
+      console.warn('🎨 No UV coordinates in event');
+      return;
+    }
+    
+    // CRITICAL FIX: Validate UV coordinates and ensure they're in valid range
+    if (uv.x < 0 || uv.x > 1 || uv.y < 0 || uv.y > 1) {
+      console.warn('🎨 Invalid UV coordinates:', uv);
+      return;
+    }
+    
+    // CRITICAL FIX: Check if UV coordinates are reasonable (not NaN or Infinity)
+    if (!isFinite(uv.x) || !isFinite(uv.y)) {
+      console.warn('🎨 Non-finite UV coordinates:', uv);
+      return;
     }
     
     // Handle picker tool first - optimized for performance
     if (activeTool === 'picker') {
-      const uv = e.uv as THREE.Vector2 | undefined;
-      if (!uv || !modelScene) return;
+      if (!modelScene) return;
       
       // PERFORMANCE: Use cached composed canvas for faster color sampling
       const composedCanvas = useApp.getState().composedCanvas;
@@ -1368,7 +1585,6 @@ export function ShirtRefactored({
       return;
     }
     
-    const uv = e.uv as THREE.Vector2 | undefined;
     const point = e.point as THREE.Vector3 | undefined; // World coordinates
     
     // DEBUG: Add detailed logging to understand the issue
@@ -1424,18 +1640,35 @@ export function ShirtRefactored({
     }
     
     // Helper function to draw at multiple positions based on symmetry
-     const drawWithSymmetry = (drawFn: (x: number, y: number) => void) => {
-       const canvas = layer.canvas;
-      // Convert UV to canvas coordinates (NO V flipping - model UVs are correct as-is)
-      const x = Math.floor(uv.x * canvas.width);
-      const y = Math.floor(uv.y * canvas.height);
+    const drawWithSymmetry = (drawFn: (x: number, y: number) => void) => {
+      const canvas = layer.canvas;
+      // CRITICAL FIX: Use precise UV-to-pixel conversion with proper rounding
+      // This ensures perfect 1:1 correspondence between UV coordinates and canvas pixels
+      const x = Math.round(uv.x * (canvas.width - 1));
+      const y = Math.round(uv.y * (canvas.height - 1));
+      
+      // Ensure coordinates are within canvas bounds
+      const clampedX = Math.max(0, Math.min(canvas.width - 1, x));
+      const clampedY = Math.max(0, Math.min(canvas.height - 1, y));
+      
+      console.log('🎨 UV to pixel conversion:', {
+        uv: { x: uv.x, y: uv.y },
+        pixel: { x: clampedX, y: clampedY },
+        canvas: { width: canvas.width, height: canvas.height },
+        conversion: {
+          xFormula: `Math.round(${uv.x} * (${canvas.width} - 1)) = ${x}`,
+          yFormula: `Math.round(${uv.y} * (${canvas.height} - 1)) = ${y}`,
+          clampedX: `${Math.max(0, Math.min(canvas.width - 1, x))}`,
+          clampedY: `${Math.max(0, Math.min(canvas.height - 1, y))}`
+        }
+      });
       
       // Calculate all possible mirror positions
       const positions = new Set<string>();
       
       // Always draw at original position
-      positions.add(`${x},${y}`);
-      drawFn(x, y);
+      positions.add(`${clampedX},${clampedY}`);
+      drawFn(clampedX, clampedY);
       
       // PERFORMANCE: Skip symmetry calculations if no symmetry is enabled
       if (!symmetryX && !symmetryY && !symmetryZ) {
@@ -1447,43 +1680,43 @@ export function ShirtRefactored({
         console.log('🔄 Using fallback UV-based symmetry');
         
         // X-axis symmetry: Mirror across center of UV space
-        if (symmetryX) {
-          const mirrorX = canvas.width - x;
-          const mirrorY = y;
+      if (symmetryX) {
+          const mirrorX = canvas.width - 1 - clampedX;
+          const mirrorY = clampedY;
           if (mirrorX >= 0 && mirrorX < canvas.width) {
-            const pos = `${mirrorX},${mirrorY}`;
-            if (!positions.has(pos)) {
-              positions.add(pos);
-              drawFn(mirrorX, mirrorY);
-            }
+          const pos = `${mirrorX},${mirrorY}`;
+          if (!positions.has(pos)) {
+            positions.add(pos);
+            drawFn(mirrorX, mirrorY);
           }
         }
-        
+      }
+      
         // Y-axis symmetry: Mirror across center of UV space
-        if (symmetryY) {
-          const mirrorX = x;
-          const mirrorY = canvas.height - y;
+      if (symmetryY) {
+          const mirrorX = clampedX;
+          const mirrorY = canvas.height - 1 - clampedY;
           if (mirrorY >= 0 && mirrorY < canvas.height) {
-            const pos = `${mirrorX},${mirrorY}`;
-            if (!positions.has(pos)) {
-              positions.add(pos);
-              drawFn(mirrorX, mirrorY);
-            }
+          const pos = `${mirrorX},${mirrorY}`;
+          if (!positions.has(pos)) {
+            positions.add(pos);
+            drawFn(mirrorX, mirrorY);
           }
         }
-        
+      }
+      
         // Z-axis symmetry: Mirror both X and Y (diagonal symmetry)
-        if (symmetryZ) {
-          const mirrorX = canvas.width - x;
-          const mirrorY = canvas.height - y;
+      if (symmetryZ) {
+          const mirrorX = canvas.width - 1 - clampedX;
+          const mirrorY = canvas.height - 1 - clampedY;
           if (mirrorX >= 0 && mirrorX < canvas.width && mirrorY >= 0 && mirrorY < canvas.height) {
-            const pos = `${mirrorX},${mirrorY}`;
-            if (!positions.has(pos)) {
-              positions.add(pos);
-              drawFn(mirrorX, mirrorY);
-            }
+          const pos = `${mirrorX},${mirrorY}`;
+          if (!positions.has(pos)) {
+            positions.add(pos);
+            drawFn(mirrorX, mirrorY);
           }
         }
+      }
       };
       
       // Use simplified UV-based symmetry to avoid world position conversion issues
@@ -1511,10 +1744,10 @@ export function ShirtRefactored({
       const vectorPaths = useApp.getState().vectorPaths || [];
       const activePathId = useApp.getState().activePathId;
       
-       // Convert UV to canvas coordinates for vector path creation
-       const canvas = layer.canvas;
-       const x = Math.floor(uv.x * canvas.width);
-       const y = Math.floor(uv.y * canvas.height);
+      // Convert UV to canvas coordinates for vector path creation
+      const canvas = layer.canvas;
+      const x = Math.floor(uv.x * canvas.width);
+      const y = Math.floor(uv.y * canvas.height);
       
       console.log('🎨 Vector path point at canvas:', { x, y }, 'UV:', { u: uv.x, v: uv.y });
       
@@ -1567,8 +1800,8 @@ export function ShirtRefactored({
     if (!ctx) return;
 
     // Convert UV coordinates to canvas coordinates
-     const x = Math.floor(uv.x * canvas.width);
-     const y = Math.floor(uv.y * canvas.height);
+    const x = Math.floor(uv.x * canvas.width);
+    const y = Math.floor(uv.y * canvas.height);
 
     // DEBUG: Log UV to canvas conversion for brush tool
     if (activeTool === 'brush') {
@@ -1679,7 +1912,7 @@ export function ShirtRefactored({
           if (!brushEngine) {
             console.warn('🖌️ Brush engine not available, falling back to basic shapes');
             // Fallback to basic shape
-            ctx.beginPath();
+        ctx.beginPath();
             ctx.arc(x, y, currentBrushSize / 2, 0, Math.PI * 2);
             ctx.fill();
             return;
@@ -1730,7 +1963,7 @@ export function ShirtRefactored({
           // Fallback to basic shape
           ctx.beginPath();
           ctx.arc(x, y, currentBrushSize / 2, 0, Math.PI * 2);
-          ctx.fill();
+        ctx.fill();
         }
         
         // DEBUG: Check if brush content was actually drawn
@@ -1760,7 +1993,7 @@ export function ShirtRefactored({
         const newStroke = {
           id: `stroke-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           layerId: currentLayer.id,
-           points: [{ x: Math.floor(uv.x * layer.canvas.width), y: Math.floor(uv.y * layer.canvas.height) }],
+          points: [{ x: Math.floor(uv.x * layer.canvas.width), y: Math.floor(uv.y * layer.canvas.height) }],
           color: actualBrushColor,
           size: brushSize,
           opacity: effectiveOpacity,
@@ -1772,6 +2005,10 @@ export function ShirtRefactored({
         useApp.setState({ brushStrokes: [...currentStrokes, newStroke] });
         
         console.log('🎨 Brush stroke tracked and linked to layer:', currentLayer.id, newStroke);
+        
+        // CRITICAL FIX: Trigger layer composition to ensure brush strokes are rendered
+        console.log('🎨 Triggering layer composition for brush stroke...');
+        useApp.getState().composeLayers();
       }
       
       // PERFORMANCE FIX: Reduced debug logging
@@ -2106,15 +2343,35 @@ export function ShirtRefactored({
 
       // Define embroidery drawing function for symmetry
       const drawEmbroideryAt = (x: number, y: number) => {
-
-      // Setup canvas for realistic embroidery thread drawing
+      // PERFORMANCE: Quick setup
       ctx.globalCompositeOperation = 'source-over';
       ctx.globalAlpha = 1.0;
       
-      const threadSize = embroideryThreadThickness * 3;
+      // PERFORMANCE: Adaptive thread size based on device tier
+      const deviceTier = performanceOptimizer.getConfig().deviceTier;
+      const threadSizeMultiplier = deviceTier === 'high' ? 2.5 : deviceTier === 'medium' ? 2 : 1.5; // Reduced multipliers for better performance
+      const threadSize = embroideryThreadThickness * threadSizeMultiplier;
+      
+      // PERFORMANCE: Skip complex effects for low-end devices
+      const useSimpleEmbroidery = deviceTier === 'low';
       
       // Create realistic thread texture with multiple layers
       const drawThreadStitch = (startX: number, startY: number, endX: number, endY: number) => {
+        if (useSimpleEmbroidery) {
+          // Simple embroidery for low-end devices
+          ctx.save();
+      ctx.strokeStyle = embroideryThreadColor;
+          ctx.lineWidth = threadSize;
+      ctx.lineCap = 'round';
+          ctx.beginPath();
+          ctx.moveTo(startX, startY);
+          ctx.lineTo(endX, endY);
+          ctx.stroke();
+          ctx.restore();
+          return;
+        }
+        
+        // Complex embroidery for high-end devices
         const dx = endX - startX;
         const dy = endY - startY;
         const length = Math.sqrt(dx * dx + dy * dy);
@@ -2153,31 +2410,62 @@ export function ShirtRefactored({
         ctx.ellipse(length/2, 0, length/2, threadSize/2, 0, 0, Math.PI * 2);
         ctx.fill();
         
-        // Add thread texture with small lines
-        ctx.strokeStyle = darken(baseColor, 0.8);
-        ctx.lineWidth = 1;
-        for (let i = 0; i < length; i += threadSize * 0.5) {
+        // Add thread texture with small lines (OPTIMIZED)
+        // PERFORMANCE: Adaptive texture detail based on device tier
+        const deviceTier = performanceOptimizer.getConfig().deviceTier;
+        const textureSpacing = deviceTier === 'high' ? threadSize * 0.5 : deviceTier === 'medium' ? threadSize * 0.8 : threadSize * 1.2;
+        
+        if (deviceTier !== 'low') {
+          ctx.strokeStyle = darken(baseColor, 0.8);
+          ctx.lineWidth = 1;
           ctx.beginPath();
-          ctx.moveTo(i, -threadSize/4);
-          ctx.lineTo(i + threadSize * 0.3, threadSize/4);
-          ctx.stroke();
+          for (let i = 0; i < length; i += textureSpacing) {
+            ctx.moveTo(i, -threadSize/4);
+            ctx.lineTo(i + threadSize * 0.3, threadSize/4);
+          }
+          ctx.stroke(); // Single stroke operation
         }
         
-        // Add highlight for 3D effect
-        ctx.strokeStyle = darken(baseColor, 1.3);
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(threadSize * 0.1, -threadSize/3);
-        ctx.lineTo(length - threadSize * 0.1, -threadSize/3);
-        ctx.stroke();
+        // Add realistic thread sheen (silk/polyester threads have directional shininess)
+        ctx.globalAlpha = 0.6; // Semi-transparent for realistic sheen
+        const sheenGradient = ctx.createLinearGradient(0, -threadSize/2, 0, threadSize/2);
+        sheenGradient.addColorStop(0, 'transparent');
+        sheenGradient.addColorStop(0.3, '#FFFFFF'); // Bright sheen on top
+        sheenGradient.addColorStop(0.5, 'transparent');
+        sheenGradient.addColorStop(1, 'transparent');
         
-        // Add shadow for depth
-        ctx.strokeStyle = darken(baseColor, 0.4);
-        ctx.lineWidth = 1;
+        ctx.fillStyle = sheenGradient;
         ctx.beginPath();
-        ctx.moveTo(threadSize * 0.1, threadSize/3);
-        ctx.lineTo(length - threadSize * 0.1, threadSize/3);
+        ctx.ellipse(length/2, -threadSize/4, length/2.5, threadSize/6, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1.0;
+        
+        // Add micro-highlights for thread twist texture (OPTIMIZED)
+        // PERFORMANCE: Skip on low-tier devices, batch strokes on others
+        if (deviceTier !== 'low') {
+          ctx.strokeStyle = '#FFFFFF';
+          ctx.globalAlpha = 0.3;
+          ctx.lineWidth = 1;
+          const highlightSpacing = deviceTier === 'high' ? threadSize * 0.3 : threadSize * 0.6;
+          
+          ctx.beginPath();
+          for (let i = 0; i < length; i += highlightSpacing) {
+            ctx.moveTo(i, -threadSize/4);
+            ctx.lineTo(i + threadSize * 0.15, -threadSize/6);
+          }
+          ctx.stroke(); // Single stroke operation
+        }
+        ctx.globalAlpha = 1.0;
+        
+        // Add shadow for depth (below the thread)
+        ctx.globalAlpha = 0.4;
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
+        ctx.lineWidth = threadSize / 3;
+        ctx.beginPath();
+        ctx.moveTo(0, threadSize/2);
+        ctx.lineTo(length, threadSize/2);
         ctx.stroke();
+        ctx.globalAlpha = 1.0;
         
         ctx.restore();
       };
@@ -2261,7 +2549,7 @@ export function ShirtRefactored({
               const knotRadius = threadSize * 1.5;
               for (let wrap = 0; wrap < 3; wrap++) {
                 const radius = knotRadius - (wrap * threadSize * 0.2);
-                ctx.beginPath();
+          ctx.beginPath();
                 ctx.arc(0, 0, radius, 0, Math.PI * 2);
                 ctx.strokeStyle = embroideryThreadColor;
                 ctx.lineWidth = threadSize * 0.4;
@@ -2269,7 +2557,7 @@ export function ShirtRefactored({
                 
                 // Add thread texture to each wrap
                 for (let i = 0; i < Math.PI * 2; i += 0.5) {
-                  ctx.beginPath();
+              ctx.beginPath();
                   ctx.moveTo(Math.cos(i) * (radius - threadSize/6), Math.sin(i) * (radius - threadSize/6));
                   ctx.lineTo(Math.cos(i) * (radius + threadSize/6), Math.sin(i) * (radius + threadSize/6));
                   ctx.stroke();
@@ -2298,7 +2586,7 @@ export function ShirtRefactored({
               const seedLength = threadSize * 0.8;
               const seedAngle = Math.random() * Math.PI;
               
-              ctx.save();
+      ctx.save();
               ctx.translate(px, py);
               ctx.rotate(seedAngle);
               
@@ -2320,7 +2608,7 @@ export function ShirtRefactored({
                 ctx.beginPath();
                 ctx.moveTo(i, -threadSize/6);
                 ctx.lineTo(i + threadSize * 0.1, threadSize/6);
-                ctx.stroke();
+              ctx.stroke();
               }
               
               ctx.restore();
@@ -2480,6 +2768,14 @@ export function ShirtRefactored({
       ctx.fill();
       }
 
+        // PERFORMANCE: Throttle embroidery stitch creation to reduce overhead
+        const stitchThrottle = deviceTier === 'low' ? 100 : deviceTier === 'medium' ? 50 : 25; // ms between stitch records
+        const now = Date.now();
+        const shouldCreateStitch = !(window as any).lastEmbroideryStitchTime || (now - (window as any).lastEmbroideryStitchTime) >= stitchThrottle;
+        
+        if (shouldCreateStitch) {
+          (window as any).lastEmbroideryStitchTime = now;
+
         // Create embroidery stitch record with layer ID
         let currentLayer;
         if (LAYER_SYSTEM_CONFIG.USE_ADVANCED_LAYERS) {
@@ -2503,7 +2799,7 @@ export function ShirtRefactored({
             threadType: 'cotton',
             thickness: embroideryThreadThickness,
             opacity: 1.0,
-            points: lastPoint ? [{ x: lastPoint.x, y: lastPoint.y }, { x, y }] : [{ x, y }],
+              points: (lastPoint && paintingActiveRef.current) ? [{ x: lastPoint.x, y: lastPoint.y }, { x, y }] : [{ x, y }],
             timestamp: Date.now()
           };
           
@@ -2517,10 +2813,17 @@ export function ShirtRefactored({
           console.log('🎨 Embroidery stitch created and linked to layer:', currentLayer.id, newStitch);
         } else {
           // Fallback: just update last point
+            useApp.setState({ lastEmbroideryPoint: { x, y } });
+          }
+        } else {
+          // Just update last point without creating stitch record
           useApp.setState({ lastEmbroideryPoint: { x, y } });
         }
 
+        // PERFORMANCE: Reduce console logging frequency
+        if (Math.random() < 0.1) { // Only log 10% of the time
         console.log('🎨 Embroidery stitch drawn:', embroideryStitchType, 'at position:', { x, y });
+        }
       };
 
       // Draw with symmetry
@@ -2804,193 +3107,67 @@ export function ShirtRefactored({
       }
 
     } else if (activeTool === 'puffPrint') {
-      console.log('🎨 Puff Print Tool Active - Starting Drawing Process');
+      // ========== SMOOTH CONTINUOUS PUFF STROKE SYSTEM ==========
+      // Draws smooth strokes with perfect dome displacement (no individual circles)
       
-      // Draw puff print using global state settings
       const puffBrushSize = useApp.getState().puffBrushSize;
-      const puffBrushOpacity = useApp.getState().puffBrushOpacity;
       const puffColor = useApp.getState().puffColor;
-      const puffHeight = useApp.getState().puffHeight;
-      const puffSoftness = useApp.getState().puffSoftness;
+      const puffHeight = useApp.getState().puffHeight; // 0-1 range
+      const puffSoftness = useApp.getState().puffSoftness; // 0-1 range
       
-      console.log('🎨 Drawing puff print:', { 
-        puffBrushSize, 
-        puffBrushOpacity, 
-        puffColor, 
-        puffHeight, 
-        puffSoftness, 
-        x, y,
-        canvasContext: !!ctx,
-        canvasSize: { width: canvas.width, height: canvas.height }
-      });
+      if (!ctx) return;
       
-      // Create smooth puff stroke instead of dots
-      const puffSize = puffBrushSize / 2; // Use radius instead of diameter
+      const puffRadius = puffBrushSize / 2;
+      const activeLayer = useApp.getState().layers.find(l => l.id === useApp.getState().activeLayerId);
       
-      // Apply softness to gradient stops
-      const centerStop = 0;
-      const edgeStop = puffSoftness;
+      if (!activeLayer?.displacementCanvas) return;
       
-      // DEBUG: Check if canvas context is valid
-      if (!ctx) {
-        console.error('🎨 ERROR: Canvas context is null! Cannot draw puff print.');
-        return;
-      }
+      const dispCtx = activeLayer.displacementCanvas.getContext('2d', { willReadFrequently: true });
+      if (!dispCtx) return;
       
-      // DEBUG: Check canvas context state BEFORE drawing
-      console.log('🎨 Canvas context state BEFORE drawing:', {
-        globalAlpha: ctx.globalAlpha,
-        globalCompositeOperation: ctx.globalCompositeOperation,
-        fillStyle: ctx.fillStyle,
-        strokeStyle: ctx.strokeStyle,
-        lineWidth: ctx.lineWidth
-      });
+      // STEP 1: Draw smooth continuous color stroke
+      const drawPuffColor = (px: number, py: number) => {
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 1.0;
+        ctx.fillStyle = puffColor;
+        ctx.beginPath();
+        ctx.arc(px, py, puffRadius, 0, Math.PI * 2);
+        ctx.fill();
+      };
       
-      // Draw puff color to layer canvas (like brush tool) for visible texture
-      // Apply softness to gradient stops
-      const gradient = ctx.createRadialGradient(x, y, 0, x, y, puffSize);
+      drawWithSymmetry(drawPuffColor);
       
-      // Use completely solid puff color - no transparency to prevent texture corruption
-      gradient.addColorStop(centerStop, puffColor);
-      gradient.addColorStop(edgeStop, puffColor);
-      gradient.addColorStop(1, puffColor); // CRITICAL FIX: Solid edge, no transparency
+      // STEP 2: Draw ULTRA-SMOOTH displacement dome using lighten blend mode
+      const centerHeight = Math.floor(255 * puffHeight);
       
-      // FIXED: Draw puff print to layer canvas like brush tool does
-      // This ensures updateModelTexture can see and composite the puff print content
-      ctx.save();
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.globalAlpha = 1.0; // Full opacity for solid puff color
-      ctx.fillStyle = gradient;
-      ctx.beginPath();
-      ctx.arc(x, y, puffSize, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-      
-      console.log('🎨 FIXED: Drew puff to layer canvas like brush tool:', { x, y, puffSize, puffColor });
-      
-      // DEBUG: Check layer canvas content immediately after drawing
-      const layerImageDataImmediate = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const samplePixelImmediate = layerImageDataImmediate.data.slice(0, 4);
-      console.log('🎨 Layer canvas content IMMEDIATELY after drawing:', `rgba(${samplePixelImmediate[0]}, ${samplePixelImmediate[1]}, ${samplePixelImmediate[2]}, ${samplePixelImmediate[3]})`);
-      
-      // DEBUG: Check if the drawing actually happened by sampling the exact pixel we drew
-      const drawnPixelData = ctx.getImageData(x, y, 1, 1);
-      const drawnPixel = drawnPixelData.data.slice(0, 4);
-      console.log('🎨 Drawn pixel at exact coordinates:', `rgba(${drawnPixel[0]}, ${drawnPixel[1]}, ${drawnPixel[2]}, ${drawnPixel[3]})`);
-      
-      // DEBUG: Check canvas size and coordinates
-      console.log('🎨 Canvas debug info:', {
-        canvasSize: { width: canvas.width, height: canvas.height },
-        drawCoords: { x, y },
-        puffSize,
-        puffColor,
-        centerStop,
-        edgeStop
-      });
-      
-      // FIXED: Also draw to puffCanvas for displacement detection (but with different approach)
-      // The updateModelWithPuffDisplacement function needs puffCanvas content to apply 3D effects
-      let puffCanvas = useApp.getState().puffCanvas;
-      if (!puffCanvas) {
-        puffCanvas = document.createElement('canvas');
-        puffCanvas.width = 2048;
-        puffCanvas.height = 2048;
-        useApp.setState({ puffCanvas });
-        console.log('🎨 Created puff canvas for displacement detection');
-      }
-      
-      const puffCtx = puffCanvas.getContext('2d', { willReadFrequently: true });
-      if (puffCtx) {
-        // Draw a simple solid puff color to puffCanvas for displacement detection
-        // This is only used by updateModelWithPuffDisplacement to detect puff content
-        puffCtx.save();
-        puffCtx.globalCompositeOperation = 'source-over';
-        puffCtx.globalAlpha = 1.0;
-        puffCtx.fillStyle = puffColor; // Use solid color for detection
-        puffCtx.beginPath();
-        puffCtx.arc(x, y, puffSize, 0, Math.PI * 2);
-        puffCtx.fill();
-        puffCtx.restore();
+      const drawDisplacement = (dpx: number, dpy: number) => {
+        // Use 'lighten' mode to prevent overlapping circles from creating spikes
+        dispCtx.globalCompositeOperation = 'lighten';
         
-        console.log('🎨 Drew puff to puffCanvas for displacement detection:', { x, y, puffSize, puffColor });
-      }
-      
-      // Create displacement map for 3D effect
-      let displacementCanvas = useApp.getState().displacementCanvas;
-      if (!displacementCanvas) {
-        // Create displacement canvas if it doesn't exist
-        displacementCanvas = document.createElement('canvas');
-        displacementCanvas.width = 2048;
-        displacementCanvas.height = 2048;
-        useApp.setState({ displacementCanvas });
-        console.log('🎨 Created displacement canvas for puff print');
-      }
-      
-      const dispCtx = displacementCanvas.getContext('2d', { willReadFrequently: true });
-      if (dispCtx) {
-        // Displacement maps: 0-255, where 128 is neutral (no displacement)
-        // Values > 128 push vertices outward, values < 128 pull vertices inward
-        const baseDisplacement = 128; // Neutral gray
-        const displacementRange = puffHeight * 50; // Scale height to displacement range
-        const maxDisplacement = Math.min(255, baseDisplacement + displacementRange);
-        const minDisplacement = Math.max(0, baseDisplacement - displacementRange * 0.1);
+        // Create perfectly smooth radial gradient with more stops
+        const grad = dispCtx.createRadialGradient(dpx, dpy, 0, dpx, dpy, puffRadius);
         
-        // Create gradient for displacement
-        const dispGradient = dispCtx.createRadialGradient(
-          x, y, 0,
-          x, y, puffSize
-        );
-        
-        dispGradient.addColorStop(centerStop, `rgb(${maxDisplacement}, ${maxDisplacement}, ${maxDisplacement})`);
-        dispGradient.addColorStop(edgeStop, `rgb(${minDisplacement}, ${minDisplacement}, ${minDisplacement})`);
-        dispGradient.addColorStop(1, `rgb(${baseDisplacement}, ${baseDisplacement}, ${baseDisplacement})`);
-        
-        dispCtx.fillStyle = dispGradient;
-        dispCtx.beginPath();
-        dispCtx.arc(x, y, puffSize, 0, Math.PI * 2);
-        dispCtx.fill();
-        
-        console.log('🎨 Displacement map updated for puff print');
-        
-        // CRITICAL FIX: Also update the layer's displacementCanvas property
-        // This is what composeDisplacementMaps() uses!
-        const layer = useApp.getState().layers.find(l => l.id === useApp.getState().activeLayerId);
-        if (layer && layer.displacementCanvas) {
-          const layerDispCtx = layer.displacementCanvas.getContext('2d');
-          if (layerDispCtx) {
-            // Draw the same grayscale displacement to the layer's displacement canvas
-            layerDispCtx.globalCompositeOperation = 'source-over';
-            layerDispCtx.fillStyle = dispGradient;
-            layerDispCtx.beginPath();
-            layerDispCtx.arc(x, y, puffSize, 0, Math.PI * 2);
-            layerDispCtx.fill();
-            console.log('🎨 Updated layer displacementCanvas with grayscale displacement');
-          }
+        // Ultra-smooth dome using cosine interpolation
+        const stops = 12; // More stops = smoother
+        for (let i = 0; i <= stops; i++) {
+          const t = i / stops; // 0 to 1
+          // Cosine curve for perfect sphere: cos((1-t) * π/2)
+          const cosValue = Math.cos((1 - t) * Math.PI / 2);
+          const height = Math.floor(centerHeight * cosValue * puffSoftness);
+          grad.addColorStop(t, `rgb(${height}, ${height}, ${height})`);
         }
-      }
+        grad.addColorStop(1, 'rgb(0, 0, 0)'); // Edge falloff
+        
+        dispCtx.fillStyle = grad;
+            dispCtx.beginPath();
+        dispCtx.arc(dpx, dpy, puffRadius, 0, Math.PI * 2);
+            dispCtx.fill();
+        
+        // Reset blend mode
+        dispCtx.globalCompositeOperation = 'source-over';
+      };
       
-      console.log('🎨 Puff print drawn successfully');
-      
-      // DEBUG: Check layer canvas content after drawing
-      const layerImageDataAfter = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const samplePixelAfter = layerImageDataAfter.data.slice(0, 4);
-      console.log('🎨 Layer canvas content AFTER drawing:', `rgba(${samplePixelAfter[0]}, ${samplePixelAfter[1]}, ${samplePixelAfter[2]}, ${samplePixelAfter[3]})`);
-      
-      // DEBUG: Check if canvas context state is preserved
-      console.log('🎨 Canvas context state:', {
-        globalAlpha: ctx.globalAlpha,
-        globalCompositeOperation: ctx.globalCompositeOperation,
-        fillStyle: ctx.fillStyle,
-        strokeStyle: ctx.strokeStyle
-      });
-      
-      // CRITICAL FIX: Update texture immediately after drawing is complete
-      // This prevents race conditions and ensures texture is updated with the drawn puff
-      setTimeout(() => {
-        updateModelTexture(false, true); // Update texture AND displacement
-        updateModelWithPuffDisplacement();
-        console.log('🎨 Applied texture and displacement to model for puff effect');
-      }, 50); // Reduced delay for faster response
+      drawWithSymmetry(drawDisplacement);
     }
     
     // Restore canvas state after drawing
@@ -3228,16 +3405,120 @@ export function ShirtRefactored({
 
   // Brush tool event handlers with smart behavior
   const onPointerDown = useCallback((e: any) => {
-    console.log('🎨 🎨 🎨 onPointerDown FIRED - activeTool:', activeTool, 'timestamp:', Date.now());
-    console.log('🎨 ShirtRefactored: onPointerDown called with activeTool:', activeTool);
+    console.log('🎨 ============================================================');
+    console.log('🎨 onPointerDown FIRED');
+    console.log('🎨 activeTool:', activeTool);
+    console.log('🎨 timestamp:', Date.now());
+    console.log('🎨 Event object:', e);
     console.log('🎨 Event details:', { 
-      intersections: e.intersections?.length || 0, 
+      hasIntersections: !!e.intersections,
+      intersectionsLength: e.intersections?.length || 0, 
+      intersections: e.intersections,
+      hasUV: !!e.uv,
       uv: e.uv ? { x: e.uv.x, y: e.uv.y } : 'none',
       clientX: e.clientX,
-      clientY: e.clientY
+      clientY: e.clientY,
+      button: e.nativeEvent ? (e.nativeEvent as MouseEvent).button : 'unknown'
     });
+    console.log('🎨 ============================================================');
+    
+    // 🎯 CLICK-TO-SELECT FUNCTIONALITY
+    // Check if we're in selection mode or if user wants to select elements
+    if (activeTool === 'picker' || activeTool === 'universalSelect' || modifierKeys.ctrl) {
+      console.log('🎯 Selection mode detected - checking for elements to select');
+      
+      // Determine selection mode based on modifier keys
+      const isCtrlClick = modifierKeys.ctrl;
+      const isShiftClick = modifierKeys.shift;
+      
+      let selectionMode: 'single' | 'multi' | 'add' | 'subtract' = 'single';
+      if (isCtrlClick) {
+        selectionMode = 'add';
+      } else if (isShiftClick) {
+        selectionMode = 'subtract';
+      } else if (activeTool === 'universalSelect') {
+        selectionMode = 'multi';
+      }
+      
+      console.log('🎯 Selection mode:', selectionMode, 'Ctrl:', isCtrlClick, 'Shift:', isShiftClick);
+      
+      if (e.uv) {
+        // Convert UV coordinates to canvas coordinates
+        const { composedCanvas } = useApp.getState();
+        if (composedCanvas) {
+          const canvasX = e.uv.x * composedCanvas.width;
+          const canvasY = e.uv.y * composedCanvas.height;
+          
+          console.log('🎯 Checking for elements at canvas position:', { canvasX, canvasY });
+          
+          // Get all brush strokes from the current layer
+          const { layers, brushStrokes } = useApp.getState();
+          const activeLayer = layers.find(layer => layer.id === 'paint');
+          
+          if (activeLayer && brushStrokes) {
+            // Filter brush strokes for the active layer
+            const layerBrushStrokes = brushStrokes.filter(stroke => stroke.layerId === activeLayer.id);
+            
+            // Check each brush stroke for intersection
+            for (const stroke of layerBrushStrokes) {
+              if (stroke.points && stroke.points.length > 0) {
+                const bounds = elementDetection.calculateBrushStrokeBounds(stroke);
+                
+                if (
+                  canvasX >= bounds.minX &&
+                  canvasX <= bounds.maxX &&
+                  canvasY >= bounds.minY &&
+                  canvasY <= bounds.maxY
+                ) {
+                  console.log('🎯 Found intersecting brush stroke:', stroke.id);
+                  
+                  // Create selected element
+                  const selectedElement = {
+                    id: stroke.id,
+                    type: 'brush-stroke' as const,
+                    layerId: activeLayer.id,
+                    bounds,
+                    position: { x: bounds.minX, y: bounds.minY },
+                    data: stroke,
+                  };
+                  
+                  // Apply selection mode
+                  if (selectionMode === 'single' || selectionMode === 'multi') {
+                    setSelectionMode(selectionMode);
+                    selectElement(selectedElement);
+                  } else if (selectionMode === 'add') {
+                    setSelectionMode('multi');
+                    addToSelection(selectedElement);
+                  } else if (selectionMode === 'subtract') {
+                    removeFromSelection(stroke.id);
+                  }
+                  
+                  // Stop event propagation to prevent drawing
+                  e.stopPropagation();
+                  e.nativeEvent?.stopPropagation();
+                  
+                  console.log('🎯 Element selected:', selectedElement);
+                  return;
+                }
+              }
+            }
+          }
+        }
+      }
+      
+      // If no element was found and not adding to selection, clear selection
+      if (selectionMode !== 'add') {
+        clearSelection();
+        console.log('🎯 No element found - cleared selection');
+      }
+      return;
+    }
     
     // For continuous drawing tools, we need to detect if click is on model or outside
+    console.log('🎨 DECISION POINT 1: Checking if tool is continuous drawing tool');
+    console.log('🎨   activeTool:', activeTool);
+    console.log('🎨   Is in [brush, eraser, puffPrint, embroidery, fill]?', ['brush', 'eraser', 'puffPrint', 'embroidery', 'fill'].includes(activeTool));
+    
     if (['brush', 'eraser', 'puffPrint', 'embroidery', 'fill'].includes(activeTool)) {
       console.log('🎨 Continuous drawing tool detected:', activeTool);
       
@@ -3263,6 +3544,18 @@ export function ShirtRefactored({
                           'Drawing Operation';
         saveState(`Before ${actionName}`);
         console.log('💾 State saved before drawing:', actionName);
+
+        // 🚀 AUTOMATIC LAYER CREATION: Trigger layer creation for drawing events
+        const newLayerId = triggerBrushStart({
+          tool: activeTool,
+          timestamp: Date.now(),
+          uv: e.uv,
+          intersections: e.intersections
+        });
+        
+        if (newLayerId) {
+          console.log('🎨 Automatic layer created for brush start:', newLayerId);
+        }
         
         // CRITICAL: Stop event propagation and prevent default to completely block OrbitControls
         if (e.stopPropagation) {
@@ -3296,6 +3589,12 @@ export function ShirtRefactored({
         if (activeTool !== 'vector') {
         paintingActiveRef.current = true;
           console.log('🎨 Set paintingActiveRef to true for tool:', activeTool);
+          
+          // Clear last embroidery point when starting a new drawing session
+          if (activeTool === 'embroidery') {
+            useApp.setState({ lastEmbroideryPoint: null });
+            console.log('🎨 Cleared lastEmbroideryPoint for new embroidery session');
+          }
         }
         
         // Call the actual painting function from useApp store
@@ -3330,15 +3629,24 @@ export function ShirtRefactored({
       }
     } else if (['vector', 'text', 'shapes', 'move'].includes(activeTool) || (activeTool as string) === 'image') {
       // For vector, text, shapes, move, and image tools, allow camera movement but handle clicks on model
+      console.log('🎨 ============================================================');
+      console.log('🎨 DECISION POINT 2: Non-drawing tool detected');
       console.log('🎨 Vector/Text/Shapes/Move/Image tool detected:', activeTool);
+      console.log('🎨 ============================================================');
       
       // Check if the click is on the model (has intersection)
       const isOnModel = e.intersections && e.intersections.length > 0;
-      console.log('🎨 Click on model:', isOnModel, 'intersections:', e.intersections?.length || 0);
+      console.log('🎨 DECISION POINT 3: Checking if click is on model');
+      console.log('🎨   isOnModel:', isOnModel);
+      console.log('🎨   e.intersections:', e.intersections);
+      console.log('🎨   intersections length:', e.intersections?.length || 0);
       
       if (isOnModel) {
         // Click is on model - handle tool-specific logic
-        console.log('🎨 Click on model - handling', activeTool, 'tool');
+        console.log('🎨 ============================================================');
+        console.log('🎨 DECISION POINT 4: Click is ON MODEL - handling tool logic');
+        console.log('🎨 activeTool:', activeTool);
+        console.log('🎨 ============================================================');
         
         if (activeTool === 'vector') {
           // For vector tool, only handle anchor selection on initial click
@@ -3349,62 +3657,537 @@ export function ShirtRefactored({
             console.log('🎨 Vector: Skipping onPointerDown - already dragging anchor');
           }
         } else if (activeTool === 'text') {
-          // CRITICAL: Prevent double prompts with timestamp check
-          const now = Date.now();
-          if (now - lastTextPromptTimeRef.current < 500) {
-            console.log('🎨 Text tool: Skipping - prompt triggered too soon (within 500ms)');
-            return;
-          }
+          // Text tool - select existing text or create new text
+          console.log('🎨 ========== TEXT TOOL: onPointerDown TRIGGERED ==========');
+          console.log('🎨 Event:', e);
+          console.log('🎨 Button:', e.nativeEvent ? (e.nativeEvent as MouseEvent).button : 'unknown');
           
-          // CRITICAL: Stop all event propagation to prevent double triggers
-          if (e.stopPropagation) e.stopPropagation();
-          if (e.stopImmediatePropagation) e.stopImmediatePropagation();
-          if (e.nativeEvent?.stopPropagation) e.nativeEvent.stopPropagation();
-          if (e.nativeEvent?.stopImmediatePropagation) e.nativeEvent.stopImmediatePropagation();
-          
-          // Prevent double prompts with flag
-          if (textPromptActiveRef.current) {
-            console.log('🎨 Text tool: Skipping - prompt already active');
-            return;
-          }
-          
-          // Handle text tool - prompt for text input and add text element
-          console.log('🎨 Text tool: Handling text placement');
-          textPromptActiveRef.current = true;
-          lastTextPromptTimeRef.current = now;
-          
+          const uv = e.uv as THREE.Vector2 | undefined;
+          if (uv) {
+            const clickU = uv.x;
+            const clickV = 1 - uv.y; // Flip V to match how text.v is stored (see line 3546)
+            
+            console.log('🎨 Text tool: Click at UV:', { u: clickU, v: clickV });
+            
+            // Check for RIGHT CLICK - show context menu
+            if (e.nativeEvent && (e.nativeEvent as MouseEvent).button === 2) {
+              console.log('🖱️ RIGHT CLICK detected on text tool');
+              e.stopPropagation();
+              
+              // Check if right-click is on existing text
+              const { textElements } = useApp.getState();
+              let rightClickedText: any = null;
+              
+              for (const txt of textElements) {
+                const tempCanvas = document.createElement('canvas');
+                const tempCtx = tempCanvas.getContext('2d');
+                if (!tempCtx) continue;
+                
+                let font = '';
+                if (txt.bold) font += 'bold ';
+                if (txt.italic) font += 'italic ';
+                font += `${txt.fontSize}px ${txt.fontFamily}`;
+                tempCtx.font = font;
+                
+                const textPixelWidth = tempCtx.measureText(txt.text).width;
+                const textPixelHeight = txt.fontSize * 1.2;
+                const txtU = txt.u || 0.5;
+                const txtV = txt.v || 0.5;
+                
+                const composedCanvas = useApp.getState().composedCanvas;
+                const canvasWidth = composedCanvas?.width || 4096;
+                const canvasHeight = composedCanvas?.height || 4096;
+                
+                const textWidth = textPixelWidth / canvasWidth;
+                const textHeight = textPixelHeight / canvasHeight;
+                
+                // Simple hitbox check (can be refined)
+                const hitboxMultiplier = 1.5;
+                if (
+                  clickU >= txtU - textWidth * hitboxMultiplier / 2 &&
+                  clickU <= txtU + textWidth * hitboxMultiplier / 2 &&
+                  clickV >= txtV - textHeight * hitboxMultiplier / 2 &&
+                  clickV <= txtV + textHeight * hitboxMultiplier / 2
+                ) {
+                  rightClickedText = txt;
+                  break;
+                }
+              }
+              
+              if (rightClickedText) {
+                // Show context menu at mouse position
+                const mouseX = (e.nativeEvent as MouseEvent).clientX;
+                const mouseY = (e.nativeEvent as MouseEvent).clientY;
+                
+                setContextMenu({
+                  visible: true,
+                  x: mouseX,
+                  y: mouseY,
+                  textId: rightClickedText.id
+                });
+                
+                console.log('📋 Context menu opened for text:', rightClickedText.text);
+              }
+              
+              return; // Don't process as normal click
+            }
+            
+            // Check if click is on any existing text element (LEFT CLICK)
+            const { textElements, activeTextId, setActiveTextId, updateTextElement } = useApp.getState();
+            let clickedText: any = null;
+            
+            console.log('🎨 Text tool: Checking', textElements.length, 'text elements');
+            
+            for (const txt of textElements) {
+              // CRITICAL: Calculate ACTUAL text bounds using canvas measureText (same as App.tsx border rendering)
+              const tempCanvas = document.createElement('canvas');
+              const tempCtx = tempCanvas.getContext('2d');
+              if (!tempCtx) continue;
+              
+              // Set font to match text rendering
+              let font = '';
+              if (txt.bold) font += 'bold ';
+              if (txt.italic) font += 'italic ';
+              font += `${txt.fontSize}px ${txt.fontFamily}`;
+              tempCtx.font = font;
+              
+              // Measure ACTUAL text width
+              const textPixelWidth = tempCtx.measureText(txt.text).width;
+              const textPixelHeight = txt.fontSize * 1.2;
+              
+              const txtU = txt.u || 0.5;
+              const txtV = txt.v || 0.5;
+              
+              // CRITICAL: Get actual canvas size from state (same as App.tsx uses)
+              const composedCanvas = useApp.getState().composedCanvas;
+              const canvasWidth = composedCanvas?.width || 4096;
+              const canvasHeight = composedCanvas?.height || 4096;
+              
+              // CRITICAL: Calculate canvas pixel position (same as App.tsx line 3035-3037)
+              const x = Math.round(txtU * canvasWidth);
+              const y = Math.round((1 - txtV) * canvasHeight); // V is flipped in canvas space
+              
+              // CRITICAL: Account for rotation - transform click point to text's local coordinate system
+              const rotation = txt.rotation || 0;
+              let localClickU = clickU;
+              let localClickV = clickV;
+              
+              if (rotation !== 0) {
+                // Convert click UV to pixels
+                const clickPixelX = clickU * canvasWidth;
+                const clickPixelY = (1 - clickV) * canvasHeight;
+                
+                // Translate to text origin
+                const relX = clickPixelX - x;
+                const relY = clickPixelY - y;
+                
+                // Rotate by -rotation to get into text's local space
+                const cosR = Math.cos(-rotation);
+                const sinR = Math.sin(-rotation);
+                const localX = relX * cosR - relY * sinR;
+                const localY = relX * sinR + relY * cosR;
+                
+                // Convert back to UV coordinates
+                localClickU = (x + localX) / canvasWidth;
+                localClickV = 1 - ((y + localY) / canvasHeight);
+              }
+              
+              // CRITICAL: Use EXACT SAME formula as App.tsx border rendering (lines 3186-3196)
+              // Calculate border center position based on text alignment (IN PIXELS on the translated canvas)
+              let borderXPixels = 0;
+              if (txt.align === 'left') {
+                borderXPixels = textPixelWidth / 2; // Text starts at 0, so border center is at width/2
+              } else if (txt.align === 'right') {
+                borderXPixels = -textPixelWidth / 2; // Text ends at 0, so border center is at -width/2
+              } else {
+                borderXPixels = 0; // Center alignment (default)
+              }
+              
+              // Border Y position (textBaseline is 'top', so border top is at 0, IN PIXELS)
+              const borderYPixels = textPixelHeight / 2; // Center border vertically
+              
+              // CRITICAL: Calculate ABSOLUTE pixel positions of border corners (BEFORE translation is applied)
+              // In App.tsx, anchors are drawn AFTER ctx.translate(x, y), so:
+              // Anchor absolute pixel = x + (borderX ± textWidth/2), y + (borderY ± textHeight/2)
+              // Then convert to UV
+              const textWidth = textPixelWidth / canvasWidth;
+              const textHeight = textPixelHeight / canvasHeight;
+              const borderX = borderXPixels / canvasWidth;
+              const borderY = borderYPixels / canvasHeight;
+              
+              console.log('🎨 Checking text:', txt.text, 'at UV:', txtU, txtV, 'ACTUAL bounds:', textWidth, 'x', textHeight, 'Border offset:', borderX, borderY);
+              
+              // REDUCED hitbox to avoid overlapping anchors - only 1.1x instead of 1.5x
+              const hitboxMultiplier = 1.1;
+              
+              // CRITICAL: Calculate border center in PIXEL space, then convert to UV
+              const borderCenterPixelX = x + borderXPixels;
+              const borderCenterPixelY = y + borderYPixels;
+              const centerU = borderCenterPixelX / canvasWidth;
+              const centerV = 1 - (borderCenterPixelY / canvasHeight); // Flip Y when converting to UV
+              
+              const hitboxWidthUV = textWidth * hitboxMultiplier;
+              const hitboxHeightUV = textHeight * hitboxMultiplier;
+              
+              console.log('🎨 Hitbox check for text "' + txt.text + '":');
+              console.log('  Original Click UV:', clickU, clickV);
+              console.log('  Local Click UV (rotated):', localClickU, localClickV);
+              console.log('  Text center UV:', centerU, centerV);
+              console.log('  Hitbox size UV:', hitboxWidthUV, hitboxHeightUV);
+              console.log('  Rotation:', rotation, 'radians =', (rotation * 180 / Math.PI).toFixed(1), 'degrees');
+              console.log('  Hitbox bounds:', 
+                'U:', centerU - hitboxWidthUV/2, 'to', centerU + hitboxWidthUV/2,
+                'V:', centerV - hitboxHeightUV/2, 'to', centerV + hitboxHeightUV/2
+              );
+              
+              if (
+                localClickU >= centerU - hitboxWidthUV / 2 &&
+                localClickU <= centerU + hitboxWidthUV / 2 &&
+                localClickV >= centerV - hitboxHeightUV / 2 &&
+                localClickV <= centerV + hitboxHeightUV / 2
+              ) {
+                console.log('✅ HIT! Found clicked text:', txt.text);
+                clickedText = txt;
+                break;
+              } else {
+                console.log('❌ MISS! Click outside hitbox for text:', txt.text);
+              }
+            }
+            
+            if (!clickedText) {
+              console.log('❌ No text found at click position');
+              console.log('🎨 Text tool: Clicked empty area - checking if text is selected');
+            } else {
+              console.log('✅ Text click detected! Text:', clickedText.text, 'ID:', clickedText.id);
+            }
+            
+            // CRITICAL: If text is already selected, don't show prompt - just deselect
+            const { activeTextId: currentActiveId } = useApp.getState();
+            if (!clickedText && currentActiveId) {
+              console.log('🎨 Text tool: Deselecting current text (clicked empty area)');
+              setActiveTextId(null);
+              return;
+            }
+            
+            if (clickedText) {
+              // ===== CLICKED ON EXISTING TEXT - SELECT IT =====
+              console.log('🎨 Text tool: Clicked on existing text:', clickedText.id);
+              
+              // CRITICAL: Select the text FIRST
+              setActiveTextId(clickedText.id);
+              
+              // CRITICAL: Stop event propagation to prevent double triggers
+              if (e.stopPropagation) e.stopPropagation();
+              if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+              
+              // If locked, just select and return
+              if (clickedText.locked) {
+                console.log('🎨 Text tool: Text is locked, cannot interact');
+                return;
+              }
+              
+              // Check if clicked on resize anchor - use ACTUAL text bounds
+              const tempCanvas = document.createElement('canvas');
+              const tempCtx = tempCanvas.getContext('2d');
+              if (!tempCtx) return;
+              
+              let font = '';
+              if (clickedText.bold) font += 'bold ';
+              if (clickedText.italic) font += 'italic ';
+              font += `${clickedText.fontSize}px ${clickedText.fontFamily}`;
+              tempCtx.font = font;
+              
+              const textPixelWidth = tempCtx.measureText(clickedText.text).width;
+              const textPixelHeight = clickedText.fontSize * 1.2;
+              const txtU = clickedText.u || 0.5;
+              const txtV = clickedText.v || 0.5;
+              
+              // CRITICAL: Get actual canvas size from state (same as App.tsx uses)
+              const composedCanvas = useApp.getState().composedCanvas;
+              const canvasWidth = composedCanvas?.width || 4096;
+              const canvasHeight = composedCanvas?.height || 4096;
+              
+              // CRITICAL: Calculate canvas pixel position (same as App.tsx line 3035-3037)
+              const x = Math.round(txtU * canvasWidth);
+              const y = Math.round((1 - txtV) * canvasHeight); // V is flipped in canvas space
+              
+              // CRITICAL: Use EXACT SAME formula as App.tsx border rendering (lines 3186-3196)
+              let borderXPixels = 0;
+              if (clickedText.align === 'left') {
+                borderXPixels = textPixelWidth / 2; // Text starts at 0, so border center is at width/2
+              } else if (clickedText.align === 'right') {
+                borderXPixels = -textPixelWidth / 2; // Text ends at 0, so border center is at -width/2
+              } else {
+                borderXPixels = 0; // Center alignment (default)
+              }
+              
+              // Border Y position (textBaseline is 'top', so border top is at 0)
+              const borderYPixels = textPixelHeight / 2; // Center border vertically
+              
+              // Convert to UV for hitbox calculations
+              const textWidth = textPixelWidth / canvasWidth;
+              const textHeight = textPixelHeight / canvasHeight;
+              const borderX = borderXPixels / canvasWidth;
+              const borderY = borderYPixels / canvasHeight;
+              
+              console.log('🎨 Text anchor check - ACTUAL bounds:', textWidth, 'x', textHeight, 'Border offset:', borderX, borderY);
+              
+              // Match visual anchor sizes from App.tsx (line 3259-3260)
+              const cornerAnchorSize = 12; // 12px square
+              const edgeAnchorSize = 10;   // 10px diameter circle (5px radius)
+              
+              // Hitbox radius: Make LARGER than visual size for easier clicking (2.5x larger)
+              const cornerHitboxRadius = 15; // 15px (visual is 12px)
+              const edgeHitboxRadius = 12;   // 12px (visual is 10px)
+              
+              // Anchor center positions (the border corners themselves)
+              const topLeftPixelX = x + borderXPixels - textPixelWidth / 2;
+              const topLeftPixelY = y + borderYPixels - textPixelHeight / 2;
+              const topRightPixelX = x + borderXPixels + textPixelWidth / 2;
+              const topRightPixelY = y + borderYPixels - textPixelHeight / 2;
+              const bottomLeftPixelX = x + borderXPixels - textPixelWidth / 2;
+              const bottomLeftPixelY = y + borderYPixels + textPixelHeight / 2;
+              const bottomRightPixelX = x + borderXPixels + textPixelWidth / 2;
+              const bottomRightPixelY = y + borderYPixels + textPixelHeight / 2;
+              
+              // Edge anchor positions
+              const topEdgePixelX = x + borderXPixels;
+              const topEdgePixelY = y + borderYPixels - textPixelHeight / 2;
+              const bottomEdgePixelX = x + borderXPixels;
+              const bottomEdgePixelY = y + borderYPixels + textPixelHeight / 2;
+              const leftEdgePixelX = x + borderXPixels - textPixelWidth / 2;
+              const leftEdgePixelY = y + borderYPixels;
+              const rightEdgePixelX = x + borderXPixels + textPixelWidth / 2;
+              const rightEdgePixelY = y + borderYPixels;
+              
+              const anchors = [
+                // Corner anchors (check these first for priority) with hitbox radius in pixels
+                { name: 'topLeft', u: topLeftPixelX / canvasWidth, v: 1 - (topLeftPixelY / canvasHeight), hitboxPx: cornerHitboxRadius },
+                { name: 'topRight', u: topRightPixelX / canvasWidth, v: 1 - (topRightPixelY / canvasHeight), hitboxPx: cornerHitboxRadius },
+                { name: 'bottomLeft', u: bottomLeftPixelX / canvasWidth, v: 1 - (bottomLeftPixelY / canvasHeight), hitboxPx: cornerHitboxRadius },
+                { name: 'bottomRight', u: bottomRightPixelX / canvasWidth, v: 1 - (bottomRightPixelY / canvasHeight), hitboxPx: cornerHitboxRadius },
+                // Edge anchors (check these after corners) with hitbox radius in pixels
+                { name: 'top', u: topEdgePixelX / canvasWidth, v: 1 - (topEdgePixelY / canvasHeight), hitboxPx: edgeHitboxRadius },
+                { name: 'bottom', u: bottomEdgePixelX / canvasWidth, v: 1 - (bottomEdgePixelY / canvasHeight), hitboxPx: edgeHitboxRadius },
+                { name: 'left', u: leftEdgePixelX / canvasWidth, v: 1 - (leftEdgePixelY / canvasHeight), hitboxPx: edgeHitboxRadius },
+                { name: 'right', u: rightEdgePixelX / canvasWidth, v: 1 - (rightEdgePixelY / canvasHeight), hitboxPx: edgeHitboxRadius }
+              ];
+              
+              console.log('🎨 DEBUG ANCHOR POSITIONS:');
+              console.log('  Text UV:', txtU, txtV);
+              console.log('  Text pixel:', x, y);
+              console.log('  Text pixel dimensions:', textPixelWidth, 'x', textPixelHeight);
+              console.log('  Border offset (pixels):', borderXPixels, borderYPixels);
+              console.log('  TopLeft pixel (absolute):', topLeftPixelX, topLeftPixelY);
+              console.log('  TopLeft UV (calculated):', anchors[0].u, anchors[0].v);
+              console.log('  TopRight pixel (absolute):', topRightPixelX, topRightPixelY);
+              console.log('  TopRight UV (calculated):', anchors[1].u, anchors[1].v);
+              console.log('  Click UV:', clickU, clickV);
+              console.log('  Corner hitbox:', cornerHitboxRadius, 'px, Edge hitbox:', edgeHitboxRadius, 'px');
+              
+              // CRITICAL: Transform click point to text's local coordinate system (accounting for rotation)
+              const rotation = clickedText.rotation || 0;
+              let localClickU = clickU;
+              let localClickV = clickV;
+              
+              if (rotation !== 0) {
+                // Convert click UV to pixels
+                const clickPixelX = clickU * canvasWidth;
+                const clickPixelY = (1 - clickV) * canvasHeight;
+                
+                // Translate to text origin
+                const relX = clickPixelX - x;
+                const relY = clickPixelY - y;
+                
+                // Rotate by -rotation to get into text's local space
+                const cosR = Math.cos(-rotation);
+                const sinR = Math.sin(-rotation);
+                const localX = relX * cosR - relY * sinR;
+                const localY = relX * sinR + relY * cosR;
+                
+                // Convert back to UV coordinates
+                localClickU = (x + localX) / canvasWidth;
+                localClickV = 1 - ((y + localY) / canvasHeight);
+              }
+              
+              // ROTATION HANDLE: Check if clicking on rotation handle (PRIORITY - check before anchors)
+              const rotationHandleDistance = 40; // Same as in App.tsx
+              const rotationHandleSize = 12; // Same as in App.tsx
+              const rotationHandlePixelX = x + borderXPixels;
+              const rotationHandlePixelY = y + borderYPixels - textPixelHeight / 2 - rotationHandleDistance;
+              const rotationHandleU = rotationHandlePixelX / canvasWidth;
+              const rotationHandleV = 1 - (rotationHandlePixelY / canvasHeight);
+              
+              const rotationHandleDist = Math.sqrt(Math.pow(localClickU - rotationHandleU, 2) + Math.pow(localClickV - rotationHandleV, 2));
+              const rotationHandleHitbox = (rotationHandleSize / canvasWidth) * 1.5; // Slightly larger hitbox for easier clicking
+              
+              console.log('🔄 Rotation handle check:');
+              console.log('  Handle position (pixels):', rotationHandlePixelX, rotationHandlePixelY);
+              console.log('  Handle UV:', rotationHandleU, rotationHandleV);
+              console.log('  Click UV (original):', clickU, clickV);
+              console.log('  Click UV (local/rotated):', localClickU, localClickV);
+              console.log('  Distance:', rotationHandleDist);
+              console.log('  Hitbox threshold:', rotationHandleHitbox);
+              console.log('  Will trigger:', rotationHandleDist < rotationHandleHitbox ? 'YES ✅' : 'NO ❌');
+              
+              if (rotationHandleDist < rotationHandleHitbox) {
+                // Start rotating!
+                console.log('🔄 ========== ROTATION HANDLE CLICKED! ==========');
+                (window as any).__textRotating = true;
+                (window as any).__textResizing = false; // Ensure resize is OFF
+                (window as any).__textDragging = false; // Ensure drag is OFF
+                (window as any).__textRotateStart = {
+                  textId: clickedText.id,
+                  initialRotation: clickedText.rotation || 0,
+                  centerU: txtU,
+                  centerV: txtV,
+                  startU: clickU,
+                  startV: clickV
+                };
+                setControlsEnabled(false);
+                e.stopPropagation();
+                return;
+              }
+              
+              let clickedAnchor = null;
+              console.log('🎨 ========== ANCHOR DETECTION ==========');
+              console.log('🎨 Click UV (original):', clickU, clickV);
+              console.log('🎨 Click UV (local/rotated):', localClickU, localClickV);
+              console.log('🎨 Text rotation:', rotation, 'radians =', (rotation * 180 / Math.PI).toFixed(1), '°');
+              console.log('🎨 Corner hitbox:', cornerHitboxRadius, 'px, Edge hitbox:', edgeHitboxRadius, 'px');
+              
+              for (const anchor of anchors) {
+                const dist = Math.sqrt(Math.pow(localClickU - anchor.u, 2) + Math.pow(localClickV - anchor.v, 2));
+                const distPixels = dist * canvasWidth;
+                
+                // Use the anchor's specific hitbox size (in UV space)
+                const hitboxUV = anchor.hitboxPx / canvasWidth;
+                const willHit = dist < hitboxUV;
+                
+                console.log(`🎨 Anchor ${anchor.name}:`, 
+                  'UV:', anchor.u.toFixed(4), anchor.v.toFixed(4),
+                  'Distance:', dist.toFixed(6), '(' + distPixels.toFixed(1) + 'px)',
+                  'Hitbox:', anchor.hitboxPx + 'px',
+                  willHit ? '✅ HIT!' : '❌ miss'
+                );
+                if (willHit) {
+                  clickedAnchor = anchor.name;
+                  console.log('✅ ========== ANCHOR CLICKED:', anchor.name, '==========');
+                  break;
+                }
+              }
+              
+              if (!clickedAnchor) {
+                console.log('❌ No anchor clicked');
+              }
+              
+              if (clickedAnchor) {
+                // Start resizing (same as image tool - store anchor name and all dimensions)
+                console.log('🎨 Text tool: ===== STARTING RESIZE MODE =====');
+                console.log('🎨 Anchor:', clickedAnchor);
+                (window as any).__textResizing = true;
+                (window as any).__textDragging = false; // Ensure drag is OFF
+                (window as any).__textResizeStart = {
+                  textId: clickedText.id,
+                  anchor: clickedAnchor, // Store anchor name (topLeft, topRight, etc.)
+                  u: clickU,               // Current mouse position
+                  v: clickV,
+                  txtU: clickedText.u || 0.5,  // Text position
+                  txtV: clickedText.v || 0.5,
+                  txtWidth: textWidth,     // Text dimensions in UV space
+                  txtHeight: textHeight,
+                  originalFontSize: clickedText.fontSize
+                };
+                setControlsEnabled(false);
+                console.log('🎨 Resize mode activated. Drag mode:', (window as any).__textDragging, 'Resize mode:', (window as any).__textResizing);
+              } else {
+                // Start dragging - SAME AS IMAGE TOOL
+                console.log('🎨 Text tool: ===== STARTING DRAG MODE =====');
+                console.log('🎨 Text tool: clickedText:', clickedText);
+                console.log('🎨 Text tool: clickedText.u:', clickedText.u, 'clickedText.v:', clickedText.v);
+                (window as any).__textDragging = true;
+                (window as any).__textResizing = false; // Ensure resize is OFF
+                (window as any).__textDragStart = {
+                  u: clickU,  // Current mouse position
+                  v: clickV,
+                  txtU: clickedText.u || 0.5,  // Text position
+                  txtV: clickedText.v || 0.5,
+                  textId: clickedText.id
+                };
+                setControlsEnabled(false);
+                console.log('🎨 Drag mode activated!');
+                console.log('🎨 __textDragging:', (window as any).__textDragging);
+                console.log('🎨 __textResizing:', (window as any).__textResizing);
+                console.log('🎨 __textDragStart:', (window as any).__textDragStart);
+              }
+              
+              // CRITICAL: Return here to prevent prompt from showing
+              return;
+            } else {
+              // No text clicked - create new text
+              // CRITICAL: Prevent double prompts with timestamp check
+              const now = Date.now();
+              if (now - lastTextPromptTimeRef.current < 500) {
+                console.log('🎨 Text tool: Skipping - prompt triggered too soon (within 500ms)');
+                return;
+              }
+              
+              // CRITICAL: Don't show prompt if any text is already selected
+              const { activeTextId } = useApp.getState();
+              console.log('🎨 Text tool: Checking activeTextId:', activeTextId);
+              if (activeTextId) {
+                console.log('🎨 Text tool: Skipping - text already selected, click empty area to deselect first');
+                return;
+              }
+              
+              // CRITICAL: Stop all event propagation to prevent double triggers
+              if (e.stopPropagation) e.stopPropagation();
+              if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+              if (e.nativeEvent?.stopPropagation) e.nativeEvent.stopPropagation();
+              if (e.nativeEvent?.stopImmediatePropagation) e.nativeEvent.stopImmediatePropagation();
+              
+              // Prevent double prompts with flag
+              if (textPromptActiveRef.current) {
+                console.log('🎨 Text tool: Skipping - prompt already active');
+                return;
+              }
+              
+              console.log('🎨 Text tool: About to show prompt - activeTextId check passed');
+              console.log('🎨 Text tool: Creating new text');
+              textPromptActiveRef.current = true;
+              lastTextPromptTimeRef.current = now;
+              
           const defaultText = useApp.getState().lastText || '';
           const userText = window.prompt('Enter text:', defaultText);
-          
-          // Reset flag after prompt with a small delay to prevent rapid re-triggers
-          setTimeout(() => {
-            textPromptActiveRef.current = false;
-          }, 100);
+              
+              setTimeout(() => {
+                textPromptActiveRef.current = false;
+              }, 100);
           
           if (userText) {
-            // Save the text for next time
             useApp.setState({ lastText: userText });
             
-            // Get UV coordinates from the event (same as other tools)
-            const uv = e.uv as THREE.Vector2 | undefined;
-            if (uv) {
               try {
                 console.log('🎨 Adding text element:', userText);
-                console.log('🎨 UV coordinates:', uv.x, uv.y);
-                console.log('🎨 Active layer ID:', useApp.getState().activeLayerId);
-                
-                // Temporarily disable controls during text placement
                 setControlsEnabled(false);
                 
-                // Add text element using the existing addTextElement function
                 const appState = useApp.getState();
                 if (appState.addTextElement) {
-                  appState.addTextElement(userText, { u: uv.x, v: 1 - uv.y });
-                  
+                    appState.addTextElement(userText, { u: uv.x, v: 1 - uv.y });
                   console.log('🎨 Text element added successfully');
                   
-                  // CRITICAL FIX: Don't call composeLayers - it clears the original model texture!
-                  // Instead, update texture directly from layer canvases
+                  // 🚀 AUTOMATIC LAYER CREATION: Trigger layer creation for text
+                  const { triggerTextCreated } = useAutomaticLayerManager();
+                  const newLayerId = triggerTextCreated({
+                    text: userText,
+                    position: { u: uv.x, v: 1 - uv.y },
+                    timestamp: Date.now()
+                  });
+                  
+                  if (newLayerId) {
+                    console.log('🎨 Automatic layer created for text:', newLayerId);
+                  }
+                  
                   setTimeout(() => {
                     if ((window as any).updateModelTexture) {
                       (window as any).updateModelTexture();
@@ -3415,14 +4198,15 @@ export function ShirtRefactored({
                 }
               } catch (error) {
                 console.error('🎨 Error adding text element:', error);
-              }
-            } else {
-              console.log('🎨 No UV coordinates available for text placement');
             }
             
-            // IMPORTANT: Re-enable controls after text placement
             console.log('🎨 Text tool: Re-enabling controls after text placement');
             setControlsEnabled(true);
+              } else {
+                // Deselect if cancelled
+                setActiveTextId(null);
+              }
+            }
           }
         } else if ((activeTool as string) === 'image') {
           // Image tool - select or place images
@@ -3512,7 +4296,7 @@ export function ShirtRefactored({
                     imageId: clickedImage.id,
                     anchor: clickedAnchor
                   };
-                } else {
+      } else {
                   // Start dragging the image
                   console.log('🎨 Image tool: Started dragging image');
                   (window as any).__imageDragging = true;
@@ -3665,11 +4449,12 @@ export function ShirtRefactored({
   // PERFORMANCE: Throttled pointer move handler
   const onPointerMove = useCallback((() => {
     let lastMoveTime = 0;
+    let lastTextureUpdateTime = 0;
     
     return (e: any) => {
       const now = Date.now();
       // Get current config dynamically for reactive performance settings
-      const moveThrottle = performanceOptimizer.getConfig().deviceTier === 'low' ? 50 : 16; // 20fps or 60fps
+      const moveThrottle = performanceOptimizer.getConfig().deviceTier === 'low' ? 50 : 20; // 20fps or 50fps (reduced from 60fps)
       if (now - lastMoveTime < moveThrottle) return; // Throttle moves
       lastMoveTime = now;
       
@@ -3735,6 +4520,351 @@ export function ShirtRefactored({
             }
           } else {
             document.body.style.cursor = 'default';
+          }
+        }
+      }
+      
+      // Update cursor for text tool when hovering over text/anchors
+      // ONLY update cursor when pointer is over the canvas (inside onPointerMove)
+      if (activeTool === 'text' && !(window as any).__textDragging && !(window as any).__textResizing && !(window as any).__textRotating) {
+        // Throttle cursor updates to reduce fighting between frames
+        const now = Date.now();
+        if (!(window as any).__lastCursorUpdate) {
+          (window as any).__lastCursorUpdate = 0;
+        }
+        
+        // Only update cursor every 16ms (60fps) to prevent flickering but keep responsive
+        const shouldUpdateCursor = (now - (window as any).__lastCursorUpdate) >= 16;
+        if (shouldUpdateCursor) {
+          (window as any).__lastCursorUpdate = now;
+        }
+        
+        if (!shouldUpdateCursor) {
+          console.log('🖱️ Cursor update throttled - skipping');
+          return; // Skip cursor update completely
+        } else {
+          console.log('🖱️ Text tool cursor check - activeTool:', activeTool);
+          // TEST: Force a cursor change to see if cursor changes work at all
+          console.log('🖱️ TEST: Setting cursor to crosshair for testing');
+          document.body.style.cursor = 'crosshair';
+          document.body.style.setProperty('cursor', 'crosshair', 'important');
+        }
+        
+        const uv = e.uv as THREE.Vector2 | undefined;
+        if (uv && shouldUpdateCursor) {
+          // We're inside the canvas, safe to change cursor
+          const hoverU = uv.x;
+          const hoverV = 1 - uv.y; // Flip V to match how text.v is stored
+          
+          const { textElements, activeTextId } = useApp.getState();
+          console.log('🖱️ Text cursor - activeTextId:', activeTextId, 'textElements:', textElements.length);
+          
+          // Check if hovering over ANY text (not just selected) - use ACTUAL bounds
+          let hoveredText: any = null;
+          const tempCanvas = document.createElement('canvas');
+          const tempCtx = tempCanvas.getContext('2d');
+          
+          if (tempCtx) {
+            for (const txt of textElements) {
+              // Measure ACTUAL text width
+              let font = '';
+              if (txt.bold) font += 'bold ';
+              if (txt.italic) font += 'italic ';
+              font += `${txt.fontSize}px ${txt.fontFamily}`;
+              tempCtx.font = font;
+              
+              const textPixelWidth = tempCtx.measureText(txt.text).width;
+              const textPixelHeight = txt.fontSize * 1.2;
+              const txtU = txt.u || 0.5;
+              const txtV = txt.v || 0.5;
+              
+              // CRITICAL: Get actual canvas size from state (same as App.tsx uses)
+              const composedCanvas = useApp.getState().composedCanvas;
+              const canvasWidth = composedCanvas?.width || 4096;
+              const canvasHeight = composedCanvas?.height || 4096;
+              
+              // CRITICAL: Calculate canvas pixel position
+              const textX = Math.round(txtU * canvasWidth);
+              const textY = Math.round((1 - txtV) * canvasHeight);
+              
+              // CRITICAL: Account for rotation - transform hover point to text's local coordinate system
+              const rotation = txt.rotation || 0;
+              let localHoverU = hoverU;
+              let localHoverV = hoverV;
+              
+              if (rotation !== 0) {
+                // Convert hover UV to pixels
+                const hoverPixelX = hoverU * canvasWidth;
+                const hoverPixelY = (1 - hoverV) * canvasHeight;
+                
+                // Translate to text origin
+                const relX = hoverPixelX - textX;
+                const relY = hoverPixelY - textY;
+                
+                // Rotate by -rotation to get into text's local space
+                const cosR = Math.cos(-rotation);
+                const sinR = Math.sin(-rotation);
+                const localX = relX * cosR - relY * sinR;
+                const localY = relX * sinR + relY * cosR;
+                
+                // Convert back to UV coordinates
+                localHoverU = (textX + localX) / canvasWidth;
+                localHoverV = 1 - ((textY + localY) / canvasHeight);
+              }
+              
+              // CRITICAL: Use EXACT SAME formula as App.tsx border rendering (lines 3186-3196)
+              let borderXPixels = 0;
+              if (txt.align === 'left') {
+                borderXPixels = textPixelWidth / 2; // Text starts at 0, so border center is at width/2
+              } else if (txt.align === 'right') {
+                borderXPixels = -textPixelWidth / 2; // Text ends at 0, so border center is at -width/2
+              } else {
+                borderXPixels = 0; // Center alignment (default)
+              }
+              
+              // Border Y position (textBaseline is 'top', so border top is at 0)
+              const borderYPixels = textPixelHeight / 2; // Center border vertically
+              
+              // Convert to UV for hitbox calculations
+              const textWidth = textPixelWidth / canvasWidth;
+              const textHeight = textPixelHeight / canvasHeight;
+              
+              // CRITICAL: Calculate border center in PIXEL space, then convert to UV (using textX, textY already calculated above)
+              const borderCenterPixelX = textX + borderXPixels;
+              const borderCenterPixelY = textY + borderYPixels;
+              const centerU = borderCenterPixelX / canvasWidth;
+              const centerV = 1 - (borderCenterPixelY / canvasHeight); // Flip Y when converting to UV
+              
+              const isOverText = 
+                localHoverU >= centerU - textWidth / 2 &&
+                localHoverU <= centerU + textWidth / 2 &&
+                localHoverV >= centerV - textHeight / 2 &&
+                localHoverV <= centerV + textHeight / 2;
+              
+              if (isOverText) {
+                hoveredText = txt;
+                break;
+              }
+            }
+          }
+          
+          // If hovering over selected text, check for anchors
+          if (hoveredText && hoveredText.id === activeTextId && tempCtx) {
+            let font = '';
+            if (hoveredText.bold) font += 'bold ';
+            if (hoveredText.italic) font += 'italic ';
+            font += `${hoveredText.fontSize}px ${hoveredText.fontFamily}`;
+            tempCtx.font = font;
+            
+            const textPixelWidth = tempCtx.measureText(hoveredText.text).width;
+            const textPixelHeight = hoveredText.fontSize * 1.2;
+            const txtU = hoveredText.u || 0.5;
+            const txtV = hoveredText.v || 0.5;
+            
+            // CRITICAL: Get actual canvas size from state (same as App.tsx uses)
+            const composedCanvas = useApp.getState().composedCanvas;
+            const canvasWidth = composedCanvas?.width || 4096;
+            const canvasHeight = composedCanvas?.height || 4096;
+            
+            // CRITICAL: Use EXACT SAME formula as App.tsx border rendering (lines 3186-3196)
+            let borderXPixels = 0;
+            if (hoveredText.align === 'left') {
+              borderXPixels = textPixelWidth / 2; // Text starts at 0, so border center is at width/2
+            } else if (hoveredText.align === 'right') {
+              borderXPixels = -textPixelWidth / 2; // Text ends at 0, so border center is at -width/2
+            } else {
+              borderXPixels = 0; // Center alignment (default)
+            }
+            
+            // Border Y position (textBaseline is 'top', so border top is at 0)
+            const borderYPixels = textPixelHeight / 2; // Center border vertically
+            
+            // Convert to UV for hitbox calculations
+            const textWidth = textPixelWidth / canvasWidth;
+            const textHeight = textPixelHeight / canvasHeight;
+            const borderX = borderXPixels / canvasWidth;
+            const borderY = borderYPixels / canvasHeight;
+            
+            // Match visual anchor sizes from App.tsx (line 3259-3260)
+            const cornerAnchorSize = 12; // 12px square
+            const edgeAnchorSize = 10;   // 10px diameter circle (5px radius)
+            
+            // Hitbox radius: Make LARGER than visual size for easier clicking (2.5x larger)
+            const cornerHitboxRadius = 15; // 15px (visual is 12px)
+            const edgeHitboxRadius = 12;   // 12px (visual is 10px)
+            
+            // CRITICAL: Anchors are positioned at BORDER CORNERS in PIXEL space, then converted to UV
+            const x = Math.round(txtU * canvasWidth);
+            const y = Math.round((1 - txtV) * canvasHeight);
+            
+            const topLeftPixelX = x + borderXPixels - textPixelWidth / 2;
+            const topLeftPixelY = y + borderYPixels - textPixelHeight / 2;
+            const topRightPixelX = x + borderXPixels + textPixelWidth / 2;
+            const topRightPixelY = y + borderYPixels - textPixelHeight / 2;
+            const bottomLeftPixelX = x + borderXPixels - textPixelWidth / 2;
+            const bottomLeftPixelY = y + borderYPixels + textPixelHeight / 2;
+            const bottomRightPixelX = x + borderXPixels + textPixelWidth / 2;
+            const bottomRightPixelY = y + borderYPixels + textPixelHeight / 2;
+            
+            // Edge anchor positions
+            const topEdgePixelX = x + borderXPixels;
+            const topEdgePixelY = y + borderYPixels - textPixelHeight / 2;
+            const bottomEdgePixelX = x + borderXPixels;
+            const bottomEdgePixelY = y + borderYPixels + textPixelHeight / 2;
+            const leftEdgePixelX = x + borderXPixels - textPixelWidth / 2;
+            const leftEdgePixelY = y + borderYPixels;
+            const rightEdgePixelX = x + borderXPixels + textPixelWidth / 2;
+            const rightEdgePixelY = y + borderYPixels;
+            
+            // ROTATION-AWARE CURSORS: Calculate cursor direction based on text rotation
+            // When text is rotated, the visual direction of anchors changes!
+            const rotation = hoveredText.rotation || 0;
+            const rotationDeg = (rotation * 180 / Math.PI) % 360;
+            
+            // Helper function to get rotation-adjusted cursor
+            const getRotatedCursor = (baseCursor: string, anchorName: string): string => {
+              if (rotation === 0 || Math.abs(rotation) < 0.01) {
+                console.log(`🔄 No rotation - ${anchorName}: ${baseCursor}`);
+                return baseCursor; // No rotation, use base cursor
+              }
+              
+              // Map base cursors to angles (0° = North, 90° = East, etc.)
+              const cursorAngles: {[key: string]: number} = {
+                'n-resize': 0,
+                'ne-resize': 45,
+                'e-resize': 90,
+                'se-resize': 135,
+                's-resize': 180,
+                'sw-resize': 225,
+                'w-resize': 270,
+                'nw-resize': 315
+              };
+              
+              const baseAngle = cursorAngles[baseCursor] || 0;
+              let newAngle = (baseAngle + rotationDeg) % 360;
+              if (newAngle < 0) newAngle += 360;
+              
+              // Map angle back to cursor
+              let resultCursor = baseCursor;
+              if (newAngle >= 337.5 || newAngle < 22.5) resultCursor = 'n-resize';
+              else if (newAngle >= 22.5 && newAngle < 67.5) resultCursor = 'ne-resize';
+              else if (newAngle >= 67.5 && newAngle < 112.5) resultCursor = 'e-resize';
+              else if (newAngle >= 112.5 && newAngle < 157.5) resultCursor = 'se-resize';
+              else if (newAngle >= 157.5 && newAngle < 202.5) resultCursor = 's-resize';
+              else if (newAngle >= 202.5 && newAngle < 247.5) resultCursor = 'sw-resize';
+              else if (newAngle >= 247.5 && newAngle < 292.5) resultCursor = 'w-resize';
+              else if (newAngle >= 292.5 && newAngle < 337.5) resultCursor = 'nw-resize';
+              
+              console.log(`🔄 Rotated cursor - ${anchorName}: ${baseCursor} (${baseAngle}°) + rotation (${rotationDeg.toFixed(1)}°) = ${newAngle.toFixed(1)}° → ${resultCursor}`);
+              return resultCursor;
+            };
+            
+            const anchors = {
+              // Corner anchors with rotation-adjusted cursors and hitbox radius in pixels
+              topLeft: { u: topLeftPixelX / canvasWidth, v: 1 - (topLeftPixelY / canvasHeight), cursor: getRotatedCursor('nw-resize', 'topLeft'), hitboxPx: cornerHitboxRadius },
+              topRight: { u: topRightPixelX / canvasWidth, v: 1 - (topRightPixelY / canvasHeight), cursor: getRotatedCursor('ne-resize', 'topRight'), hitboxPx: cornerHitboxRadius },
+              bottomLeft: { u: bottomLeftPixelX / canvasWidth, v: 1 - (bottomLeftPixelY / canvasHeight), cursor: getRotatedCursor('sw-resize', 'bottomLeft'), hitboxPx: cornerHitboxRadius },
+              bottomRight: { u: bottomRightPixelX / canvasWidth, v: 1 - (bottomRightPixelY / canvasHeight), cursor: getRotatedCursor('se-resize', 'bottomRight'), hitboxPx: cornerHitboxRadius },
+              // Edge anchors with rotation-adjusted cursors and hitbox radius in pixels
+              top: { u: topEdgePixelX / canvasWidth, v: 1 - (topEdgePixelY / canvasHeight), cursor: getRotatedCursor('n-resize', 'top'), hitboxPx: edgeHitboxRadius },
+              bottom: { u: bottomEdgePixelX / canvasWidth, v: 1 - (bottomEdgePixelY / canvasHeight), cursor: getRotatedCursor('s-resize', 'bottom'), hitboxPx: edgeHitboxRadius },
+              left: { u: leftEdgePixelX / canvasWidth, v: 1 - (leftEdgePixelY / canvasHeight), cursor: getRotatedCursor('w-resize', 'left'), hitboxPx: edgeHitboxRadius },
+              right: { u: rightEdgePixelX / canvasWidth, v: 1 - (rightEdgePixelY / canvasHeight), cursor: getRotatedCursor('e-resize', 'right'), hitboxPx: edgeHitboxRadius }
+            };
+            
+            // CRITICAL: Transform hover point to text's local coordinate system (accounting for rotation)
+            // rotation is already defined above for cursor calculation
+            let localHoverU = hoverU;
+            let localHoverV = hoverV;
+            
+            if (rotation !== 0) {
+              // Convert hover UV to pixels
+              const hoverPixelX = hoverU * canvasWidth;
+              const hoverPixelY = (1 - hoverV) * canvasHeight;
+              
+              // Translate to text origin
+              const relX = hoverPixelX - x;
+              const relY = hoverPixelY - y;
+              
+              // Rotate by -rotation to get into text's local space
+              const cosR = Math.cos(-rotation);
+              const sinR = Math.sin(-rotation);
+              const localX = relX * cosR - relY * sinR;
+              const localY = relX * sinR + relY * cosR;
+              
+              // Convert back to UV coordinates
+              localHoverU = (x + localX) / canvasWidth;
+              localHoverV = 1 - ((y + localY) / canvasHeight);
+            }
+            
+            // PRIORITY 1: Check rotation handle FIRST (before anchors)
+            const rotationHandleDistance = 40; // Same as in App.tsx
+            const rotationHandleSize = 12; // Same as in App.tsx
+            const rotationHandlePixelX = x + borderXPixels;
+            const rotationHandlePixelY = y + borderYPixels - textPixelHeight / 2 - rotationHandleDistance;
+            const rotationHandleU = rotationHandlePixelX / canvasWidth;
+            const rotationHandleV = 1 - (rotationHandlePixelY / canvasHeight);
+            const rotationHandleDist = Math.sqrt(Math.pow(localHoverU - rotationHandleU, 2) + Math.pow(localHoverV - rotationHandleV, 2));
+            const rotationHandleHitbox = (rotationHandleSize / canvasWidth) * 1.5;
+            
+            let overAnchor = false;
+            if (rotationHandleDist < rotationHandleHitbox) {
+              console.log('🖱️ CURSOR: Over rotation handle → grab');
+              document.body.style.cursor = 'grab';
+              document.body.style.setProperty('cursor', 'grab', 'important');
+              overAnchor = true; // Prevent checking other anchors
+            }
+            
+            // PRIORITY 2: Check resize anchors (with individual hitbox sizes)
+            if (!overAnchor) {
+              console.log('🖱️ ANCHOR DEBUG - Hover position (local):', localHoverU.toFixed(4), localHoverV.toFixed(4));
+              console.log('🖱️ ANCHOR DEBUG - Corner hitbox:', cornerHitboxRadius, 'px, Edge hitbox:', edgeHitboxRadius, 'px');
+              console.log('🖱️ CURSOR DEBUG - Current body cursor:', document.body.style.cursor);
+              console.log('🖱️ CURSOR DEBUG - Computed cursor:', getComputedStyle(document.body).cursor);
+              
+              for (const [anchorName, anchorData] of Object.entries(anchors)) {
+                const dist = Math.sqrt(Math.pow(localHoverU - anchorData.u, 2) + Math.pow(localHoverV - anchorData.v, 2));
+                const distPx = dist * canvasWidth;
+                
+                // Use the anchor's specific hitbox size (in UV space)
+                const hitboxUV = anchorData.hitboxPx / canvasWidth;
+                const willHit = dist < hitboxUV;
+                
+                console.log(`🖱️ ${anchorName}:`, 
+                  'UV:', anchorData.u.toFixed(4), anchorData.v.toFixed(4),
+                  'Dist:', dist.toFixed(6), '(' + distPx.toFixed(1) + 'px)',
+                  'Hitbox:', anchorData.hitboxPx + 'px',
+                  'Cursor:', anchorData.cursor,
+                  willHit ? '✅ HIT!' : '❌'
+                );
+                
+                if (willHit) {
+                  console.log('🖱️ ✅ CURSOR SET TO:', anchorData.cursor, 'for', anchorName);
+                  // Set cursor with MAXIMUM priority
+                  document.body.style.cursor = anchorData.cursor;
+                  document.body.style.setProperty('cursor', anchorData.cursor, 'important');
+                  overAnchor = true;
+                  break;
+                }
+              }
+            }
+            
+            // PRIORITY 3: If not over anchor or rotation handle but over selected text, show move cursor
+            if (!overAnchor) {
+              console.log('🖱️ CURSOR: Over selected text (inside border) → move');
+              document.body.style.cursor = 'move';
+              document.body.style.setProperty('cursor', 'move', 'important');
+            }
+          } else if (hoveredText) {
+            // Hovering over unselected text - show pointer to indicate clickable
+            console.log('🖱️ CURSOR: Over unselected text → pointer');
+            document.body.style.cursor = 'pointer';
+            document.body.style.setProperty('cursor', 'pointer', 'important');
+          } else {
+            // Not hovering over any text - show text cursor to create new text
+            console.log('🖱️ CURSOR: Not over any text → text');
+            document.body.style.cursor = 'text';
+            document.body.style.setProperty('cursor', 'text', 'important');
           }
         }
       }
@@ -3838,6 +4968,263 @@ export function ShirtRefactored({
         return;
       }
       
+      // DEBUG: Log text tool state at start of pointer move
+      if (activeTool === 'text' && ((window as any).__textDragging || (window as any).__textResizing || (window as any).__textRotating)) {
+        console.log('🎨 onPointerMove - Text tool state:', {
+          dragging: (window as any).__textDragging,
+          resizing: (window as any).__textResizing,
+          rotating: (window as any).__textRotating
+        });
+      }
+      
+      // Handle text rotation (separate from dragging and resizing)
+      if (activeTool === 'text' && (window as any).__textRotating && (window as any).__textRotateStart) {
+        const uv = e.uv as THREE.Vector2 | undefined;
+        if (uv) {
+          const currentU = uv.x;
+          const currentV = 1 - uv.y; // Flip V
+          
+          const rotateStart = (window as any).__textRotateStart;
+          const centerU = rotateStart.centerU;
+          const centerV = rotateStart.centerV;
+          
+          // Calculate angle from center to current mouse position
+          const currentAngle = Math.atan2(currentV - centerV, currentU - centerU);
+          const startAngle = Math.atan2(rotateStart.startV - centerV, rotateStart.startU - centerU);
+          const deltaAngle = currentAngle - startAngle;
+          
+          let newRotation = rotateStart.initialRotation + deltaAngle;
+          
+          // Snap to 15° increments if Shift key is pressed
+          if (e.shiftKey) {
+            const snapIncrement = (15 * Math.PI) / 180; // 15 degrees in radians
+            newRotation = Math.round(newRotation / snapIncrement) * snapIncrement;
+          }
+          
+          // Normalize to 0-2π range
+          while (newRotation < 0) newRotation += Math.PI * 2;
+          while (newRotation >= Math.PI * 2) newRotation -= Math.PI * 2;
+          
+          const rotationDegrees = (newRotation * 180 / Math.PI).toFixed(1);
+          console.log('🔄 Rotating text - Angle:', rotationDegrees, '°');
+          
+          // Update text rotation
+          const { updateTextElement } = useApp.getState();
+          if (rotateStart.textId) {
+            updateTextElement(rotateStart.textId, { rotation: newRotation });
+          }
+          
+          // TODO: Display rotation angle on canvas as tooltip
+        }
+        return;
+      }
+      
+      // Handle text resizing (separate from dragging) - EXACTLY LIKE IMAGE TOOL
+      if (activeTool === 'text' && (window as any).__textResizing && (window as any).__textResizeStart) {
+        const uv = e.uv as THREE.Vector2 | undefined;
+        if (uv) {
+          const currentU = uv.x;
+          const currentV = 1 - uv.y; // Flip V to match how text.v is stored
+          
+          const resizeStart = (window as any).__textResizeStart;
+          const deltaU = currentU - resizeStart.u;
+          const deltaV = currentV - resizeStart.v;
+          
+          console.log('🔍 RESIZE DEBUG:');
+          console.log('  Anchor:', resizeStart.anchor);
+          console.log('  Mouse start UV:', resizeStart.u, resizeStart.v);
+          console.log('  Mouse current UV:', currentU, currentV);
+          console.log('  Delta UV:', deltaU, deltaV);
+          console.log('  Original dimensions UV:', resizeStart.txtWidth, resizeStart.txtHeight);
+          
+          // Calculate new size based on anchor (Photoshop-style scaling from opposite corner)
+          // For text, we scale the fontSize proportionally based on width/height changes
+          let scaleFactorU = 1;
+          let scaleFactorV = 1;
+          let newTxtU = resizeStart.txtU;
+          let newTxtV = resizeStart.txtV;
+          
+          // Calculate new dimensions based on anchor (FIXED SCALING LOGIC)
+          // When dragging outward from a corner = text grows (dimensions increase)
+          // When dragging inward to a corner = text shrinks (dimensions decrease)
+          // The text should stay ANCHORED to the OPPOSITE corner (that corner doesn't move)
+          let newWidth = resizeStart.txtWidth;
+          let newHeight = resizeStart.txtHeight;
+          
+          // PHOTOSHOP-STYLE SCALING: Opposite corner stays fixed (SAME AS IMAGE TOOL)
+          switch (resizeStart.anchor) {
+            case 'topLeft':
+              // Scale from bottom-right corner (opposite anchor stays fixed)
+              newWidth = resizeStart.txtWidth - deltaU * 2;
+              newHeight = resizeStart.txtHeight - deltaV * 2;
+              // Keep bottom-right corner fixed, so center moves
+              newTxtU = resizeStart.txtU + deltaU;
+              newTxtV = resizeStart.txtV + deltaV;
+              break;
+            case 'topRight':
+              // Scale from bottom-left corner
+              newWidth = resizeStart.txtWidth + deltaU * 2;
+              newHeight = resizeStart.txtHeight - deltaV * 2;
+              // Keep bottom-left corner fixed
+              newTxtU = resizeStart.txtU + deltaU;
+              newTxtV = resizeStart.txtV + deltaV;
+              break;
+            case 'bottomLeft':
+              // Scale from top-right corner
+              newWidth = resizeStart.txtWidth - deltaU * 2;
+              newHeight = resizeStart.txtHeight + deltaV * 2;
+              // Keep top-right corner fixed
+              newTxtU = resizeStart.txtU + deltaU;
+              newTxtV = resizeStart.txtV + deltaV;
+              break;
+            case 'bottomRight':
+              // Scale from top-left corner
+              newWidth = resizeStart.txtWidth + deltaU * 2;
+              newHeight = resizeStart.txtHeight + deltaV * 2;
+              // Keep top-left corner fixed
+              newTxtU = resizeStart.txtU + deltaU;
+              newTxtV = resizeStart.txtV + deltaV;
+              break;
+            
+            // Edge anchors - scale only one dimension
+            case 'top':
+              // Scale from bottom edge
+              newHeight = resizeStart.txtHeight - deltaV * 2;
+              newTxtV = resizeStart.txtV + deltaV;
+              break;
+            case 'bottom':
+              // Scale from top edge
+              newHeight = resizeStart.txtHeight + deltaV * 2;
+              newTxtV = resizeStart.txtV + deltaV;
+              break;
+            case 'left':
+              // Scale from right edge
+              newWidth = resizeStart.txtWidth - deltaU * 2;
+              newTxtU = resizeStart.txtU + deltaU;
+              break;
+            case 'right':
+              // Scale from left edge
+              newWidth = resizeStart.txtWidth + deltaU * 2;
+              newTxtU = resizeStart.txtU + deltaU;
+              break;
+          }
+          
+          // Calculate scale factors from dimension changes
+          scaleFactorU = newWidth / resizeStart.txtWidth;
+          scaleFactorV = newHeight / resizeStart.txtHeight;
+          
+          // MAINTAIN ASPECT RATIO: If Shift key is held, use uniform scaling
+          let finalScaleFactor;
+          if (e.shiftKey) {
+            // Use the larger scale factor for uniform scaling (prevents shrinking to 0)
+            finalScaleFactor = Math.max(Math.abs(scaleFactorU), Math.abs(scaleFactorV));
+            // Preserve sign (grow vs shrink)
+            if (scaleFactorU < 0 || scaleFactorV < 0) {
+              finalScaleFactor = -finalScaleFactor;
+            }
+            console.log('🔒 SHIFT KEY: Maintaining aspect ratio - Uniform scale:', finalScaleFactor);
+          } else {
+            // Normal mode: average scale factor
+            finalScaleFactor = (scaleFactorU + scaleFactorV) / 2;
+          }
+          
+          let newFontSize = resizeStart.originalFontSize * finalScaleFactor;
+          
+          // Clamp font size to reasonable limits
+          newFontSize = Math.max(8, Math.min(200, newFontSize));
+          
+          console.log('🎨 Text resizing - Anchor:', resizeStart.anchor, 'ScaleU:', scaleFactorU, 'ScaleV:', scaleFactorV, 'Final:', finalScaleFactor, 'New size:', newFontSize, 'Shift:', e.shiftKey);
+          
+          // Update text font size AND position (text center moves when scaling from corner)
+          const { updateTextElement } = useApp.getState();
+          if (resizeStart.textId) {
+            updateTextElement(resizeStart.textId, {
+              fontSize: Math.round(newFontSize),
+              u: Math.max(0, Math.min(1, newTxtU)),
+              v: Math.max(0, Math.min(1, newTxtV))
+            });
+          }
+        }
+        return;
+      }
+      
+      // Handle text dragging (separate from resizing) - EXACTLY LIKE IMAGE TOOL
+      if (activeTool === 'text' && (window as any).__textDragging && (window as any).__textDragStart) {
+        console.log('🎨 ===== TEXT DRAG ACTIVE IN POINTER MOVE =====');
+        const uv = e.uv as THREE.Vector2 | undefined;
+        console.log('🎨 Text drag - UV available:', !!uv);
+        if (uv) {
+          const currentU = uv.x;
+          const currentV = 1 - uv.y; // Flip V to match how text.v is stored
+          
+          const dragStart = (window as any).__textDragStart;
+          console.log('🎨 Text drag - dragStart:', dragStart);
+          const deltaU = currentU - dragStart.u;
+          const deltaV = currentV - dragStart.v;
+          
+          let newU = dragStart.txtU + deltaU;
+          let newV = dragStart.txtV + deltaV;
+          
+          console.log('🎨 Text dragging - Current UV:', { currentU, currentV });
+          console.log('🎨 Text dragging - Delta:', { deltaU, deltaV });
+          console.log('🎨 Text dragging - New pos (before snap):', { newU, newV });
+          
+          // SMART SNAPPING: Snap to grid or other text elements
+          const { showGrid, textElements } = useApp.getState();
+          const snapThreshold = 0.01; // 5px threshold in UV space (approx 41px on 4096 texture)
+          
+          // 1. Snap to grid (if grid is visible)
+          if (showGrid) {
+            const gridSize = 0.1; // Grid size in UV space (10% intervals)
+            const snappedU = Math.round(newU / gridSize) * gridSize;
+            const snappedV = Math.round(newV / gridSize) * gridSize;
+            
+            if (Math.abs(newU - snappedU) < snapThreshold) {
+              newU = snappedU;
+              console.log('📐 Snapped to grid U:', snappedU);
+            }
+            if (Math.abs(newV - snappedV) < snapThreshold) {
+              newV = snappedV;
+              console.log('📐 Snapped to grid V:', snappedV);
+            }
+          }
+          
+          // 2. Snap to other text elements (alignment guides)
+          const otherTexts = textElements.filter(t => t.id !== dragStart.textId);
+          for (const otherText of otherTexts) {
+            const otherU = otherText.u || 0.5;
+            const otherV = otherText.v || 0.5;
+            
+            // Snap horizontally (align U coordinates)
+            if (Math.abs(newU - otherU) < snapThreshold) {
+              newU = otherU;
+              console.log('📐 Snapped to text horizontally:', otherText.text);
+            }
+            
+            // Snap vertically (align V coordinates)
+            if (Math.abs(newV - otherV) < snapThreshold) {
+              newV = otherV;
+              console.log('📐 Snapped to text vertically:', otherText.text);
+            }
+          }
+          
+          console.log('🎨 Text dragging - New pos (after snap):', { newU, newV });
+          
+          // Update text position (same as image tool - with throttling)
+          const { updateTextElement } = useApp.getState();
+          if (dragStart.textId) {
+            console.log('🎨 Text dragging - Calling updateTextElement with textId:', dragStart.textId);
+            updateTextElement(dragStart.textId, {
+              u: Math.max(0, Math.min(1, newU)),
+              v: Math.max(0, Math.min(1, newV))
+            });
+          } else {
+            console.error('🎨 Text dragging - NO textId in dragStart!');
+          }
+        }
+        return;
+      }
+      
       // Handle image dragging (separate from resizing)
       if ((activeTool as string) === 'image' && (window as any).__imageDragging && (window as any).__imageDragStart) {
         const uv = e.uv as THREE.Vector2 | undefined;
@@ -3870,14 +5257,39 @@ export function ShirtRefactored({
       // PERFORMANCE: Only paint if actively drawing
       if (paintingActiveRef.current) {
         paintAtEvent(e);
+        
+        // CRITICAL FIX: Real-time texture updates for live drawing feedback
+        // Throttle texture updates to maintain performance while keeping real-time feel
+        const textureUpdateThrottle = performanceOptimizer.getConfig().deviceTier === 'low' ? 100 : 50; // 10fps or 20fps (reduced from 30fps)
+        if (now - lastTextureUpdateTime >= textureUpdateThrottle) {
+          lastTextureUpdateTime = now;
+          const { composeLayers } = useApp.getState();
+          composeLayers();
+          updateModelTexture(false, false);
+        }
       }
     };
-  })(), [activeTool, paintAtEvent]);
+  })(), [activeTool, paintAtEvent, updateModelTexture]);
 
   const onPointerUp = useCallback((e: any) => {
     if (paintingActiveRef.current) {
       console.log('🎨 ShirtRefactored: onPointerUp - ending painting');
       paintingActiveRef.current = false;
+      
+      // 🚀 AUTOMATIC LAYER CREATION: Trigger layer creation end for drawing events
+      triggerBrushEnd({
+        tool: activeTool,
+        timestamp: Date.now(),
+        uv: e.uv,
+        intersections: e.intersections
+      });
+    }
+    
+    // CRITICAL FIX: Don't re-enable controls for continuous drawing tools
+    // They should stay disabled until user manually enables them
+    if (['brush', 'eraser', 'puffPrint', 'embroidery', 'fill'].includes(activeTool)) {
+      console.log('🎨 Continuous drawing tool - keeping controls disabled for:', activeTool);
+      return; // Don't re-enable controls for continuous drawing tools
     }
     
     // Handle image tool resize end
@@ -3894,6 +5306,48 @@ export function ShirtRefactored({
       (window as any).__imageDragging = false;
       delete (window as any).__imageDragStart;
       setControlsEnabled(true);
+    }
+    
+    // Handle text tool rotation end
+    if (activeTool === 'text' && (window as any).__textRotating) {
+      console.log('🔄 Text tool: Ended rotating - updating texture');
+      (window as any).__textRotating = false;
+      delete (window as any).__textRotateStart;
+      setControlsEnabled(true);
+      // Trigger final texture update
+      const { composeLayers } = useApp.getState();
+      composeLayers(true);
+      if ((window as any).updateModelTexture) {
+        (window as any).updateModelTexture(true, false);
+      }
+    }
+    
+    // Handle text tool resize end
+    if (activeTool === 'text' && (window as any).__textResizing) {
+      console.log('🎨 Text tool: Ended resizing - updating texture');
+      (window as any).__textResizing = false;
+      delete (window as any).__textResizeStart;
+      setControlsEnabled(true);
+      // Trigger final texture update
+      const { composeLayers } = useApp.getState();
+      composeLayers(true);
+      if ((window as any).updateModelTexture) {
+        (window as any).updateModelTexture(true, false);
+      }
+    }
+    
+    // Handle text tool drag end
+    if (activeTool === 'text' && (window as any).__textDragging) {
+      console.log('🎨 Text tool: Ended dragging - updating texture');
+      (window as any).__textDragging = false;
+      delete (window as any).__textDragStart;
+      setControlsEnabled(true);
+      // Trigger final texture update
+      const { composeLayers } = useApp.getState();
+      composeLayers(true);
+      if ((window as any).updateModelTexture) {
+        (window as any).updateModelTexture(true, false);
+      }
     }
     
     // Handle vector tool mouse release
@@ -3920,22 +5374,117 @@ export function ShirtRefactored({
         console.log('🎨 Mouse released - keeping controls disabled for continuous drawing tool:', activeTool);
       }
       
-      // CRITICAL FIX: Don't call composeLayers for eraser - it clears the original model texture!
-      // The eraser should only affect the layer canvas, not the composed canvas
-      console.log('🧽 Skipping composeLayers for eraser to preserve original model texture');
+      // CRITICAL FIX: Call composeLayers to transfer layer content to composedCanvas
+      // This is essential for making drawings visible on the model
+      console.log('🎨 Composing layers to transfer drawings to composedCanvas');
+      const { composeLayers } = useApp.getState();
+      composeLayers();
       
       // Final texture update when painting ends
       updateModelTexture(false, false);
       
-      // Update displacement maps for puff print
+      // Update displacement maps for puff and embroidery (REAL 3D geometry)
       if (activeTool === 'puffPrint') {
-        console.log('🎨 Puff print - updating displacement maps');
+        console.log('🎨 Puff print - applying REAL 3D displacement');
+        const { composeDisplacementMaps } = useApp.getState();
+        const composedDisp = composeDisplacementMaps();
+        
+        if (composedDisp && modelScene) {
+          // Apply gaussian blur for ultra-smooth displacement (eliminates spikes)
+          const blurredDisp = document.createElement('canvas');
+          blurredDisp.width = composedDisp.width;
+          blurredDisp.height = composedDisp.height;
+          const blurCtx = blurredDisp.getContext('2d');
+          
+          if (blurCtx) {
+            // Apply blur filter for smoothness
+            blurCtx.filter = 'blur(2px)'; // Gaussian blur
+            blurCtx.drawImage(composedDisp, 0, 0);
+            blurCtx.filter = 'none'; // Reset filter
+          }
+          
+          const dispTexture = new THREE.CanvasTexture(blurredDisp);
+          dispTexture.flipY = false;
+          dispTexture.needsUpdate = true;
+          dispTexture.wrapS = THREE.ClampToEdgeWrapping;
+          dispTexture.wrapT = THREE.ClampToEdgeWrapping;
+          
+          const currentPuffHeight = useApp.getState().puffHeight || 1.0;
+          
+          // CRITICAL: Much larger displacement scale for visible 3D
+          // Scale = 2.0 means maximum displacement of 2 units when texture is white (255)
+          const displacementScale = currentPuffHeight * 0.5;
+          
+          modelScene.traverse((child: any) => {
+            if (child.isMesh && child.material) {
+              // One-time geometry subdivision
+              if (child.geometry && !child.geometry.userData.puffSubdivided) {
+                const vertexCount = child.geometry.attributes.position.count;
+                if (vertexCount < 10000) {
+                  child.geometry = subdivideGeometry(child.geometry, 3); // More subdivision for smoother
+                  child.geometry.userData.puffSubdivided = true;
+                  console.log('🎨 Subdivided geometry:', vertexCount, '→', child.geometry.attributes.position.count);
+                }
+              }
+              
+              const materials = Array.isArray(child.material) ? child.material : [child.material];
+              materials.forEach((mat: any) => {
+                if (mat.isMeshStandardMaterial) {
+                  mat.displacementMap = dispTexture;
+                  mat.displacementScale = displacementScale;
+                  mat.displacementBias = 0;
+                  
+                  // Generate normal map for realistic lighting
+                  const normalCanvas = document.createElement('canvas');
+                  normalCanvas.width = blurredDisp.width;
+                  normalCanvas.height = blurredDisp.height;
+                  const normCtx = normalCanvas.getContext('2d');
+                  const tempDispCtx = blurredDisp.getContext('2d');
+                  
+                  if (normCtx && tempDispCtx) {
+                    // Convert blurred displacement to normal map
+                    const dispData = tempDispCtx.getImageData(0, 0, blurredDisp.width, blurredDisp.height);
+                    const normData = normCtx.createImageData(blurredDisp.width, blurredDisp.height);
+                    
+                    for (let y = 1; y < blurredDisp.height - 1; y++) {
+                      for (let x = 1; x < blurredDisp.width - 1; x++) {
+                        const idx = (y * blurredDisp.width + x) * 4;
+                        const center = dispData.data[idx];
+                        const left = dispData.data[((y * blurredDisp.width + (x - 1)) * 4)];
+                        const right = dispData.data[((y * blurredDisp.width + (x + 1)) * 4)];
+                        const up = dispData.data[(((y - 1) * blurredDisp.width + x) * 4)];
+                        const down = dispData.data[(((y + 1) * blurredDisp.width + x) * 4)];
+                        
+                        const dx = (right - left) / 255;
+                        const dy = (down - up) / 255;
+                        const dz = 1.0;
+                        
+                        normData.data[idx] = Math.floor((dx + 1) * 127.5);
+                        normData.data[idx + 1] = Math.floor((dy + 1) * 127.5);
+                        normData.data[idx + 2] = Math.floor((dz + 1) * 127.5);
+                        normData.data[idx + 3] = 255;
+                      }
+                    }
+                    normCtx.putImageData(normData, 0, 0);
+                    
+                    const normTexture = new THREE.CanvasTexture(normalCanvas);
+                    normTexture.flipY = false;
+                    normTexture.needsUpdate = true;
+                    mat.normalMap = normTexture;
+                    mat.normalScale = new THREE.Vector2(1.5, 1.5);
+                  }
+                  
+                  mat.needsUpdate = true;
+                  console.log('🎨 Displacement applied - scale:', displacementScale);
+                }
+              });
+            }
+          });
+        }
+      } else if (activeTool === 'embroidery') {
+        console.log('🎨 Embroidery - updating displacement maps');
         const { composeDisplacementMaps } = useApp.getState();
         composeDisplacementMaps();
-      }
-      
-      // Complete embroidery path when drawing ends
-      if (activeTool === 'embroidery') {
         completeEmbroideryPath();
       }
       
@@ -3962,6 +5511,9 @@ export function ShirtRefactored({
       console.log('🎨 ShirtRefactored: onPointerLeave - ending painting');
       paintingActiveRef.current = false;
     }
+    
+    // Reset cursor when leaving canvas
+    document.body.style.cursor = 'default';
     
     // Keep controls disabled for continuous drawing tools (they're managed by useEffect)
     if (['brush', 'eraser', 'puffPrint', 'embroidery', 'fill'].includes(activeTool)) {
@@ -4335,6 +5887,121 @@ export function ShirtRefactored({
       {/* Brush painting is now handled through paintAtEvent calls in pointer handlers */}
 
 
+      {/* Context Menu for Text Tool */}
+      {contextMenu.visible && contextMenu.textId && (
+        <Html>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            onContextMenu={(e) => e.preventDefault()}
+            style={{
+              position: 'fixed',
+              left: `${contextMenu.x}px`,
+              top: `${contextMenu.y}px`,
+              background: 'rgba(30, 30, 30, 0.98)',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              borderRadius: '8px',
+              boxShadow: '0 4px 20px rgba(0, 0, 0, 0.5)',
+              backdropFilter: 'blur(10px)',
+              zIndex: 10000,
+              minWidth: '180px',
+              overflow: 'hidden',
+              fontFamily: 'system-ui, -apple-system, sans-serif'
+            }}
+          >
+            {/* Context Menu Items */}
+            {[
+              { label: '✏️ Edit Text', action: () => {
+                const { setActiveTextId } = useApp.getState();
+                setActiveTextId(contextMenu.textId);
+                setContextMenu({ visible: false, x: 0, y: 0, textId: null });
+              }},
+              { label: '📋 Duplicate', action: () => {
+                const { textElements } = useApp.getState();
+                const text = textElements.find(t => t.id === contextMenu.textId);
+                if (text) {
+                  const newText = {
+                    ...text,
+                    id: `text-${Date.now()}`,
+                    u: (text.u || 0.5) + 0.02,
+                    v: (text.v || 0.5) + 0.02
+                  };
+                  useApp.setState({ textElements: [...textElements, newText] });
+                  const { composeLayers } = useApp.getState();
+                  setTimeout(() => {
+                    composeLayers(true);
+                    if ((window as any).updateModelTexture) {
+                      (window as any).updateModelTexture(true, false);
+                    }
+                  }, 10);
+                }
+                setContextMenu({ visible: false, x: 0, y: 0, textId: null });
+              }},
+              { label: '📤 Bring to Front', action: () => {
+                const { textElements, updateTextElement } = useApp.getState();
+                // Find the highest zIndex among all text elements
+                const maxZIndex = Math.max(...textElements.map(t => t.zIndex || 0), 0);
+                // Set this text's zIndex to be higher than all others
+                updateTextElement(contextMenu.textId!, { zIndex: maxZIndex + 1 });
+                console.log('📤 Brought text to front with zIndex:', maxZIndex + 1);
+                setContextMenu({ visible: false, x: 0, y: 0, textId: null });
+              }},
+              { label: '📥 Send to Back', action: () => {
+                const { textElements, updateTextElement } = useApp.getState();
+                // Find the lowest zIndex among all text elements
+                const minZIndex = Math.min(...textElements.map(t => t.zIndex || 0), 0);
+                // Set this text's zIndex to be lower than all others
+                updateTextElement(contextMenu.textId!, { zIndex: minZIndex - 1 });
+                console.log('📥 Sent text to back with zIndex:', minZIndex - 1);
+                setContextMenu({ visible: false, x: 0, y: 0, textId: null });
+              }},
+              { label: '🗑️ Delete', action: () => {
+                const { textElements, setActiveTextId } = useApp.getState();
+                const newTextElements = textElements.filter(t => t.id !== contextMenu.textId);
+                useApp.setState({ textElements: newTextElements });
+                setActiveTextId(null);
+                const { composeLayers } = useApp.getState();
+                setTimeout(() => {
+                  composeLayers(true);
+                  if ((window as any).updateModelTexture) {
+                    (window as any).updateModelTexture(true, false);
+                  }
+                }, 10);
+                setContextMenu({ visible: false, x: 0, y: 0, textId: null });
+              }, divider: true}
+            ].map((item, index) => (
+              <React.Fragment key={index}>
+                {item.divider && index > 0 && (
+                  <div style={{
+                    height: '1px',
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    margin: '4px 0'
+                  }} />
+                )}
+                <div
+                  onClick={item.action}
+                  style={{
+                    padding: '10px 16px',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    color: '#fff',
+                    transition: 'background 0.15s ease',
+                    userSelect: 'none'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'transparent';
+                  }}
+                >
+                  {item.label}
+                </div>
+              </React.Fragment>
+            ))}
+          </div>
+        </Html>
+      )}
+
       {/* Debug Helpers */}
       {showDebugInfo && (
         <axesHelper args={[5]} />
@@ -4393,6 +6060,22 @@ export function ShirtRefactored({
             </button>
           </div>
         </Html>
+      )}
+
+      {/* Selection Visualization - Shows bounding boxes and transform handles */}
+      {selectedElements.length > 0 && (
+        <SelectionVisualization
+          canvasWidth={1024}
+          canvasHeight={1024}
+          onElementMove={(elementId, newPosition) => {
+            console.log('🎯 Element moved:', elementId, newPosition);
+            // TODO: Update the actual element position in the layer system
+          }}
+          onElementResize={(elementId, newBounds) => {
+            console.log('🎯 Element resized:', elementId, newBounds);
+            // TODO: Update the actual element bounds in the layer system
+          }}
+        />
       )}
 
     </>

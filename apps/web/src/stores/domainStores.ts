@@ -38,6 +38,7 @@ export interface BrushSettings {
   spacing: number;
   angle: number;
   roundness: number;
+  color: string; // Add missing color property
   dynamics: {
     sizePressure: boolean;
     opacityPressure: boolean;

@@ -13,7 +13,40 @@ export function LeftPanelCompact() {
   const activeTool = useApp(s => s.activeTool);
   const setActiveTool = useApp(s => s.setActiveTool);
   const importedImages = useApp(s => s.importedImages);
+  const addImportedImage = useApp(s => s.addImportedImage);
+  const addShapeElement = useApp(s => s.addShapeElement);
   const [downloading, setDownloading] = useState(false);
+
+  // Handle image import
+  const handleImageImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    Array.from(files).forEach(file => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+          addImportedImage({
+            id: `img-${Date.now()}-${Math.random()}`,
+            name: file.name,
+            src: event.target?.result as string,
+            x: 512,
+            y: 512,
+            width: 512,
+            height: 512,
+            visible: true,
+            opacity: 1
+          });
+        };
+        img.src = event.target?.result as string;
+      };
+      reader.readAsDataURL(file);
+    });
+
+    // Reset input
+    e.target.value = '';
+  };
 
   useEffect(() => {
     // PERFORMANCE FIX: Only initialize canvas, don't trigger composition
@@ -155,6 +188,144 @@ export function LeftPanelCompact() {
             >
               <span style={{ fontSize: '14px' }}>{tool.icon}</span>
               <span style={{ fontSize: '8px', fontWeight: '500' }}>{tool.name}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Image Import Section */}
+      <div style={{
+        padding: '12px',
+        borderBottom: '1px solid rgba(255, 255, 255, 0.2)',
+        background: 'rgba(255, 255, 255, 0.05)',
+        backdropFilter: 'blur(10px)'
+      }}>
+        <div style={{
+          fontSize: '11px',
+          color: '#a0aec0',
+          fontWeight: '700',
+          marginBottom: '8px',
+          textTransform: 'uppercase',
+          letterSpacing: '1px',
+          textShadow: '0 1px 2px rgba(0, 0, 0, 0.3)'
+        }}>
+          📷 Images
+        </div>
+        <input
+          type="file"
+          accept="image/*"
+          multiple
+          id="image-import-left-panel"
+          style={{ display: 'none' }}
+          onChange={handleImageImport}
+        />
+        <button
+          onClick={() => document.getElementById('image-import-left-panel')?.click()}
+          style={{
+            width: '100%',
+            padding: '6px 10px',
+            fontSize: '10px',
+            fontWeight: '600',
+            background: '#000000',
+            color: '#FFFFFF',
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            transition: 'all 0.3s ease',
+            boxShadow: '0 4px 15px rgba(255, 255, 255, 0.2)',
+            backdropFilter: 'blur(10px)',
+            marginBottom: '8px'
+          }}
+        >
+          Import Images
+        </button>
+        {importedImages.length > 0 && (
+          <div style={{
+            fontSize: '9px',
+            color: '#a0aec0',
+            textAlign: 'center'
+          }}>
+            {importedImages.length} image{importedImages.length !== 1 ? 's' : ''} imported
+          </div>
+        )}
+      </div>
+
+      {/* Shapes Section */}
+      <div style={{
+        padding: '12px',
+        borderBottom: '1px solid rgba(255, 255, 255, 0.2)',
+        background: 'rgba(255, 255, 255, 0.05)',
+        backdropFilter: 'blur(10px)'
+      }}>
+        <div style={{
+          fontSize: '11px',
+          color: '#a0aec0',
+          fontWeight: '700',
+          marginBottom: '8px',
+          textTransform: 'uppercase',
+          letterSpacing: '1px',
+          textShadow: '0 1px 2px rgba(0, 0, 0, 0.3)'
+        }}>
+          🔷 Shapes
+        </div>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(3, 1fr)',
+          gap: '4px'
+        }}>
+          {[
+            { shape: 'rectangle', icon: '▭', name: 'Rect' },
+            { shape: 'circle', icon: '●', name: 'Circle' },
+            { shape: 'triangle', icon: '▲', name: 'Triangle' },
+            { shape: 'star', icon: '★', name: 'Star' },
+            { shape: 'polygon', icon: '⬡', name: 'Polygon' },
+            { shape: 'heart', icon: '♥', name: 'Heart' }
+          ].map(s => (
+            <button
+              key={s.shape}
+              onClick={() => {
+                // Add shape to canvas at center
+                addShapeElement({
+                  type: s.shape,
+                  x: 512,
+                  y: 512,
+                  width: 200,
+                  height: 200,
+                  color: '#FFFFFF',
+                  opacity: 1,
+                  rotation: 0
+                });
+                setActiveTool('shapes');
+              }}
+              style={{
+                padding: '8px',
+                background: 'rgba(255, 255, 255, 0.05)',
+                border: 'none',
+                borderRadius: '6px',
+                color: '#a0aec0',
+                fontSize: '11px',
+                cursor: 'pointer',
+                transition: 'all 0.3s ease',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '2px',
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.2)',
+                backdropFilter: 'blur(10px)',
+                fontWeight: '600'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                e.currentTarget.style.transform = 'translateY(-2px)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+                e.currentTarget.style.transform = 'translateY(0)';
+              }}
+              title={`Add ${s.name}`}
+            >
+              <span style={{ fontSize: '14px' }}>{s.icon}</span>
+              <span style={{ fontSize: '7px', fontWeight: '500' }}>{s.name}</span>
             </button>
           ))}
         </div>

@@ -25,7 +25,15 @@ export type LayerType =
   | 'shape' 
   | 'adjustment' 
   | 'smart-object' 
-  | 'group';
+  | 'group'
+  | 'base-files'
+  | 'sky-background'
+  | 'foreground-elements'
+  | 'effects'
+  | 'lighting'
+  | 'overlay'
+  | 'mask'
+  | 'reference';
 
 export type BlendMode = 
   | 'normal' | 'multiply' | 'screen' | 'overlay' | 'soft-light' | 'hard-light'
@@ -221,6 +229,13 @@ export interface LayerHistory {
   snapshot?: ImageData;
 }
 
+export interface LayerHierarchy {
+  name: string;
+  type: LayerType;
+  children: LayerHierarchy[];
+  layers?: string[];
+}
+
 export interface LayerSystemActions {
   // Layer CRUD
   createLayer: (type: LayerType, name?: string, options?: Partial<AdvancedLayer>) => string;
@@ -230,7 +245,15 @@ export interface LayerSystemActions {
   // Layer properties
   updateLayer: (id: string, updates: Partial<AdvancedLayer>) => void;
   setActiveLayer: (id: string) => void;
+  getActiveLayer: () => AdvancedLayer | null;
+  getLayer: (id: string) => AdvancedLayer | null;
   selectLayers: (ids: string[]) => void;
+  
+  // Additional layer operations
+  toggleLayerVisibility: (id: string) => void;
+  setLayerOpacity: (id: string, opacity: number) => void;
+  setLayerBlendMode: (id: string, blendMode: BlendMode) => void;
+  renameLayer: (id: string, newName: string) => void;
   
   // Layer ordering
   moveLayerUp: (id: string) => void;
@@ -239,12 +262,22 @@ export interface LayerSystemActions {
   moveLayerToBottom: (id: string) => void;
   reorderLayers: (newOrder: string[]) => void;
   
-  // Groups
-  createGroup: (name?: string, layerIds?: string[]) => string;
+  // Advanced grouping (Photoshop-style)
+  createGroup: (name?: string, layerIds?: string[], groupType?: LayerType) => string;
   deleteGroup: (id: string) => void;
   addToGroup: (layerId: string, groupId: string) => void;
   removeFromGroup: (layerId: string) => void;
   toggleGroupCollapse: (groupId: string) => void;
+  
+  // Smart organization
+  autoOrganizeLayers: () => void;
+  createLayerHierarchy: (hierarchy: LayerHierarchy) => void;
+  suggestLayerGrouping: (layerIds: string[]) => string[];
+  
+  // Non-destructive editing
+  createAdjustmentLayer: (type: AdjustmentLayerData['type'], settings: Record<string, any>) => string;
+  createMask: (layerId: string, maskType: 'raster' | 'vector') => string;
+  applyNonDestructiveEffect: (layerId: string, effect: LayerEffect) => void;
   
   // Masks
   addMask: (layerId: string, mask: LayerMask) => void;
@@ -503,8 +536,66 @@ export const useAdvancedLayerStore = create<LayerSystemState & LayerSystemAction
       set({ activeLayerId: id });
     },
 
+    getActiveLayer: () => {
+      const state = get();
+      return state.activeLayerId ? state.layers.get(state.activeLayerId) : null;
+    },
+
+    getLayer: (id: string) => {
+      const state = get();
+      return state.layers.get(id) || null;
+    },
+
     selectLayers: (ids: string[]) => {
       set({ selectedLayerIds: ids });
+    },
+
+    // Additional layer operations
+    toggleLayerVisibility: (id: string) => {
+      const state = get();
+      const layer = state.layers.get(id);
+      if (!layer) return;
+      
+      const updatedLayer = { ...layer, visible: !layer.visible };
+      set(state => ({
+        layers: new Map([...state.layers, [id, updatedLayer]]),
+        needsComposition: true
+      }));
+    },
+
+    setLayerOpacity: (id: string, opacity: number) => {
+      const state = get();
+      const layer = state.layers.get(id);
+      if (!layer) return;
+      
+      const updatedLayer = { ...layer, opacity: Math.max(0, Math.min(1, opacity)) };
+      set(state => ({
+        layers: new Map([...state.layers, [id, updatedLayer]]),
+        needsComposition: true
+      }));
+    },
+
+    setLayerBlendMode: (id: string, blendMode: BlendMode) => {
+      const state = get();
+      const layer = state.layers.get(id);
+      if (!layer) return;
+      
+      const updatedLayer = { ...layer, blendMode };
+      set(state => ({
+        layers: new Map([...state.layers, [id, updatedLayer]]),
+        needsComposition: true
+      }));
+    },
+
+    renameLayer: (id: string, newName: string) => {
+      const state = get();
+      const layer = state.layers.get(id);
+      if (!layer) return;
+      
+      const updatedLayer = { ...layer, name: newName };
+      set(state => ({
+        layers: new Map([...state.layers, [id, updatedLayer]])
+      }));
     },
 
     // Layer ordering
@@ -547,7 +638,7 @@ export const useAdvancedLayerStore = create<LayerSystemState & LayerSystemAction
     },
 
     // Groups
-    createGroup: (name?: string, layerIds?: string[]) => {
+    createGroup: (name?: string, layerIds?: string[], groupType?: LayerType) => {
       const groupId = generateId();
       const group: LayerGroup = {
         id: groupId,
@@ -558,7 +649,12 @@ export const useAdvancedLayerStore = create<LayerSystemState & LayerSystemAction
         blendMode: 'normal',
         order: 0,
         childLayerIds: layerIds || [],
-        collapsed: false
+        collapsed: false,
+        color: groupType === 'base-files' ? '#ff6b6b' : 
+               groupType === 'sky-background' ? '#4ecdc4' :
+               groupType === 'foreground-elements' ? '#45b7d1' :
+               groupType === 'effects' ? '#f9ca24' :
+               groupType === 'lighting' ? '#f0932b' : undefined
       };
 
       set(state => ({
@@ -914,6 +1010,115 @@ export const useAdvancedLayerStore = create<LayerSystemState & LayerSystemAction
       }
       
       return exports;
+    },
+
+    // Smart organization features
+    autoOrganizeLayers: () => {
+      const state = get();
+      const layers = Array.from(state.layers.values());
+      
+      // Create default Photoshop-style hierarchy
+      const baseFilesGroup = createGroup('Base Files', [], 'base-files');
+      const skyBackgroundGroup = createGroup('Sky & Background', [], 'sky-background');
+      const foregroundGroup = createGroup('Foreground Elements', [], 'foreground-elements');
+      const effectsGroup = createGroup('Effects & Overlays', [], 'effects');
+      const lightingGroup = createGroup('Lighting', [], 'lighting');
+      
+      // Auto-categorize layers based on type and name
+      layers.forEach(layer => {
+        const layerName = layer.name.toLowerCase();
+        const layerType = layer.type;
+        
+        if (layerType === 'text' || layerName.includes('text') || layerName.includes('title')) {
+          addToGroup(layer.id, foregroundGroup);
+        } else if (layerType === 'shape' || layerName.includes('shape') || layerName.includes('object')) {
+          addToGroup(layer.id, foregroundGroup);
+        } else if (layerName.includes('sky') || layerName.includes('background') || layerName.includes('bg')) {
+          addToGroup(layer.id, skyBackgroundGroup);
+        } else if (layerName.includes('effect') || layerName.includes('overlay') || layerName.includes('filter')) {
+          addToGroup(layer.id, effectsGroup);
+        } else if (layerName.includes('light') || layerName.includes('shadow') || layerName.includes('glow')) {
+          addToGroup(layer.id, lightingGroup);
+        } else {
+          addToGroup(layer.id, baseFilesGroup);
+        }
+      });
+      
+      console.log('🎨 Layers auto-organized into Photoshop-style hierarchy');
+    },
+
+    createLayerHierarchy: (hierarchy: LayerHierarchy) => {
+      const createGroupRecursive = (hierarchyItem: LayerHierarchy, parentId?: string): string => {
+        const groupId = createGroup(hierarchyItem.name, hierarchyItem.layers, hierarchyItem.type);
+        
+        if (parentId) {
+          addToGroup(groupId, parentId);
+        }
+        
+        hierarchyItem.children.forEach(child => {
+          createGroupRecursive(child, groupId);
+        });
+        
+        return groupId;
+      };
+      
+      createGroupRecursive(hierarchy);
+    },
+
+    suggestLayerGrouping: (layerIds: string[]) => {
+      const state = get();
+      const layers = layerIds.map(id => state.layers.get(id)).filter(Boolean) as AdvancedLayer[];
+      
+      // Simple AI-like grouping suggestion based on layer properties
+      const suggestions: string[] = [];
+      
+      const textLayers = layers.filter(l => l.type === 'text');
+      const shapeLayers = layers.filter(l => l.type === 'shape');
+      const imageLayers = layers.filter(l => l.type === 'raster');
+      
+      if (textLayers.length > 1) {
+        suggestions.push('Text Elements');
+      }
+      if (shapeLayers.length > 1) {
+        suggestions.push('Shapes & Objects');
+      }
+      if (imageLayers.length > 1) {
+        suggestions.push('Images & Graphics');
+      }
+      
+      return suggestions;
+    },
+
+    // Non-destructive editing
+    createAdjustmentLayer: (type: AdjustmentLayerData['type'], settings: Record<string, any>) => {
+      const layerId = createLayer('adjustment', `${type} Adjustment`, {
+        adjustmentData: { type, settings }
+      });
+      return layerId;
+    },
+
+    createMask: (layerId: string, maskType: 'raster' | 'vector') => {
+      const state = get();
+      const layer = state.layers.get(layerId);
+      if (!layer) return '';
+
+      const maskId = generateId();
+      const maskCanvas = createDefaultCanvas();
+      
+      const mask: LayerMask = {
+        id: maskId,
+        canvas: maskCanvas,
+        inverted: false,
+        density: 1.0,
+        feather: 0
+      };
+
+      addMask(layerId, mask);
+      return maskId;
+    },
+
+    applyNonDestructiveEffect: (layerId: string, effect: LayerEffect) => {
+      addEffect(layerId, effect);
     }
   }))
 );

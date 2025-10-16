@@ -731,23 +731,23 @@ export function MainLayout({ children }: MainLayoutProps) {
             <button 
               onClick={() => {
                 // FIXED: Toggle layers tab - switch to layers or clear it to show tool settings
-                if (activeToolSidebar === 'layers') {
+                if (activeToolSidebar === 'advancedLayers') {
                   // If layers is active, deactivate it (will show tool settings instead)
                   setActiveToolSidebar(null);
                 } else {
                   // If layers is not active, activate it
                   setShowRightPanel(true);
-                  setActiveToolSidebar('layers');
+                  setActiveToolSidebar('advancedLayers');
                 }
               }}
               style={{
                 padding: '8px 16px',
-                background: activeToolSidebar === 'layers' && showRightPanel
+                background: activeToolSidebar === 'advancedLayers' && showRightPanel
                   ? '#FFFFFF'
                   : 'transparent',
                 border: '1px solid rgba(255, 255, 255, 0.2)',
                 borderRadius: '6px',
-                color: activeToolSidebar === 'layers' && showRightPanel ? '#000000' : '#FFFFFF',
+                color: activeToolSidebar === 'advancedLayers' && showRightPanel ? '#000000' : '#FFFFFF',
                 fontSize: '11px',
                 fontWeight: '600',
                 cursor: 'pointer',
@@ -1515,7 +1515,9 @@ export function MainLayout({ children }: MainLayoutProps) {
                 boxShadow: '2px 0 20px rgba(0, 0, 0, 0.3)',
                 backdropFilter: 'blur(10px)',
                 zIndex: 10001,
-                pointerEvents: 'auto'
+                pointerEvents: 'auto',
+                scrollbarWidth: 'none', /* Firefox */
+                msOverflowStyle: 'none' /* IE and Edge */
               }}>
                 <LeftPanelCompact />
             </div>
@@ -1574,7 +1576,9 @@ export function MainLayout({ children }: MainLayoutProps) {
               boxShadow: '-2px 0 20px rgba(0, 0, 0, 0.3)',
               backdropFilter: 'blur(10px)',
               zIndex: 10001,
-              pointerEvents: 'auto'
+              pointerEvents: 'auto',
+              scrollbarWidth: 'none', /* Firefox */
+              msOverflowStyle: 'none' /* IE and Edge */
             }}>
               <RightPanelCompact activeToolSidebar={activeToolSidebar} />
             </div>

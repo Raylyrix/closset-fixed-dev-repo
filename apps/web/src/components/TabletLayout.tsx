@@ -132,7 +132,7 @@ export function TabletLayout({ children }: TabletLayoutProps) {
             position: 'relative'
           }}
         >
-          {/* Left Section - Hammer Icon */}
+          {/* Left Section - Hamburger Menu Icon */}
           <button
             onClick={() => setShowLeftPanel(!showLeftPanel)}
             style={{
@@ -158,7 +158,7 @@ export function TabletLayout({ children }: TabletLayoutProps) {
               e.currentTarget.style.transform = 'scale(1)';
             }}
           >
-            <span>🔨</span>
+            <span>☰</span>
           </button>
 
           {/* Center Section - All Tools in One Line */}
@@ -320,6 +320,8 @@ export function TabletLayout({ children }: TabletLayoutProps) {
                 boxShadow: '2px 0 20px rgba(0, 0, 0, 0.3)',
                 backdropFilter: 'blur(20px)',
                 zIndex: 10001,
+                scrollbarWidth: 'none', /* Firefox */
+                msOverflowStyle: 'none', /* IE and Edge */
                 position: 'relative'
               }}
             >
@@ -405,6 +407,8 @@ export function TabletLayout({ children }: TabletLayoutProps) {
               boxShadow: '-2px 0 20px rgba(0, 0, 0, 0.3)',
               backdropFilter: 'blur(20px)',
               zIndex: 10001,
+              scrollbarWidth: 'none', /* Firefox */
+              msOverflowStyle: 'none', /* IE and Edge */
               position: 'relative'
             }}
           >

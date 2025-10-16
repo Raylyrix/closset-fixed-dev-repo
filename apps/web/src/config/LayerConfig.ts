@@ -4,8 +4,8 @@
  */
 
 export const LAYER_SYSTEM_CONFIG = {
-  // Set to false to disable advanced layer system and use original
-  USE_ADVANCED_LAYERS: false,
+  // Set to true to enable advanced layer system
+  USE_ADVANCED_LAYERS: true,
   
   // Debug mode for layer system
   DEBUG_LAYERS: true

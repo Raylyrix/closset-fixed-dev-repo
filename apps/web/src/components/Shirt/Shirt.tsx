@@ -205,23 +205,36 @@ export const Shirt: React.FC<ShirtProps> = ({
     }
   }, [showAnchorPoints, vectorMode, vectorShapes, renderAnchorPoints]);
   
-  // Performance monitoring
+  // Performance monitoring - Fixed FPS calculation
   useEffect(() => {
-    const interval = setInterval(() => {
-      const now = performance.now();
-      const deltaTime = now - lastUpdateTimeRef.current;
-      const frameRate = deltaTime > 0 ? 1000 / deltaTime : 0;
-      
-      updatePerformanceMetrics({
-        frameRate,
-        renderTime: deltaTime,
-        memoryUsage: (performance as any).memory?.usedJSHeapSize || 0
-      });
-      
-      lastUpdateTimeRef.current = now;
-    }, 1000);
+    let frameCount = 0;
+    let lastTime = performance.now();
     
-    return () => clearInterval(interval);
+    const measureFPS = () => {
+      frameCount++;
+      const currentTime = performance.now();
+      const deltaTime = currentTime - lastTime;
+      
+      // Update FPS every second
+      if (deltaTime >= 1000) {
+        const actualFPS = Math.round((frameCount * 1000) / deltaTime);
+        
+        updatePerformanceMetrics({
+          frameRate: actualFPS,
+          renderTime: deltaTime / frameCount, // Average frame time
+          memoryUsage: (performance as any).memory?.usedJSHeapSize || 0
+        });
+        
+        frameCount = 0;
+        lastTime = currentTime;
+      }
+      
+      requestAnimationFrame(measureFPS);
+    };
+    
+    const rafId = requestAnimationFrame(measureFPS);
+    
+    return () => cancelAnimationFrame(rafId);
   }, [updatePerformanceMetrics]);
   
   // Error boundary

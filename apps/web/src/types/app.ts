@@ -78,6 +78,7 @@ export interface BrushSettings {
   spacing: number;
   angle: number;
   roundness: number;
+  color: string; // Add missing color property
 
   // Advanced Properties
   dynamics: BrushDynamics;

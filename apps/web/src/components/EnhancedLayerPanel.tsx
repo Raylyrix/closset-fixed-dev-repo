@@ -538,7 +538,7 @@ export const EnhancedLayerPanel: React.FC = () => {
   const layersArray = Array.from(layers.values());
   const groupsArray = Array.from(groups.values());
 
-  const handleCreateLayer = (type: 'pixel' | 'text' | 'shape' | 'adjustment' | 'smart-object') => {
+  const handleCreateLayer = (type: LayerType) => {
     const layerId = createLayer(type);
     selectLayer(layerId);
   };

@@ -5,16 +5,16 @@ import { Environment, OrbitControls, GizmoHelper, GizmoViewport, Grid, Html } fr
 import * as THREE from 'three';
 import localforage from 'localforage';
 import LZString from 'lz-string';
-import { aiPerformanceManager } from './utils/AIPerformanceManager';
+import { unifiedPerformanceManager } from './utils/UnifiedPerformanceManager';
 import { canvasPool } from './utils/CanvasPool';
-import { adaptivePerformanceManager } from './utils/AdaptivePerformanceManager';
-import { performanceOptimizer } from './utils/PerformanceOptimizer';
+import { useAdvancedLayerStoreV2 } from './core/AdvancedLayerSystemV2';
 import { useAdvancedLayerStore } from './core/AdvancedLayerSystem';
+import { useAutomaticLayerManager } from './core/AutomaticLayerManager';
 import { LayerModelSynchronizer } from './core/LayerModelSync';
 import { UnifiedLayerBridge } from './core/UnifiedLayerBridge';
 import { ToolLayerManager } from './core/ToolLayerManager';
 import ShirtRefactored from './components/ShirtRefactored'; // Use new refactored component
-import { RightPanel } from './components/RightPanelNew.tsx'; // Use new UI component
+import { RightPanelCompact } from './components/RightPanelCompact.tsx'; // Use compact UI component with layers and universal select
 // PERFORMANCE FIX: Removed Brush3DIntegration import to prevent conflicts with existing painting system
 import { LeftPanel } from './components/LeftPanel';
 import { Section } from './components/Section';
@@ -27,6 +27,7 @@ import { MainLayout } from './components/MainLayout.tsx';
 import { ResponsiveLayout } from './components/ResponsiveLayout';
 import { ToolRouter } from './components/ToolRouter';
 import { TransformGizmo } from './components/TransformGizmo';
+import { PerformanceMonitor } from './components/PerformanceMonitor';
 import { EmbroideryStitch, EmbroideryPattern } from './services/embroideryService';
 import { handleRenderingError, handleCanvasError, ErrorCategory, ErrorSeverity } from './utils/CentralizedErrorHandler';
 import { vectorStore } from './vector/vectorState';
@@ -55,7 +56,9 @@ type Tool =
   | 'decals' | 'layers' | 'puffPrint' | 'patternMaker' | 'advancedSelection' | 'vectorTools' | 'aiAssistant'
   | 'printExport' | 'cloudSync' | 'layerEffects' | 'colorGrading' | 'animation' | 'templates' | 'batch'
   | 'advancedBrush' | 'meshDeformation' | 'proceduralGenerator' | '3dPainting' | 'smartFill'
-  | 'line' | 'rect' | 'ellipse' | 'gradient' | 'moveText' | 'selectText' | 'undo' | 'redo' | 'embroidery' | 'vector' | 'shapes';
+  | 'line' | 'rect' | 'ellipse' | 'gradient' | 'moveText' | 'selectText' | 'undo' | 'redo' | 'embroidery' | 'vector' | 'shapes'
+  | 'image' | 'importImage' | 'symmetry' | 'symmetryX' | 'symmetryY' | 'symmetryZ'
+  | 'universalSelect';
 
 type Layer = { id: string; name: string; visible: boolean; canvas: HTMLCanvasElement; history: ImageData[]; future: ImageData[]; lockTransparent?: boolean; mask?: HTMLCanvasElement | null; order: number; displacementCanvas?: HTMLCanvasElement };
 
@@ -102,6 +105,10 @@ type TextElement = {
   glow?: { blur: number; color: string };
   textCase: 'none' | 'uppercase' | 'lowercase' | 'capitalize';
   layerId?: string; 
+  scaleX?: number;
+  scaleY?: number;
+  zIndex?: number; // Layer ordering (higher = on top)
+  stroke?: { width: number; color: string }; // Text stroke/outline
   
   // Additional text properties
   textShadow?: boolean;
@@ -305,7 +312,8 @@ interface AppState {
   embroideryColor: string;
   embroideryStitchType: 'satin' | 'fill' | 'outline' | 'cross-stitch' | 'cross' | 'chain' | 'backstitch' | 
     'running' | 'running-stitch' | 'zigzag' | 'split' | 'fill_tatami' | 'seed' | 'french-knot' | 'french_knot' | 
-    'couching' | 'blanket' | 'herringbone' | 'feather' | 'long_short_satin' | 'bullion';
+    'couching' | 'blanket' | 'herringbone' | 'feather' | 'long_short_satin' | 'bullion' | 'stem' | 'cable' | 
+    'coral' | 'fly' | 'lazy-daisy' | 'long-short' | 'padded-satin' | 'pistil' | 'satin-fill' | 'straight' | 'whip';
   embroideryPatternDescription: string;
   embroideryAIEnabled: boolean;
   embroideryThreadColor: string;
@@ -570,8 +578,8 @@ interface AppState {
   listCheckpoints: () => Promise<CheckpointMeta[]>;
   deleteCheckpoint: (id: string) => Promise<void>;
   initCanvases: (w: number, h: number) => void;
-  getActiveLayer: () => Layer | null;
-  getOrCreateActiveLayer: (toolType: string) => Layer | null;
+  getActiveLayer: () => Layer | any | null;
+  getOrCreateActiveLayer: (toolType: string) => Layer | any | null;
   getLayerNameForTool: (toolType: string) => string;
   createToolLayer: (toolType: string, options?: any) => string;
   toggleLayerVisibility: (layerId: string) => void;
@@ -1401,7 +1409,7 @@ try {
     
     // PERFORMANCE: Check if we're adding too many anchor points
     const totalPoints = vectorPaths.reduce((sum, path) => sum + path.points.length, 0);
-    const maxPoints = adaptivePerformanceManager.getMaxElements('text'); // Use text limit as proxy for vector points
+    const maxPoints = unifiedPerformanceManager.getMaxElements('text'); // Use text limit as proxy for vector points
     
     if (totalPoints >= maxPoints) {
       console.warn(`⚠️ Maximum vector points limit reached (${maxPoints}). Please reduce anchor points or clear some paths.`);
@@ -1442,7 +1450,7 @@ try {
     const addVectorAnchorFn = get().addVectorAnchor;
     clearTimeout((addVectorAnchorFn as any).composeTimeout);
     (addVectorAnchorFn as any).composeTimeout = setTimeout(() => {
-      get().composeLayers();
+    get().composeLayers();
     }, 100); // Debounce by 100ms
   },
   moveVectorAnchor: ({ u, v }) => {
@@ -1957,6 +1965,43 @@ try {
     console.log('🎨 updateTextElement called with:', { id, patch });
     set(state => ({ textElements: state.textElements.map(t => t.id === id ? { ...t, ...patch } : t) }));
     console.log('🎨 Text element updated in store');
+    
+    // CRITICAL: Trigger live update with throttling (same as updateImportedImage)
+    if (!(window as any).__textUpdateThrottle) {
+      (window as any).__textUpdateThrottle = {
+        lastUpdate: 0,
+        pendingUpdate: null
+      };
+    }
+    
+    const throttle = (window as any).__textUpdateThrottle;
+    const now = Date.now();
+    const throttleDelay = 16; // 60fps for smooth updates
+    
+    if (now - throttle.lastUpdate >= throttleDelay) {
+      throttle.lastUpdate = now;
+      setTimeout(() => {
+        const { composeLayers } = get();
+        composeLayers(true); // Force redraw with updated text
+        if ((window as any).updateModelTexture) {
+          (window as any).updateModelTexture(true, false);
+        }
+      }, 10);
+    } else {
+      // Queue update
+      if (throttle.pendingUpdate) {
+        clearTimeout(throttle.pendingUpdate);
+      }
+      throttle.pendingUpdate = setTimeout(() => {
+        throttle.lastUpdate = Date.now();
+        const { composeLayers } = get();
+        composeLayers(true);
+        if ((window as any).updateModelTexture) {
+          (window as any).updateModelTexture(true, false);
+        }
+        throttle.pendingUpdate = null;
+      }, throttleDelay);
+    }
   },
 
   deleteTextElement: (id: string) => {
@@ -2191,12 +2236,12 @@ try {
     const base = document.createElement('canvas');
     base.width = w; base.height = h;
     // PERFORMANCE FIX: Use device-optimized canvas context settings
-    const baseCtx = base.getContext('2d', performanceOptimizer.getOptimalCanvasContextOptions());
-    if (baseCtx) {
-      baseCtx.imageSmoothingEnabled = true;
-      baseCtx.imageSmoothingQuality = 'high';
-      baseCtx.lineCap = 'round';
-      baseCtx.lineJoin = 'round';
+    const baseCtx = base.getContext('2d', unifiedPerformanceManager.getOptimalCanvasContextOptions());
+    if (baseCtx && 'imageSmoothingEnabled' in baseCtx) {
+      (baseCtx as CanvasRenderingContext2D).imageSmoothingEnabled = true;
+      (baseCtx as CanvasRenderingContext2D).imageSmoothingQuality = 'high';
+      (baseCtx as CanvasRenderingContext2D).lineCap = 'round';
+      (baseCtx as CanvasRenderingContext2D).lineJoin = 'round';
     }
     
     const composed = document.createElement('canvas');
@@ -2452,33 +2497,86 @@ try {
   },
 
   getActiveLayer: () => {
-    const { layers, activeLayerId } = get();
-    return layers.find(l => l.id === activeLayerId) || null;
+    // CRITICAL FIX: Use Advanced Layer System V2 instead of legacy layers
+    const advancedStore = useAdvancedLayerStoreV2.getState();
+    const { layers, activeLayerId } = advancedStore;
+    
+    if (activeLayerId) {
+      const layer = layers.find(l => l.id === activeLayerId);
+      if (layer) {
+        // Convert advanced layer to legacy format for compatibility
+        return {
+          id: layer.id, // CRITICAL: Use the actual Advanced Layer System V2 ID
+          name: layer.name,
+          type: layer.type,
+          visible: layer.visible,
+          opacity: layer.opacity,
+          blendMode: layer.blendMode,
+          order: layer.order,
+          toolType: layer.type, // Use type as toolType
+          canvas: layer.content.canvas || document.createElement('canvas'),
+          displacementCanvas: null // Not used in Advanced Layer System V2
+        };
+      }
+    }
+    
+    // Fallback to legacy system if no advanced layers exist
+    const { layers: legacyLayers, activeLayerId: legacyActiveLayerId } = get();
+    return legacyLayers.find(l => l.id === legacyActiveLayerId) || null;
   },
 
   // Enhanced layer management for all tools
   getOrCreateActiveLayer: (toolType: string) => {
-    const { layers, activeLayerId, activeTool } = get();
+    // CRITICAL FIX: Use Advanced Layer System V2 instead of legacy layers
+    const advancedStore = useAdvancedLayerStoreV2.getState();
+    const { layers, activeLayerId, createLayer } = advancedStore;
     
     // If we have an active layer, check if it's suitable for the current tool
     if (activeLayerId) {
       const activeLayer = layers.find(l => l.id === activeLayerId);
       if (activeLayer && activeLayer.visible) {
-        return activeLayer;
+        // Convert advanced layer to legacy format for compatibility
+        return {
+          id: activeLayer.id, // CRITICAL: Use the actual Advanced Layer System V2 ID
+          name: activeLayer.name,
+          type: activeLayer.type,
+          visible: activeLayer.visible,
+          opacity: activeLayer.opacity,
+          blendMode: activeLayer.blendMode,
+          order: activeLayer.order,
+          toolType: activeLayer.type, // Use type as toolType
+          canvas: activeLayer.content.canvas || document.createElement('canvas'),
+          displacementCanvas: null // Not used in Advanced Layer System V2
+        };
       }
     }
 
     // Create a new layer for the tool if none exists or current one is hidden
     const layerName = get().getLayerNameForTool(toolType);
-    const addLayerFunc = get().addLayer;
-    if (!addLayerFunc) return null;
-    const layerId = addLayerFunc(layerName);
+    const layerId = createLayer(toolType as any, layerName);
     
     // Set the new layer as active
-    set({ activeLayerId: layerId });
+    useAdvancedLayerStoreV2.setState({ activeLayerId: layerId });
     
-    console.log(`🎨 Created new layer "${layerName}" for tool: ${toolType}`);
-    return get().layers.find(l => l.id === layerId) || null;
+    console.log(`🎨 Created new layer "${layerName}" for tool: ${toolType} with ID: ${layerId}`);
+    
+    const newLayer = layers.find(l => l.id === layerId);
+    if (newLayer) {
+      return {
+        id: newLayer.id, // CRITICAL: Use the actual Advanced Layer System V2 ID
+        name: newLayer.name,
+        type: newLayer.type,
+        visible: newLayer.visible,
+        opacity: newLayer.opacity,
+        blendMode: newLayer.blendMode,
+        order: newLayer.order,
+        toolType: newLayer.type, // Use type as toolType
+        canvas: newLayer.content.canvas || document.createElement('canvas'),
+        displacementCanvas: null // Not used in Advanced Layer System V2
+      };
+    }
+    
+    return null;
   },
 
   getLayerNameForTool: (toolType: string) => {
@@ -2792,7 +2890,7 @@ try {
     }
     
     // PERFORMANCE: Use adaptive performance settings
-    const performanceSettings = adaptivePerformanceManager.getEffectiveSettings();
+    const performanceSettings = unifiedPerformanceManager.getEffectiveSettings();
     
     // PERFORMANCE: Throttling based on adaptive settings
     const now = Date.now();
@@ -2814,7 +2912,7 @@ try {
       if (!composedCanvas) {
         console.warn('No composed canvas available for layer composition - getting from pool');
         // PERFORMANCE FIX: Use adaptive canvas size
-        const optimalSize = adaptivePerformanceManager.getOptimalCanvasSize();
+        const optimalSize = unifiedPerformanceManager.getOptimalCanvasSize();
         const newComposedCanvas = canvasPool.getCanvas(optimalSize);
         useApp.setState({ composedCanvas: newComposedCanvas });
         // Update the local variable to use the new canvas
@@ -2866,16 +2964,15 @@ try {
     // CRITICAL FIX: Smart canvas management - avoid clearing when possible
     // Only clear canvas when absolutely necessary to prevent texture fading
     const canvasHasContent = composedCanvas.width > 0 && composedCanvas.height > 0;
-    const hasImportedImages = get().importedImages?.length > 0;
     
-    // Only clear if canvas is empty OR if we're doing image operations AND canvas needs refresh
-    const shouldClear = !canvasHasContent || (forceClear && hasImportedImages);
+    // Clear if canvas is empty OR if forceClear is explicitly requested (for text/image updates)
+    const shouldClear = !canvasHasContent || forceClear;
     
     if (shouldClear) {
-      console.log('🎨 Clearing canvas:', !canvasHasContent ? 'empty canvas' : 'image operation refresh');
-      ctx.clearRect(0, 0, composedCanvas.width, composedCanvas.height);
-      
-      if (baseTexture) {
+      console.log('🎨 Clearing canvas:', !canvasHasContent ? 'empty canvas' : 'force clear requested');
+    ctx.clearRect(0, 0, composedCanvas.width, composedCanvas.height);
+    
+    if (baseTexture) {
         console.log('🎨 Restoring base texture after clear');
         console.log('🎨 Base texture details:', {
           type: baseTexture.constructor.name,
@@ -2883,17 +2980,14 @@ try {
           height: baseTexture.height,
           hasContent: baseTexture.width > 0 && baseTexture.height > 0
         });
-        
-        ctx.globalAlpha = 1;
-        ctx.globalCompositeOperation = 'source-over';
-        
-        // Preserve original texture quality by drawing at original size
-        // Center the texture on the canvas
-        const centerX = (composedCanvas.width - baseTexture.width) / 2;
-        const centerY = (composedCanvas.height - baseTexture.height) / 2;
-        
-        ctx.drawImage(baseTexture, centerX, centerY, baseTexture.width, baseTexture.height);
-        console.log('🎨 Base texture restored to canvas');
+      
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = 'source-over';
+      
+        // CRITICAL FIX: Draw base texture at exact canvas size for perfect UV alignment
+        // This ensures 1:1 pixel correspondence between canvas and model UV coordinates
+        ctx.drawImage(baseTexture, 0, 0, composedCanvas.width, composedCanvas.height);
+        console.log('🎨 Base texture restored to canvas with perfect UV alignment');
         
         // DEBUG: Check if the restoration worked
         const imageData = ctx.getImageData(composedCanvas.width/2, composedCanvas.height/2, 1, 1);
@@ -2907,10 +3001,14 @@ try {
     }
     
     // Draw paint layers on top (WITHOUT clearing the base!)
+    // CRITICAL FIX: Use Advanced Layer System V2 layers instead of legacy layers
+    const advancedStore = useAdvancedLayerStoreV2.getState();
+    const advancedLayers = advancedStore.layers;
+    
     // Ensure all layers have an order property (migration for existing layers)
-    const layersWithOrder = layers.map((layer, index) => ({
+    const layersWithOrder = advancedLayers.map((layer, index) => ({
       ...layer,
-      order: (layer as any).order !== undefined ? (layer as any).order : index
+      order: layer.order !== undefined ? layer.order : index
     }));
     
     // Sort layers by order for proper layering
@@ -2934,21 +3032,19 @@ try {
         ctx.save();
         
         // Apply layer-specific properties with proper blend modes
-        const layerOpacity = (layer as any).opacity || 1.0;
-        const layerToolType = (layer as any).toolType;
+        const layerOpacity = layer.opacity || 1.0;
+        const layerToolType = layer.type;
         
         // CRITICAL FIX: Use proper blend modes for correct rendering
         let layerBlendMode: GlobalCompositeOperation = 'source-over'; // Default
         
         // Set appropriate blend mode based on tool type
-        if (layerToolType === 'brush' || layerToolType === 'paint') {
-          layerBlendMode = 'source-over'; // Normal blending for brush strokes
-        } else if (layerToolType === 'puffPrint') {
-          layerBlendMode = 'source-over'; // Normal blending for puff print
+        if (layerToolType === 'paint') {
+          layerBlendMode = 'source-over'; // Normal blending for paint layers
+        } else if (layerToolType === 'puff') {
+          layerBlendMode = 'source-over'; // Normal blending for puff layers
         } else if (layerToolType === 'embroidery') {
           layerBlendMode = 'source-over'; // Normal blending for embroidery
-        } else if (layerToolType === 'eraser') {
-          layerBlendMode = 'destination-out'; // Remove content
         } else {
           layerBlendMode = 'source-over'; // Safe default for normal rendering
         }
@@ -2960,7 +3056,60 @@ try {
         ctx.shadowOffsetX = 0;
         ctx.shadowOffsetY = 0;
         
-        ctx.drawImage(layer.canvas, 0, 0);
+        // DEBUG: Check if layer canvas has content before drawing
+        const layerCanvas = layer.content.canvas;
+        if (layerCanvas) {
+          const layerImageData = layerCanvas.getContext('2d')?.getImageData(0, 0, layerCanvas.width, layerCanvas.height);
+          if (layerImageData) {
+            let hasContent = false;
+            for (let i = 3; i < layerImageData.data.length; i += 4) {
+              if (layerImageData.data[i] > 0) {
+                hasContent = true;
+                break;
+              }
+            }
+            console.log(`🎨 Layer "${layer.name}" (${layer.id}) has content:`, hasContent);
+          }
+        }
+        
+        // Draw layer canvas if it exists
+        if (layerCanvas) {
+          ctx.drawImage(layerCanvas, 0, 0);
+        }
+        
+        // CRITICAL FIX: Draw brush strokes for this layer
+        const brushStrokes = get().brushStrokes || [];
+        const layerBrushStrokes = brushStrokes.filter(stroke => stroke.layerId === layer.id);
+        
+        if (layerBrushStrokes.length > 0) {
+          console.log(`🎨 Drawing ${layerBrushStrokes.length} brush strokes for layer: ${layer.id}`);
+          
+          for (const stroke of layerBrushStrokes) {
+            if (stroke.points && stroke.points.length > 0) {
+              ctx.save();
+              ctx.strokeStyle = stroke.color;
+              ctx.lineWidth = stroke.size;
+              ctx.lineCap = 'round';
+              ctx.lineJoin = 'round';
+              ctx.globalAlpha = layerOpacity;
+              
+              ctx.beginPath();
+              for (let i = 0; i < stroke.points.length; i++) {
+                const point = stroke.points[i];
+                const x = Math.round(point.x);
+                const y = Math.round(point.y);
+                
+                if (i === 0) {
+                  ctx.moveTo(x, y);
+                } else {
+                  ctx.lineTo(x, y);
+                }
+              }
+              ctx.stroke();
+              ctx.restore();
+            }
+          }
+        }
         
         // Draw decals for this layer
       for (const d of get().decals) {
@@ -2980,9 +3129,17 @@ try {
     
       // Note: vector paths preview is rendered in 3D overlay (Shirt.tsx) to avoid painting into model texture.
 
-      // Draw text elements for this layer
-      console.log('🎨 Processing text elements for layer:', layer.id, 'Total text elements:', textElements.length);
-      for (const textEl of textElements) {
+      // Draw text elements for this layer (sorted by Z-index for proper layering)
+        console.log('🎨 Processing text elements for layer:', layer.id, 'Total text elements:', textElements.length);
+      
+      // Sort text elements by zIndex (lower zIndex = drawn first = behind)
+      const sortedTextElements = [...textElements].sort((a, b) => {
+        const aZ = a.zIndex || 0;
+        const bZ = b.zIndex || 0;
+        return aZ - bZ; // Lower values first
+      });
+      
+      for (const textEl of sortedTextElements) {
         if (textEl.layerId !== layer.id) continue;
         try {
           const x = Math.round(textEl.u * composedCanvas.width);
@@ -2998,6 +3155,7 @@ try {
           // Apply text transformations
           ctx.translate(x, y);
           ctx.rotate(textEl.rotation);
+          ctx.scale(textEl.scaleX || 1, textEl.scaleY || 1); // Apply flip/scale transformations
           ctx.globalAlpha = textEl.opacity;
           
           // Configure font
@@ -3087,6 +3245,18 @@ try {
             }
             
           console.log('🎨 Drawing text element:', textEl.text, 'at UV:', textEl.u, textEl.v, 'Canvas pos:', x, y, 'Font:', ctx.font, 'Color:', ctx.fillStyle);
+            
+            // Draw stroke/outline FIRST (before fill) so fill appears on top
+            if (textEl.stroke && textEl.stroke.width > 0) {
+              ctx.strokeStyle = textEl.stroke.color;
+              ctx.lineWidth = textEl.stroke.width;
+              ctx.lineJoin = 'round'; // Smoother corners
+              ctx.miterLimit = 2;
+              ctx.strokeText(line, 0, yPos);
+              console.log('🎨 Text stroke drawn:', textEl.stroke.width + 'px', textEl.stroke.color);
+            }
+            
+            // Draw fill (text color) on top of stroke
             ctx.fillText(line, 0, yPos);
             console.log('🎨 Text line drawn successfully');
             
@@ -3117,7 +3287,257 @@ try {
           }
           });
           
+          ctx.restore(); // End of text rendering transformations
+          
+          // Draw border and resize anchors for selected text (WITH rotation to show oriented bounding box)
+          const { activeTextId } = get();
+          if (activeTextId === textEl.id) {
+            ctx.save();
+            ctx.globalAlpha = 1.0;
+            ctx.globalCompositeOperation = 'source-over';
+            
+            // Apply same transformations as text rendering for aligned border
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.translate(x, y);
+            ctx.rotate(textEl.rotation); // Rotate border with text for oriented bounding box
+            
+            // Calculate text bounds
+            const tempCanvas = document.createElement('canvas');
+            const tempCtx = tempCanvas.getContext('2d');
+            if (tempCtx) {
+              let font = '';
+              if (textEl.bold) font += 'bold ';
+              if (textEl.italic) font += 'italic ';
+              font += `${textEl.fontSize}px ${textEl.fontFamily}`;
+              tempCtx.font = font;
+              
+              const metrics = tempCtx.measureText(textEl.text);
+              const textWidth = metrics.width;
+              
+              // Use actualBoundingBox for accurate height (if available, fallback to fontSize * 1.2)
+              let textHeight;
+              if (metrics.actualBoundingBoxAscent !== undefined && metrics.actualBoundingBoxDescent !== undefined) {
+                textHeight = metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
+                console.log('📏 Using actualBoundingBox height:', textHeight, 'for text:', textEl.text);
+              } else {
+                textHeight = textEl.fontSize * 1.2; // Fallback
+                console.log('📏 Using fallback height:', textHeight, 'for text:', textEl.text);
+              }
+              
+              // Adjust position based on text alignment
+              let borderX = 0;
+              if (textEl.align === 'left') {
+                borderX = textWidth / 2;
+              } else if (textEl.align === 'right') {
+                borderX = -textWidth / 2;
+              } else {
+                borderX = 0;
+              }
+              
+              const borderY = textHeight / 2;
+              
+              // Create glowing border effect with RED color
+              const borderWidth = 3;
+              const glowIntensity = 12;
+              
+              // Outer glow (RED)
+              ctx.shadowColor = '#ff0000';
+              ctx.shadowBlur = glowIntensity;
+              ctx.strokeStyle = '#ff0000';
+              ctx.lineWidth = borderWidth;
+              ctx.strokeRect(borderX - textWidth/2 - borderWidth/2, borderY - textHeight/2 - borderWidth/2, textWidth + borderWidth, textHeight + borderWidth);
+              
+              // Inner border for definition
+              ctx.shadowBlur = 0;
+              ctx.strokeStyle = '#ffffff';
+              ctx.lineWidth = 1;
+              ctx.strokeRect(borderX - textWidth/2 - borderWidth/2, borderY - textHeight/2 - borderWidth/2, textWidth + borderWidth, textHeight + borderWidth);
+              
+              // Draw resize anchors - IMPROVED VISUALS
+              const cornerAnchorSize = 12; // Larger for easier clicking
+              const edgeAnchorSize = 10; // Slightly smaller than corners
+              
+              // Enhanced colors for better visibility
+              const anchorFillColor = '#ffffff'; // White fill
+              const anchorStrokeColor = '#000000'; // Black stroke for contrast
+              const anchorGlowColor = '#00bfff'; // Blue glow
+              
+              // HITBOX VISUALIZATION: Orange circles/squares showing the clickable area
+              const cornerHitboxRadius = 15; // From ShirtRefactored.tsx line 4723
+              const edgeHitboxRadius = 12;   // From ShirtRefactored.tsx line 4724
+              
+              ctx.save();
+              ctx.globalAlpha = 0.3; // Semi-transparent
+              ctx.fillStyle = '#ff6600'; // Orange
+              ctx.strokeStyle = '#ff6600';
+              ctx.lineWidth = 1;
+              
+              // Corner hitboxes (CIRCLES showing clickable area)
+              ctx.beginPath();
+              ctx.arc(borderX - textWidth/2, borderY - textHeight/2, cornerHitboxRadius, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.stroke();
+              
+              ctx.beginPath();
+              ctx.arc(borderX + textWidth/2, borderY - textHeight/2, cornerHitboxRadius, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.stroke();
+              
+              ctx.beginPath();
+              ctx.arc(borderX - textWidth/2, borderY + textHeight/2, cornerHitboxRadius, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.stroke();
+              
+              ctx.beginPath();
+              ctx.arc(borderX + textWidth/2, borderY + textHeight/2, cornerHitboxRadius, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.stroke();
+              
+              // Edge hitboxes (CIRCLES)
+              ctx.beginPath();
+              ctx.arc(borderX, borderY - textHeight/2, edgeHitboxRadius, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.stroke();
+              
+              ctx.beginPath();
+              ctx.arc(borderX, borderY + textHeight/2, edgeHitboxRadius, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.stroke();
+              
+              ctx.beginPath();
+              ctx.arc(borderX - textWidth/2, borderY, edgeHitboxRadius, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.stroke();
+              
+              ctx.beginPath();
+              ctx.arc(borderX + textWidth/2, borderY, edgeHitboxRadius, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.stroke();
+          
           ctx.restore();
+              
+              // Corner anchors (SQUARES with glow) - drawn ON TOP of orange hitboxes
+              ctx.save();
+              ctx.shadowColor = anchorGlowColor;
+              ctx.shadowBlur = 6;
+              ctx.fillStyle = anchorFillColor;
+              ctx.strokeStyle = anchorStrokeColor;
+              ctx.lineWidth = 2;
+              
+              // Top-left corner
+              ctx.fillRect(borderX - textWidth/2 - cornerAnchorSize/2, borderY - textHeight/2 - cornerAnchorSize/2, cornerAnchorSize, cornerAnchorSize);
+              ctx.strokeRect(borderX - textWidth/2 - cornerAnchorSize/2, borderY - textHeight/2 - cornerAnchorSize/2, cornerAnchorSize, cornerAnchorSize);
+              
+              // Top-right corner
+              ctx.fillRect(borderX + textWidth/2 - cornerAnchorSize/2, borderY - textHeight/2 - cornerAnchorSize/2, cornerAnchorSize, cornerAnchorSize);
+              ctx.strokeRect(borderX + textWidth/2 - cornerAnchorSize/2, borderY - textHeight/2 - cornerAnchorSize/2, cornerAnchorSize, cornerAnchorSize);
+              
+              // Bottom-left corner
+              ctx.fillRect(borderX - textWidth/2 - cornerAnchorSize/2, borderY + textHeight/2 - cornerAnchorSize/2, cornerAnchorSize, cornerAnchorSize);
+              ctx.strokeRect(borderX - textWidth/2 - cornerAnchorSize/2, borderY + textHeight/2 - cornerAnchorSize/2, cornerAnchorSize, cornerAnchorSize);
+              
+              // Bottom-right corner
+              ctx.fillRect(borderX + textWidth/2 - cornerAnchorSize/2, borderY + textHeight/2 - cornerAnchorSize/2, cornerAnchorSize, cornerAnchorSize);
+              ctx.strokeRect(borderX + textWidth/2 - cornerAnchorSize/2, borderY + textHeight/2 - cornerAnchorSize/2, cornerAnchorSize, cornerAnchorSize);
+              
+              ctx.restore();
+              
+              // Edge anchors (CIRCLES with glow)
+              ctx.save();
+              ctx.shadowColor = anchorGlowColor;
+              ctx.shadowBlur = 6;
+              ctx.fillStyle = anchorFillColor;
+              ctx.strokeStyle = anchorStrokeColor;
+              ctx.lineWidth = 2;
+              
+              // Top edge
+              ctx.beginPath();
+              ctx.arc(borderX, borderY - textHeight/2, edgeAnchorSize/2, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.stroke();
+              
+              // Bottom edge
+              ctx.beginPath();
+              ctx.arc(borderX, borderY + textHeight/2, edgeAnchorSize/2, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.stroke();
+              
+              // Left edge
+              ctx.beginPath();
+              ctx.arc(borderX - textWidth/2, borderY, edgeAnchorSize/2, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.stroke();
+              
+              // Right edge
+              ctx.beginPath();
+              ctx.arc(borderX + textWidth/2, borderY, edgeAnchorSize/2, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.stroke();
+              
+              ctx.restore();
+              
+              // ROTATION HANDLE: Circle above text with connecting line
+              const rotationHandleDistance = 40; // Distance above text
+              const rotationHandleSize = 12; // Slightly larger for easy grabbing
+              const rotationHandleHitboxRadius = 18; // From ShirtRefactored.tsx (rotationHandleSize * 1.5)
+              const rotationHandleX = borderX;
+              const rotationHandleY = borderY - textHeight/2 - rotationHandleDistance;
+              
+              // Draw connecting line
+              ctx.save();
+              ctx.strokeStyle = '#ff0000';
+              ctx.lineWidth = 2;
+              ctx.setLineDash([5, 5]); // Dashed line
+              ctx.beginPath();
+              ctx.moveTo(borderX, borderY - textHeight/2);
+              ctx.lineTo(rotationHandleX, rotationHandleY);
+              ctx.stroke();
+              ctx.setLineDash([]); // Reset dash
+              ctx.restore();
+              
+              // Draw rotation handle HITBOX (orange circle showing clickable area)
+              ctx.save();
+              ctx.globalAlpha = 0.3;
+              ctx.fillStyle = '#ff6600'; // Orange
+              ctx.strokeStyle = '#ff6600';
+              ctx.lineWidth = 1;
+              ctx.beginPath();
+              ctx.arc(rotationHandleX, rotationHandleY, rotationHandleHitboxRadius, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.stroke();
+              ctx.restore();
+              
+              // Draw rotation handle (circle with rotation icon) - ON TOP of orange hitbox
+              ctx.save();
+              ctx.fillStyle = '#00ff00'; // Green to differentiate from resize anchors
+              ctx.strokeStyle = '#ffffff';
+              ctx.lineWidth = 2;
+              ctx.shadowColor = '#00ff00';
+              ctx.shadowBlur = 8;
+              ctx.beginPath();
+              ctx.arc(rotationHandleX, rotationHandleY, rotationHandleSize/2, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.shadowBlur = 0;
+              ctx.stroke();
+              
+              // Draw rotation arc inside the handle (visual indicator)
+              ctx.strokeStyle = '#ffffff';
+              ctx.lineWidth = 1.5;
+              ctx.beginPath();
+              ctx.arc(rotationHandleX, rotationHandleY, rotationHandleSize/3, -Math.PI/4, Math.PI, false);
+              ctx.stroke();
+              // Add arrow head
+              ctx.fillStyle = '#ffffff';
+              ctx.beginPath();
+              ctx.moveTo(rotationHandleX - rotationHandleSize/3 * Math.cos(Math.PI/4), rotationHandleY - rotationHandleSize/3 * Math.sin(Math.PI/4));
+              ctx.lineTo(rotationHandleX - rotationHandleSize/3 * Math.cos(Math.PI/4) - 3, rotationHandleY - rotationHandleSize/3 * Math.sin(Math.PI/4) + 2);
+              ctx.lineTo(rotationHandleX - rotationHandleSize/3 * Math.cos(Math.PI/4) + 2, rotationHandleY - rotationHandleSize/3 * Math.sin(Math.PI/4) + 3);
+              ctx.fill();
+              ctx.restore();
+            }
+            
+            ctx.restore();
+          }
         } catch (error) {
           console.error('Error drawing text element:', error);
         }
@@ -3315,8 +3735,8 @@ try {
             // Draw glowing border around the image
             ctx.save();
             ctx.globalAlpha = 1.0;
-            ctx.globalCompositeOperation = 'source-over';
-            
+          ctx.globalCompositeOperation = 'source-over';
+          
             // Create glowing border effect with RED color
             const borderWidth = 3;
             const glowIntensity = 12;
@@ -3379,8 +3799,8 @@ try {
             // Right edge anchor
             ctx.fillRect(pixelWidth/2 - edgeAnchorWidth/2, -edgeAnchorHeight/2, edgeAnchorWidth, edgeAnchorHeight);
             ctx.strokeRect(pixelWidth/2 - edgeAnchorWidth/2, -edgeAnchorHeight/2, edgeAnchorWidth, edgeAnchorHeight);
-            
-            ctx.restore();
+          
+          ctx.restore();
           }
           
           // DEBUG: Check canvas state after drawing image
@@ -3560,6 +3980,17 @@ try {
       const imageData = debugCtx.getImageData(1024, 1024, 1, 1); // Sample center pixel
       const [r, g, b, a] = imageData.data;
       console.log('🎨 DEBUG: After composition - center pixel color (RGBA):', r, g, b, a);
+      
+      // DEBUG: Check if composedCanvas has any non-transparent pixels
+      const composedImageData = debugCtx.getImageData(0, 0, Math.min(100, composedCanvas.width), Math.min(100, composedCanvas.height));
+      let composedHasContent = false;
+      for (let i = 3; i < composedImageData.data.length; i += 4) {
+        if (composedImageData.data[i] > 0) {
+          composedHasContent = true;
+          break;
+        }
+      }
+      console.log('🎨 DEBUG: composedCanvas has content after layer composition:', composedHasContent);
     }
     } catch (error) {
       handleCanvasError(
@@ -3642,7 +4073,7 @@ try {
         ctx.globalCompositeOperation = layerBlendMode;
         
         // For displacement maps, we typically want additive blending
-        if (layerToolType === 'puffPrint') {
+        if (layerToolType === 'puffPrint' || layerToolType === 'embroidery') {
           ctx.globalCompositeOperation = 'source-over';
         }
         
@@ -3650,6 +4081,72 @@ try {
         ctx.drawImage(layer.displacementCanvas, 0, 0, width, height);
         
         ctx.restore();
+      }
+      
+      // Also include embroidery canvas if it has content
+      const { embroideryCanvas } = get();
+      if (embroideryCanvas) {
+        // Create embroidery displacement map
+        const imageData = embroideryCanvas.getContext('2d')?.getImageData(0, 0, embroideryCanvas.width, embroideryCanvas.height);
+        if (imageData) {
+          const hasEmbroideryContent = Array.from(imageData.data).some((value, index) => {
+            // Check alpha channel (every 4th value)
+            return index % 4 === 3 && value > 0;
+          });
+          
+          if (hasEmbroideryContent) {
+            console.log('🎨 Adding embroidery displacement to composition');
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighten'; // Take maximum displacement
+            ctx.globalAlpha = 1.0;
+            
+            // Create embroidery displacement map
+            const embroideryDispCanvas = document.createElement('canvas');
+            embroideryDispCanvas.width = width;
+            embroideryDispCanvas.height = height;
+            const embroideryDispCtx = embroideryDispCanvas.getContext('2d');
+            
+            if (embroideryDispCtx) {
+              // Fill with black (no displacement)
+              embroideryDispCtx.fillStyle = 'rgb(0, 0, 0)';
+              embroideryDispCtx.fillRect(0, 0, width, height);
+              
+              // Convert embroidery to displacement
+              const embroideryData = imageData.data;
+              const embroideryDispData = embroideryDispCtx.createImageData(width, height);
+              
+              for (let i = 0; i < embroideryData.length; i += 4) {
+                const alpha = embroideryData[i + 3];
+                
+                if (alpha > 0) {
+                  // Calculate displacement height based on embroidery
+                  const baseHeight = (alpha / 255) * 0.5; // Embroidery height
+                  const displacementMultiplier = 2.0; // Strong embroidery effect
+                  const height = baseHeight * displacementMultiplier;
+                  
+                  // Convert to displacement map format
+                  const displacementRange = 120;
+                  const displacementValue = Math.floor(Math.min(255, Math.max(0, 128 + (height * displacementRange))));
+                  
+                  embroideryDispData.data[i] = displacementValue;     // R
+                  embroideryDispData.data[i + 1] = displacementValue; // G
+                  embroideryDispData.data[i + 2] = displacementValue; // B
+                  embroideryDispData.data[i + 3] = 255;              // A
+                } else {
+                  embroideryDispData.data[i] = 0;     // R
+                  embroideryDispData.data[i + 1] = 0; // G
+                  embroideryDispData.data[i + 2] = 0; // B
+                  embroideryDispData.data[i + 3] = 255; // A
+                }
+              }
+              
+              embroideryDispCtx.putImageData(embroideryDispData, 0, 0);
+              ctx.drawImage(embroideryDispCanvas, 0, 0);
+            }
+            
+            ctx.restore();
+          }
+        }
       }
       
       console.log('🎨 Displacement maps composition complete');
@@ -3704,8 +4201,12 @@ try {
     const baseTextureCanvas = document.createElement('canvas');
     baseTextureCanvas.width = composedCanvas.width;
     baseTextureCanvas.height = composedCanvas.height;
-    const ctx = baseTextureCanvas.getContext('2d');
+    const ctx = baseTextureCanvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
+    
+    // CRITICAL FIX: Ensure high-quality rendering for perfect UV alignment
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
     
     // Clear the base texture canvas
     ctx.clearRect(0, 0, baseTextureCanvas.width, baseTextureCanvas.height);
@@ -3767,13 +4268,10 @@ try {
           console.log('🎨 Original texture size:', textureImage.width, 'x', textureImage.height);
           console.log('🎨 Canvas size:', baseTextureCanvas.width, 'x', baseTextureCanvas.height);
           
-          // Preserve original texture quality by drawing at original size
-          // Center the texture on the canvas
-          const centerX = (baseTextureCanvas.width - textureImage.width) / 2;
-          const centerY = (baseTextureCanvas.height - textureImage.height) / 2;
-          
-          ctx.drawImage(textureImage, centerX, centerY, textureImage.width, textureImage.height);
-          console.log('🎨 Successfully drew model texture as base layer at original resolution');
+          // CRITICAL FIX: Draw texture at exact canvas size for perfect UV alignment
+          // This ensures 1:1 pixel correspondence between UV coordinates and texture pixels
+          ctx.drawImage(textureImage, 0, 0, baseTextureCanvas.width, baseTextureCanvas.height);
+          console.log('🎨 Successfully drew model texture as base layer with perfect UV alignment');
         } catch (error) {
           console.log('🎨 Failed to draw texture, using fallback:', error);
           // Fallback to white background
@@ -4450,9 +4948,9 @@ export function App() {
   const setVectorMode = useApp(s => s.setVectorMode);
   const drawingActive = vectorMode || [
     'brush','eraser','fill','picker','smudge','blur','select','transform','move','puffPrint','embroidery',
-    'line','rect','ellipse','text','moveText','gradient','vectorTools','advancedSelection',
+    'line','rect','ellipse','moveText','gradient','vectorTools','advancedSelection',
     'advancedBrush','meshDeformation','3dPainting','smartFill'
-  ].includes(activeTool as any);
+  ].includes(activeTool as any); // Removed 'text' and 'image' - they need normal cursor, not custom overlay
   const wrapRef = useRef<HTMLDivElement>(null);
   const controlsTarget = useApp(s => s.controlsTarget);
   const controlsDistance = useApp(s => s.controlsDistance);
@@ -4480,44 +4978,64 @@ export function App() {
   useEffect(() => {
     // PERFORMANCE: Reduce canvas resolution from 2048x2048 to 1024x1024 for 4x better performance
     // PERFORMANCE: Use adaptive canvas size based on detected environment
-    const optimalSize = adaptivePerformanceManager.getOptimalCanvasSize();
+    const optimalSize = unifiedPerformanceManager.getOptimalCanvasSize();
     useApp.getState().initCanvases(optimalSize.width, optimalSize.height);
+    
+    // CRITICAL FIX: Create default paint layer if no layers exist using Advanced Layers V2
+    const appState = useApp.getState();
+    const advancedLayerStore = useAdvancedLayerStoreV2.getState();
+    
+    if (appState.layers.length === 0 && appState.addLayer) {
+      console.log('🎨 Creating default paint layer...');
+      appState.addLayer('Paint Layer');
+      console.log('✅ Default paint layer created');
+    }
+    
+    // Also ensure Advanced Layers V2 has a default layer
+    if (advancedLayerStore.layers.length === 0) {
+      console.log('🚀 Creating default layer in Advanced Layers V2...');
+      const defaultLayerId = advancedLayerStore.createLayer('paint', 'Default Paint Layer');
+      advancedLayerStore.setActiveLayer(defaultLayerId);
+      console.log('✅ Default layer created in Advanced Layers V2:', defaultLayerId);
+    }
   }, []);
 
-  // Initialize AI Performance Manager
+  // Initialize Unified Performance Manager
   useEffect(() => {
-    console.log('🤖 Initializing AI Performance Manager...');
+    console.log('🚀 Initializing Unified Performance Manager...');
     
-    // Make AI Performance Manager available globally for debugging
-    (window as any).aiPerformanceManager = aiPerformanceManager;
+    // Make performance manager available globally for debugging
+    (window as any).unifiedPerformanceManager = unifiedPerformanceManager;
+    
+    // Make layer stores available globally for debugging
+    (window as any).useApp = useApp;
+    (window as any).useAdvancedLayerStoreV2 = useAdvancedLayerStoreV2;
+    (window as any).useAdvancedLayerStore = useAdvancedLayerStore;
+    
+    // Log initial performance settings
+    const preset = unifiedPerformanceManager.getCurrentPreset();
+    const capabilities = unifiedPerformanceManager.getDeviceCapabilities();
+    
+    console.log('🎯 Performance settings initialized:', {
+      preset: unifiedPerformanceManager.getPresetName(),
+      deviceTier: capabilities.isLowEnd ? 'low' : capabilities.isMidRange ? 'mid' : 'high',
+      canvasSize: unifiedPerformanceManager.getOptimalCanvasSize(),
+      maxElements: {
+        text: unifiedPerformanceManager.getMaxElements('text'),
+        shape: unifiedPerformanceManager.getMaxElements('shape'),
+        layer: unifiedPerformanceManager.getMaxElements('layer')
+      }
+    });
     
     // Set up performance event listeners
-    const handleClearTextureCache = () => {
-      console.log('🧹 Clearing texture cache...');
-      // This will be handled by the texture manager
+    const handlePerformanceChange = (event: CustomEvent) => {
+      console.log('🔄 Performance preset changed:', event.detail);
     };
-
-    const handleClearUnusedLayers = () => {
-      console.log('🧹 Clearing unused layers...');
-      // This will be handled by the layer manager
-    };
-
-    const handleEmergencyMemoryCleanup = () => {
-      console.log('🚨 Emergency memory cleanup triggered');
-      // Force garbage collection if available
-      if ((window as any).gc) {
-        (window as any).gc();
-      }
-    };
-
-    window.addEventListener('clearTextureCache', handleClearTextureCache);
-    window.addEventListener('clearUnusedLayers', handleClearUnusedLayers);
-    window.addEventListener('emergencyMemoryCleanup', handleEmergencyMemoryCleanup);
-
+    
+    window.addEventListener('performancePresetChanged', handlePerformanceChange as EventListener);
+    
     return () => {
-      window.removeEventListener('clearTextureCache', handleClearTextureCache);
-      window.removeEventListener('clearUnusedLayers', handleClearUnusedLayers);
-      window.removeEventListener('emergencyMemoryCleanup', handleEmergencyMemoryCleanup);
+      window.removeEventListener('performancePresetChanged', handlePerformanceChange as EventListener);
     };
   }, []);
 
@@ -4563,15 +5081,9 @@ export function App() {
       return () => clearTimeout(timeoutId);
     };
 
-    // Save when layers change
-    const unsubscribe = useApp.subscribe((state) => {
-      // Trigger save when layers change
-      saveState();
-    });
-
-    return () => {
-      unsubscribe();
-    };
+    // CRITICAL FIX: DISABLE auto-save completely - it's causing infinite re-render loops
+    // Auto-save will be triggered manually by user actions instead
+    return () => {};
   }, []);
 
   // PERFORMANCE FIX: Removed redundant auto-save triggers to prevent excessive saving
@@ -4722,13 +5234,14 @@ export function App() {
           )}
           {useApp(s => s.selectedLayerV2) && (
             <TransformGizmo 
-              layerId={useApp.getState().selectedLayerV2!} 
-              onTransformChange={(transform: any) => {
+              selectedElements={[{ id: useApp.getState().selectedLayerV2!, type: 'layer', bounds: { x: 0, y: 0, width: 100, height: 100 } }]}
+              onTransform={(transform: any) => {
                 const { selectedLayerV2, updateLayerV2 } = useApp.getState();
                 if (selectedLayerV2) {
                   updateLayerV2(selectedLayerV2, { transform: { ...transform } });
                 }
               }}
+              visible={true}
             />
           )}
           <CursorManager wrapRef={wrapRef} drawingActive={drawingActive} />
@@ -4746,6 +5259,9 @@ export function App() {
           onClose={useApp(s => s.closeModelManager)} 
         />
       <BackgroundManager />
+
+      {/* Performance Monitor */}
+      <PerformanceMonitor />
 
       {/* Removed puff vector prompt - puff print and embroidery now work with vector paths */}
       {false && showPuffVectorPrompt && (
@@ -4863,7 +5379,7 @@ function CursorManager({ wrapRef, drawingActive }: { wrapRef: React.RefObject<HT
   };
 
   const size = getToolSize();
-
+  
   // When vector mode is enabled, reflect the current vector subtool in the overlay
   const overlayTool = vectorMode ? (vectorTool as any) : (tool as any);
   return <CursorOverlay x={pos.x} y={pos.y} visible={visible} tool={overlayTool} size={size} shape={shape} angle={angle} />;
